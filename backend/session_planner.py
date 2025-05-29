@@ -63,3 +63,4 @@ Return this JSON structure exactly (do NOT explain anything outside this structu
     )
 
     return response['choices'][0]['message']['content']
+
