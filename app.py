@@ -35,9 +35,11 @@ if "current_task_index" not in st.session_state:
     st.session_state.time_per_task = 25
 if "tasks" not in st.session_state:
     st.session_state.tasks = []
+if "auto_mode" not in st.session_state:
+    st.session_state.auto_mode = False
 
 # Mode selection
-mode = st.selectbox("Choose an action:", ["Generate Study Session", "Generate Flashcards", "Feynman Feedback"])
+mode = st.selectbox("Choose an action:", ["Generate Study Session", "Generate Flashcards", "Feynman Feedback", "Auto Walkthrough"])
 
 # Common input fields
 topic = st.text_input("Enter topic or subject:")
@@ -89,6 +91,7 @@ if mode == "Generate Study Session":
                     st.session_state.current_task_index = 0
                     st.session_state.time_per_task = time_per_task
                     st.session_state.in_timer = False
+                    st.session_state.auto_mode = False
                     st.rerun()
                 else:
                     st.error("❌ Response received but no session plan found.")
@@ -97,27 +100,29 @@ if mode == "Generate Study Session":
         except Exception as e:
             st.error(f"⚠️ Error while calling the backend: {e}")
 
-# Run Pomodoro task loop
-if st.session_state.tasks and st.session_state.current_task_index < len(st.session_state.tasks):
-    task = st.session_state.tasks[st.session_state.current_task_index]
-    st.subheader(f"📚 Task {st.session_state.current_task_index + 1}")
-    st.write(task)
+# Auto Walkthrough Mode
+if mode == "Auto Walkthrough" and st.session_state.tasks:
+    st.session_state.auto_mode = True
+    task_index = st.session_state.current_task_index
+    tasks = st.session_state.tasks
 
-    if not st.session_state.in_timer:
-        if st.button("▶ Start Timer"):
-            st.session_state.in_timer = True
-            st.rerun()
-        if st.button("🕒 +5 Minutes"):
-            st.session_state.time_per_task += 5
-            st.rerun()
-        if st.button("⏭ Next Task"):
-            st.session_state.current_task_index += 1
+    if task_index < len(tasks):
+        task = tasks[task_index]
+        st.subheader(f"Task {task_index + 1}")
+        st.write(task)
+
+        if not st.session_state.in_timer:
+            if st.button("▶ Start Task Timer"):
+                st.session_state.in_timer = True
+                st.rerun()
+        else:
+            run_timer(int(st.session_state.time_per_task))
             st.session_state.in_timer = False
+            st.session_state.current_task_index += 1
             st.rerun()
     else:
-        run_timer(int(st.session_state.time_per_task))
-        st.session_state.in_timer = False
-        st.rerun()
+        st.success("✅ All tasks completed! Time for review.")
+        st.session_state.auto_mode = False
 
 # Flashcards
 if mode == "Generate Flashcards" and st.button("Submit"):
