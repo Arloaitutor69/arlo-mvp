@@ -51,6 +51,12 @@ if st.session_state.stage == "setup":
     notes = st.text_area("Paste any notes or context here:")
     duration = st.slider("How many minutes would you like to study?", 15, 120, 45, 5)
 
+if "topic" not in st.session_state:
+    st.session_state.topic = ""
+
+if "notes" not in st.session_state:
+    st.session_state.notes = ""
+
     if st.button("Start Smart Study Session") and topic:
         try:
             res = requests.post("http://127.0.0.1:8000/generate-session", json={
