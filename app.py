@@ -40,6 +40,12 @@ if "auto_mode" not in st.session_state:
 if "session_started" not in st.session_state:
     st.session_state.session_started = False
 
+if "last_flashcards" not in st.session_state:
+    st.session_state.last_flashcards = {}
+if "feynman_result" not in st.session_state:
+    st.session_state.feynman_result = {}
+
+
 # Common input fields
 topic = st.text_input("Enter topic or subject:")
 notes = st.text_area("Paste notes or context here:")
@@ -116,7 +122,9 @@ if st.session_state.auto_mode and st.session_state.tasks:
                 "difficulty": "medium",
                 "format": "Q&A"
             })
-            st.json(flash_res.json())
+            flashcards = flash_res.json()
+            st.session_state.last_flashcards = flashcards  # store for review later
+            st.json(flashcards)
 
         elif "feynman" in task.lower():
             st.info("🎤 ARLO is evaluating your explanation...")
@@ -126,11 +134,12 @@ if st.session_state.auto_mode and st.session_state.tasks:
                     "topic": topic,
                     "user_explanation": user_exp
                 })
-                feedback_raw = feyn_res.json().get("feynman_response")
-                feedback = json.loads(feedback_raw) if isinstance(feedback_raw, str) else feedback_raw
-                
+                feedback_raw = feyn_res.json().get("feynman_response")                
+                parsed = json.loads(feedback) if isinstance(feedback, str) else feedback
+                st.session_state.feynman_result = parsed
                 st.subheader("Feedback")
-                st.write(feedback["feedback"])
+                st.write(parsed["feedback"])
+                
                 st.subheader("Follow-Up Questions")
                 for q in feedback["follow_up_questions"]:
                     st.markdown(f"- {q}")
@@ -152,4 +161,23 @@ if st.session_state.auto_mode and st.session_state.tasks:
             st.rerun()
     else:
         st.success("✅ All tasks completed! Time for review.")
+
+        ###
+        # Generate bedtime review sheet
+        missed = []
+        if "last_flashcards" in st.session_state:
+            missed = st.session_state.last_flashcards.get("flashcards", [])[-3:]
+        feyn = ""
+        if "feynman_result" in st.session_state:
+            feyn = st.session_state.feynman_result.get("feedback", "")
+        review_res = requests.post("http://127.0.0.1:8000/generate-review-sheet", json={
+            "topic": topic,
+            "notes_text": notes,
+            "missed_flashcards": missed,
+            "feynman_feedback": feyn
+        })
+        review = review_res.json().get("review_sheet")
+        st.subheader("🛏 Bedtime Review Sheet")
+        st.markdown(review)
+        
         st.session_state.auto_mode = False
