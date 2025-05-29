@@ -57,10 +57,15 @@ if submit and topic:
         st.json(response.json())
 
     elif mode == "Feynman Feedback":
-        response = requests.post("http://127.0.0.1:8000/feynman-feedback", json={
-            "topic": topic,
-            "user_explanation": notes
-        })
+    response = requests.post("http://127.0.0.1:8000/feynman-feedback", json={
+        "topic": topic,
+        "user_explanation": notes
+    })
 
-        st.subheader("Feedback on Your Explanation")
-        st.json(response.json())
+    result = response.json().get("feynman_response")
+    st.subheader("Feedback")
+    st.write(result["feedback"])
+    st.subheader("Follow-Up Questions")
+    for q in result["follow_up_questions"]:
+        st.markdown(f"• {q}")
+
