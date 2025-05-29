@@ -39,6 +39,11 @@ class ReviewSheetRequest(BaseModel):
     missed_flashcards: list[str]
     feynman_feedback: str
 
+class BlurtingRequest(BaseModel):
+    topic: str
+    user_blurting: str
+    reference_notes: str
+
 @app.post("/generate-session")
 def generate_session(data: SessionRequest):
     prompt = f"""
@@ -125,3 +130,29 @@ def generate_review_sheet(data: ReviewSheetRequest):
     )
 
     return {"review_sheet": response.choices[0].message.content.strip()}
+
+@app.post("/blurting-feedback")
+def blurting_feedback(data: BlurtingRequest):
+    prompt = f"""
+    The student is practicing the blurting technique for the topic: {data.topic}.
+
+    Below is their attempt to recall everything they know:
+    """
+    {data.user_blurting}
+    """
+
+    Compare it against the reference notes:
+    """
+    {data.reference_notes}
+    """
+
+    Identify any important concepts or details they missed or confused.
+    Respond in bullet points.
+    """
+
+    response = openai.ChatCompletion.create(
+        model="gpt-3.5-turbo",
+        messages=[{"role": "user", "content": prompt}]
+    )
+
+    return {"blurting_feedback": response.choices[0].message.content.strip()}
