@@ -60,24 +60,24 @@ if mode == "Generate Study Session":
             "notes_text": notes
         })
 
-        if res.status_code == 200:
-    try:
-        session_data = res.json().get("session_plan")
-        if session_data:
-            tasks = session_data["tasks"]
-            num_tasks = len(tasks)
-            time_per_task = total_duration / num_tasks
-
-            st.session_state.tasks = tasks
-            st.session_state.current = 0
-            st.session_state.time_per_task = time_per_task
-            st.experimental_rerun()
-        else:
-            st.error("❌ Response received but no session plan found.")
-    except Exception as e:
-        st.error(f"⚠️ Error parsing response: {e}")
-else:
-    st.error(f"❌ Failed to generate session. Server returned status {res.status_code}")
+    if res.status_code == 200:
+        try:
+            session_data = res.json().get("session_plan")
+            if session_data:
+                tasks = session_data["tasks"]
+                num_tasks = len(tasks)
+                time_per_task = total_duration / num_tasks
+    
+                st.session_state.tasks = tasks
+                st.session_state.current = 0
+                st.session_state.time_per_task = time_per_task
+                st.experimental_rerun()
+            else:
+                st.error("❌ Response received but no session plan found.")
+        except Exception as e:
+            st.error(f"⚠️ Error parsing response: {e}")
+    else:
+        st.error(f"❌ Failed to generate session. Server returned status {res.status_code}")
 
 
 # Run Pomodoro task loop
