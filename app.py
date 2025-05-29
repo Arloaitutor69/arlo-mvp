@@ -47,37 +47,38 @@ def run_timer(minutes):
 # Smart Study Session
 if mode == "Generate Study Session":
     total_duration = st.slider(
-    "⏱️ Select how long you want to study (in minutes)",
-    min_value=15,
-    max_value=120,
-    value=45,
-    step=5
-)
-    if st.button("Generate Plan and Begin") and topic:
-        res = requests.post("http://127.0.0.1:8000/generate-session", json={
-            "subject": topic,
-            "duration_minutes": total_duration,
-            "notes_text": notes
-        })
+        "⏱️ Select how long you want to study (in minutes)",
+        min_value=15,
+        max_value=120,
+        value=45,
+        step=5
+    )
 
-    if res.status_code == 200:
+    if st.button("Generate Plan and Begin") and topic:
         try:
-            session_data = res.json().get("session_plan")
-            if session_data:
-                tasks = session_data["tasks"]
-                num_tasks = len(tasks)
-                time_per_task = total_duration / num_tasks
-    
-                st.session_state.tasks = tasks
-                st.session_state.current = 0
-                st.session_state.time_per_task = time_per_task
-                st.experimental_rerun()
+            res = requests.post("http://127.0.0.1:8000/generate-session", json={
+                "subject": topic,
+                "duration_minutes": total_duration,
+                "notes_text": notes
+            })
+
+            if res.status_code == 200:
+                session_data = res.json().get("session_plan")
+                if session_data:
+                    tasks = session_data["tasks"]
+                    num_tasks = len(tasks)
+                    time_per_task = total_duration / num_tasks
+
+                    st.session_state.tasks = tasks
+                    st.session_state.current = 0
+                    st.session_state.time_per_task = time_per_task
+                    st.experimental_rerun()
+                else:
+                    st.error("❌ Response received but no session plan found.")
             else:
-                st.error("❌ Response received but no session plan found.")
+                st.error(f"❌ Failed to generate session. Status code: {res.status_code}")
         except Exception as e:
-            st.error(f"⚠️ Error parsing response: {e}")
-    else:
-        st.error(f"❌ Failed to generate session. Server returned status {res.status_code}")
+            st.error(f"⚠️ Error while calling the backend: {e}")
 
 
 # Run Pomodoro task loop
