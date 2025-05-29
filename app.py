@@ -111,6 +111,32 @@ if mode == "Auto Walkthrough" and st.session_state.tasks:
         st.subheader(f"Task {task_index + 1}")
         st.write(task)
 
+        # Trigger dynamic tool use
+        if "flashcard" in task.lower():
+            st.info("📖 ARLO is generating flashcards for this step...")
+            flash_res = requests.post("http://127.0.0.1:8000/generate-flashcards", json={
+                "topic": topic,
+                "notes_text": notes,
+                "difficulty": "medium",
+                "format": "Q&A"
+            })
+            st.json(flash_res.json())
+
+        elif "feynman" in task.lower():
+            st.info("🎤 ARLO is evaluating your explanation...")
+            user_exp = st.text_area("Write your explanation in your own words:")
+            if st.button("Submit Feynman Explanation"):
+                feyn_res = requests.post("http://127.0.0.1:8000/feynman-feedback", json={
+                    "topic": topic,
+                    "user_explanation": user_exp
+                })
+                feedback = feyn_res.json().get("feynman_response")
+                st.subheader("Feedback")
+                st.write(feedback["feedback"])
+                st.subheader("Follow-Up Questions")
+                for q in feedback["follow_up_questions"]:
+                    st.markdown(f"- {q}")
+
         if not st.session_state.in_timer:
             if st.button("▶ Start Task Timer"):
                 st.session_state.in_timer = True
