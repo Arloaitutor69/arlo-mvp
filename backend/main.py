@@ -4,7 +4,7 @@ from session_planner import generate_study_plan
 
 app = FastAPI()
 
-# Define the structure of input data
+# Define the structure of the POST request data
 class SessionRequest(BaseModel):
     subject: str
     duration_minutes: int
