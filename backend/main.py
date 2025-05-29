@@ -1,6 +1,8 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from session_planner import generate_study_plan
+from flashcard_generator import generate_flashcards
+
 
 app = FastAPI()
 
@@ -25,3 +27,23 @@ def generate_session(request: SessionRequest):
         return {"session_plan": plan}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+class FlashcardRequest(BaseModel):
+    topic: str
+    notes_text: str
+    difficulty: str = "medium"
+    format: str = "Q&A"
+
+@app.post("/generate-flashcards")
+def flashcards(request: FlashcardRequest):
+    try:
+        cards = generate_flashcards(
+            topic=request.topic,
+            notes_text=request.notes_text,
+            difficulty=request.difficulty,
+            format=request.format
+        )
+        return {"flashcards": cards}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
