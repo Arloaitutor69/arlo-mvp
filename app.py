@@ -28,6 +28,14 @@ st.markdown("""
 
 st.title("🌲 ARLO — Your AI Study Partner")
 
+mode = st.selectbox("Choose an action:", [
+    "Generate Study Session", 
+    "Generate Flashcards", 
+    "Feynman Feedback", 
+    "Blurting Practice", 
+    "Auto Walkthrough"
+])
+
 # Initialize session state
 if "current_task_index" not in st.session_state:
     st.session_state.current_task_index = 0
@@ -39,12 +47,10 @@ if "auto_mode" not in st.session_state:
     st.session_state.auto_mode = False
 if "session_started" not in st.session_state:
     st.session_state.session_started = False
-
 if "last_flashcards" not in st.session_state:
     st.session_state.last_flashcards = {}
 if "feynman_result" not in st.session_state:
     st.session_state.feynman_result = {}
-
 
 # Common input fields
 topic = st.text_input("Enter topic or subject:")
@@ -123,7 +129,7 @@ if st.session_state.auto_mode and st.session_state.tasks:
                 "format": "Q&A"
             })
             flashcards = flash_res.json()
-            st.session_state.last_flashcards = flashcards  # store for review later
+            st.session_state.last_flashcards = flashcards
             st.json(flashcards)
 
         elif isinstance(task, str) and "feynman" in task.lower():
@@ -134,14 +140,13 @@ if st.session_state.auto_mode and st.session_state.tasks:
                     "topic": topic,
                     "user_explanation": user_exp
                 })
-                feedback_raw = feyn_res.json().get("feynman_response")                
-                parsed = json.loads(feedback) if isinstance(feedback, str) else feedback
+                feedback_raw = feyn_res.json().get("feynman_response")
+                parsed = json.loads(feedback_raw) if isinstance(feedback_raw, str) else feedback_raw
                 st.session_state.feynman_result = parsed
                 st.subheader("Feedback")
                 st.write(parsed["feedback"])
-                
                 st.subheader("Follow-Up Questions")
-                for q in feedback["follow_up_questions"]:
+                for q in parsed["follow_up_questions"]:
                     st.markdown(f"- {q}")
 
         if not st.session_state.in_timer:
@@ -162,8 +167,6 @@ if st.session_state.auto_mode and st.session_state.tasks:
     else:
         st.success("✅ All tasks completed! Time for review.")
 
-        ###
-        # Generate bedtime review sheet
         missed = []
         if "last_flashcards" in st.session_state:
             missed = st.session_state.last_flashcards.get("flashcards", [])[-3:]
@@ -177,7 +180,45 @@ if st.session_state.auto_mode and st.session_state.tasks:
             "feynman_feedback": feyn
         })
         review = review_res.json().get("review_sheet")
-        st.subheader("🛏 Bedtime Review Sheet")
+        st.subheader("🛎 Bedtime Review Sheet")
         st.markdown(review)
-        
         st.session_state.auto_mode = False
+
+# Flashcards (standalone)
+if mode == "Generate Flashcards" and st.button("Submit"):
+    response = requests.post("http://127.0.0.1:8000/generate-flashcards", json={
+        "topic": topic,
+        "notes_text": notes,
+        "difficulty": "medium",
+        "format": "Q&A"
+    })
+    st.subheader("Flashcards")
+    st.json(response.json())
+
+# Feynman Feedback (standalone)
+if mode == "Feynman Feedback" and st.button("Submit"):
+    response = requests.post("http://127.0.0.1:8000/feynman-feedback", json={
+        "topic": topic,
+        "user_explanation": notes
+    })
+    result = response.json().get("feynman_response")
+    parsed = json.loads(result) if isinstance(result, str) else result
+    st.subheader("Feedback")
+    st.write(parsed["feedback"])
+    st.subheader("Follow-Up Questions")
+    for q in parsed["follow_up_questions"]:
+        st.markdown(f"- {q}")
+
+# Blurting Practice (standalone)
+if mode == "Blurting Practice":
+    user_blurt = st.text_area("Blurt out everything you know (from memory):")
+    if st.button("Submit Blurting"):
+        if user_blurt:
+            response = requests.post("http://127.0.0.1:8000/blurting-feedback", json={
+                "topic": topic,
+                "user_blurting": user_blurt,
+                "reference_notes": notes
+            })
+            feedback = response.json().get("blurting_feedback", "")
+            st.subheader("Feedback — What You Missed")
+            st.markdown(feedback)
