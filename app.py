@@ -1,6 +1,8 @@
 import streamlit as st
 import requests
 import time
+import json
+
 
 st.set_page_config(page_title="ARLO", page_icon="🌲", layout="centered")
 
@@ -63,7 +65,10 @@ if mode == "Generate Study Session":
             })
 
             if res.status_code == 200:
-                session_data = res.json().get("session_plan")
+                raw = res.json().get("session_plan")
+                session_data = json.loads(raw) if isinstance(raw, str) else raw
+
+                
                 if session_data:
                     tasks = session_data["tasks"]
                     num_tasks = len(tasks)
