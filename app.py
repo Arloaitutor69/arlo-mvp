@@ -37,14 +37,19 @@ topic = st.text_input("Enter topic or subject:")
 notes = st.text_area("Paste notes or context here:")
 
 def run_timer(minutes):
-    start_time = time.time()
     total_seconds = minutes * 60
-    while time.time() - start_time < total_seconds:
-        elapsed = int(time.time() - start_time)
-        remaining = total_seconds - elapsed
-        mins, secs = divmod(remaining, 60)
-        st.markdown(f"### ⏳ Time Remaining: {int(mins):02}:{int(secs):02}")
+    progress = st.empty()
+    timer_text = st.empty()
+
+    for i in range(total_seconds, 0, -1):
+        mins, secs = divmod(i, 60)
+        timer_text.markdown(f"### ⏳ Time Remaining: {mins:02d}:{secs:02d}")
+        progress.progress((total_seconds - i) / total_seconds)
         time.sleep(1)
+
+    timer_text.markdown("### ✅ Time’s up!")
+    progress.empty()
+
 
 # Smart Study Session
 if mode == "Generate Study Session":
@@ -77,14 +82,33 @@ if mode == "Generate Study Session":
                     st.session_state.tasks = tasks
                     st.session_state.current = 0
                     st.session_state.time_per_task = time_per_task
-                    st.experimental_rerun()
+                    st.return()
                 else:
                     st.error("❌ Response received but no session plan found.")
             else:
                 st.error(f"❌ Failed to generate session. Status code: {res.status_code}")
         except Exception as e:
             st.error(f"⚠️ Error while calling the backend: {e}")
+if st.session_state.current_task_index < len(st.session_state.tasks):
+    task = st.session_state.tasks[st.session_state.current_task_index]
+    st.subheader(f"Task {st.session_state.current_task_index + 1}")
+    st.write(task)
 
+    if not st.session_state.in_timer:
+        if st.button("▶ Start Timer"):
+            st.session_state.in_timer = True
+            st.rerun()
+        if st.button("🕒 +5 Minutes"):
+            st.session_state.time_per_task += 5
+            st.rerun()
+        if st.button("⏭ Next Task"):
+            st.session_state.current_task_index += 1
+            st.session_state.in_timer = False
+            st.rerun()
+    else:
+        run_timer(int(st.session_state.time_per_task))
+        st.session_state.in_timer = False
+        st.rerun()
 
 # Run Pomodoro task loop
 if "tasks" in st.session_state and st.session_state.current < len(st.session_state.tasks):
@@ -101,12 +125,12 @@ if "tasks" in st.session_state and st.session_state.current < len(st.session_sta
 
     if extend:
         st.session_state.time_per_task += 5
-        st.experimental_rerun()
+        st.return()
 
     if skip:
         st.session_state.current += 1
         st.session_state.time_per_task = total_duration / len(st.session_state.tasks)
-        st.experimental_rerun()
+        st.return()
 
 # Flashcards
 if mode == "Generate Flashcards" and st.button("Submit"):
