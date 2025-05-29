@@ -33,6 +33,7 @@ mode = st.selectbox("Choose an action:", [
     "Generate Flashcards", 
     "Feynman Feedback", 
     "Blurting Practice", 
+    "Mind Mapping", 
     "Auto Walkthrough"
 ])
 
@@ -222,3 +223,40 @@ if mode == "Blurting Practice":
             feedback = response.json().get("blurting_feedback", "")
             st.subheader("Feedback — What You Missed")
             st.markdown(feedback)
+
+# Mind Mapping Feature
+if mode == "Mind Mapping" and st.button("Generate Mind Map"):
+    try:
+        res = requests.post("http://127.0.0.1:8000/generate-mindmap", json={
+            "topic": topic,
+            "notes_text": notes
+        })
+        data = res.json().get("mindmap")
+        parsed = json.loads(data) if isinstance(data, str) else data
+
+        from pyvis.network import Network
+        import streamlit.components.v1 as components
+        import tempfile
+        import os
+
+        net = Network(height="600px", width="100%", bgcolor="#000000", font_color="white")
+        net.barnes_hut()
+
+        central = parsed.get("Central Idea", topic)
+        net.add_node(central, label=central, color="#00cc66")
+
+        for branch, subs in parsed.get("Branches", {}).items():
+            net.add_node(branch, label=branch, color="#1f7a1f")
+            net.add_edge(central, branch)
+            for sub in subs:
+                net.add_node(sub, label=sub, color="#004d26")
+                net.add_edge(branch, sub)
+
+        tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".html")
+        net.save_graph(tmp_file.name)
+        components.html(open(tmp_file.name, "r").read(), height=650)
+        os.unlink(tmp_file.name)
+
+    except Exception as e:
+        st.error(f"⚠️ Error generating mind map: {e}")
+
