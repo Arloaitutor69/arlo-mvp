@@ -44,6 +44,10 @@ class BlurtingRequest(BaseModel):
     user_blurting: str
     reference_notes: str
 
+class MindmapRequest(BaseModel):
+    topic: str
+    notes_text: str
+
 @app.post("/generate-session")
 def generate_session(data: SessionRequest):
     prompt = f"""
@@ -156,3 +160,26 @@ def blurting_feedback(data: BlurtingRequest):
     )
 
     return {"blurting_feedback": response.choices[0].message.content.strip()}
+
+@app.post("/generate-mindmap")
+def generate_mindmap(data: MindmapRequest):
+    prompt = f"""
+    For the topic "{data.topic}", generate a hierarchical mind map based on the following notes:
+    {data.notes_text}
+
+    Structure the response as a JSON dictionary:
+    {
+      "Central Idea": "...",
+      "Branches": {
+        "Branch 1": ["Subtopic A", "Subtopic B"],
+        "Branch 2": ["Subtopic C"]
+      }
+    }
+    """
+
+    response = openai.ChatCompletion.create(
+        model="gpt-3.5-turbo",
+        messages=[{"role": "user", "content": prompt}]
+    )
+
+    return {"mindmap": response.choices[0].message.content.strip()}
