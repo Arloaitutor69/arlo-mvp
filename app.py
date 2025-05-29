@@ -126,7 +126,9 @@ if st.session_state.auto_mode and st.session_state.tasks:
                     "topic": topic,
                     "user_explanation": user_exp
                 })
-                feedback = feyn_res.json().get("feynman_response")
+                feedback_raw = feyn_res.json().get("feynman_response")
+                feedback = json.loads(feedback_raw) if isinstance(feedback_raw, str) else feedback_raw
+                
                 st.subheader("Feedback")
                 st.write(feedback["feedback"])
                 st.subheader("Follow-Up Questions")
