@@ -37,13 +37,50 @@ if "tasks" not in st.session_state:
     st.session_state.tasks = []
 if "auto_mode" not in st.session_state:
     st.session_state.auto_mode = False
-
-# Mode selection
-mode = st.selectbox("Choose an action:", ["Generate Study Session", "Generate Flashcards", "Feynman Feedback", "Auto Walkthrough"])
+if "session_started" not in st.session_state:
+    st.session_state.session_started = False
 
 # Common input fields
 topic = st.text_input("Enter topic or subject:")
 notes = st.text_area("Paste notes or context here:")
+total_duration = st.slider(
+    "⏱️ Select how long you want to study (in minutes)",
+    min_value=15,
+    max_value=120,
+    value=45,
+    step=5
+)
+
+if st.button("Start My Smart Session") and topic:
+    try:
+        res = requests.post("http://127.0.0.1:8000/generate-session", json={
+            "subject": topic,
+            "duration_minutes": total_duration,
+            "notes_text": notes
+        })
+
+        if res.status_code == 200:
+            raw = res.json().get("session_plan")
+            session_data = json.loads(raw) if isinstance(raw, str) else raw
+
+            if session_data:
+                tasks = session_data["tasks"]
+                num_tasks = len(tasks)
+                time_per_task = total_duration / num_tasks
+
+                st.session_state.tasks = tasks
+                st.session_state.current_task_index = 0
+                st.session_state.time_per_task = time_per_task
+                st.session_state.in_timer = False
+                st.session_state.auto_mode = True
+                st.session_state.session_started = True
+                st.rerun()
+            else:
+                st.error("❌ Response received but no session plan found.")
+        else:
+            st.error(f"❌ Failed to generate session. Status code: {res.status_code}")
+    except Exception as e:
+        st.error(f"⚠️ Error while calling the backend: {e}")
 
 # Timer function
 def run_timer(minutes):
@@ -60,49 +97,8 @@ def run_timer(minutes):
     timer_text.markdown("### ✅ Time’s up!")
     progress.empty()
 
-# Smart Study Session
-if mode == "Generate Study Session":
-    total_duration = st.slider(
-        "⏱️ Select how long you want to study (in minutes)",
-        min_value=15,
-        max_value=120,
-        value=45,
-        step=5
-    )
-
-    if st.button("Generate Plan and Begin") and topic:
-        try:
-            res = requests.post("http://127.0.0.1:8000/generate-session", json={
-                "subject": topic,
-                "duration_minutes": total_duration,
-                "notes_text": notes
-            })
-
-            if res.status_code == 200:
-                raw = res.json().get("session_plan")
-                session_data = json.loads(raw) if isinstance(raw, str) else raw
-
-                if session_data:
-                    tasks = session_data["tasks"]
-                    num_tasks = len(tasks)
-                    time_per_task = total_duration / num_tasks
-
-                    st.session_state.tasks = tasks
-                    st.session_state.current_task_index = 0
-                    st.session_state.time_per_task = time_per_task
-                    st.session_state.in_timer = False
-                    st.session_state.auto_mode = False
-                    st.rerun()
-                else:
-                    st.error("❌ Response received but no session plan found.")
-            else:
-                st.error(f"❌ Failed to generate session. Status code: {res.status_code}")
-        except Exception as e:
-            st.error(f"⚠️ Error while calling the backend: {e}")
-
-# Auto Walkthrough Mode
-if mode == "Auto Walkthrough" and st.session_state.tasks:
-    st.session_state.auto_mode = True
+# Auto Walkthrough Activated Automatically After Session Starts
+if st.session_state.auto_mode and st.session_state.tasks:
     task_index = st.session_state.current_task_index
     tasks = st.session_state.tasks
 
@@ -149,27 +145,3 @@ if mode == "Auto Walkthrough" and st.session_state.tasks:
     else:
         st.success("✅ All tasks completed! Time for review.")
         st.session_state.auto_mode = False
-
-# Flashcards
-if mode == "Generate Flashcards" and st.button("Submit"):
-    response = requests.post("http://127.0.0.1:8000/generate-flashcards", json={
-        "topic": topic,
-        "notes_text": notes,
-        "difficulty": "medium",
-        "format": "Q&A"
-    })
-    st.subheader("Flashcards")
-    st.json(response.json())
-
-# Feynman Feedback
-if mode == "Feynman Feedback" and st.button("Submit"):
-    response = requests.post("http://127.0.0.1:8000/feynman-feedback", json={
-        "topic": topic,
-        "user_explanation": notes
-    })
-    result = response.json().get("feynman_response")
-    st.subheader("Feedback")
-    st.write(result["feedback"])
-    st.subheader("Follow-Up Questions")
-    for q in result["follow_up_questions"]:
-        st.markdown(f"• {q}")
