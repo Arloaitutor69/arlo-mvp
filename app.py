@@ -114,7 +114,7 @@ if st.session_state.auto_mode and st.session_state.tasks:
         st.write(task)
 
         # Trigger dynamic tool use
-        if "flashcard" in task.lower():
+        if isinstance(task, str) and "flashcard" in task.lower():
             st.info("📖 ARLO is generating flashcards for this step...")
             flash_res = requests.post("http://127.0.0.1:8000/generate-flashcards", json={
                 "topic": topic,
@@ -126,7 +126,7 @@ if st.session_state.auto_mode and st.session_state.tasks:
             st.session_state.last_flashcards = flashcards  # store for review later
             st.json(flashcards)
 
-        elif "feynman" in task.lower():
+        elif isinstance(task, str) and "feynman" in task.lower():
             st.info("🎤 ARLO is evaluating your explanation...")
             user_exp = st.text_area("Write your explanation in your own words:")
             if st.button("Submit Feynman Explanation"):
