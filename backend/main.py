@@ -2,6 +2,7 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from session_planner import generate_study_plan
 from flashcard_generator import generate_flashcards
+from feynman_feedback import get_feynman_feedback
 
 
 app = FastAPI()
@@ -46,4 +47,20 @@ def flashcards(request: FlashcardRequest):
         return {"flashcards": cards}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+class FeynmanRequest(BaseModel):
+    topic: str
+    user_explanation: str
+
+@app.post("/feynman-feedback")
+def feynman_feedback(request: FeynmanRequest):
+    try:
+        result = get_feynman_feedback(
+            topic=request.topic,
+            user_explanation=request.user_explanation
+        )
+        return {"feynman_response": result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 
