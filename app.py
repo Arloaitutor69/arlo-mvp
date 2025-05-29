@@ -3,7 +3,6 @@ import requests
 import time
 import json
 
-
 st.set_page_config(page_title="ARLO", page_icon="🌲", layout="centered")
 
 # Styling
@@ -29,6 +28,14 @@ st.markdown("""
 
 st.title("🌲 ARLO — Your AI Study Partner")
 
+# Initialize session state
+if "current_task_index" not in st.session_state:
+    st.session_state.current_task_index = 0
+    st.session_state.in_timer = False
+    st.session_state.time_per_task = 25
+if "tasks" not in st.session_state:
+    st.session_state.tasks = []
+
 # Mode selection
 mode = st.selectbox("Choose an action:", ["Generate Study Session", "Generate Flashcards", "Feynman Feedback"])
 
@@ -36,6 +43,7 @@ mode = st.selectbox("Choose an action:", ["Generate Study Session", "Generate Fl
 topic = st.text_input("Enter topic or subject:")
 notes = st.text_area("Paste notes or context here:")
 
+# Timer function
 def run_timer(minutes):
     total_seconds = minutes * 60
     progress = st.empty()
@@ -49,7 +57,6 @@ def run_timer(minutes):
 
     timer_text.markdown("### ✅ Time’s up!")
     progress.empty()
-
 
 # Smart Study Session
 if mode == "Generate Study Session":
@@ -73,25 +80,27 @@ if mode == "Generate Study Session":
                 raw = res.json().get("session_plan")
                 session_data = json.loads(raw) if isinstance(raw, str) else raw
 
-                
                 if session_data:
                     tasks = session_data["tasks"]
                     num_tasks = len(tasks)
                     time_per_task = total_duration / num_tasks
 
                     st.session_state.tasks = tasks
-                    st.session_state.current = 0
+                    st.session_state.current_task_index = 0
                     st.session_state.time_per_task = time_per_task
-                    st.return()
+                    st.session_state.in_timer = False
+                    st.rerun()
                 else:
                     st.error("❌ Response received but no session plan found.")
             else:
                 st.error(f"❌ Failed to generate session. Status code: {res.status_code}")
         except Exception as e:
             st.error(f"⚠️ Error while calling the backend: {e}")
-if st.session_state.current_task_index < len(st.session_state.tasks):
+
+# Run Pomodoro task loop
+if st.session_state.tasks and st.session_state.current_task_index < len(st.session_state.tasks):
     task = st.session_state.tasks[st.session_state.current_task_index]
-    st.subheader(f"Task {st.session_state.current_task_index + 1}")
+    st.subheader(f"📚 Task {st.session_state.current_task_index + 1}")
     st.write(task)
 
     if not st.session_state.in_timer:
@@ -109,28 +118,6 @@ if st.session_state.current_task_index < len(st.session_state.tasks):
         run_timer(int(st.session_state.time_per_task))
         st.session_state.in_timer = False
         st.rerun()
-
-# Run Pomodoro task loop
-if "tasks" in st.session_state and st.session_state.current < len(st.session_state.tasks):
-    current_task = st.session_state.tasks[st.session_state.current]
-    st.markdown(f"## 📚 Task {st.session_state.current + 1}:")
-    st.write(current_task)
-
-    extend = st.button("🕒 +5 minutes")
-    skip = st.button("⏭ Move to next task")
-    run = st.button("▶ Start timer")
-
-    if run:
-        run_timer(st.session_state.time_per_task)
-
-    if extend:
-        st.session_state.time_per_task += 5
-        st.return()
-
-    if skip:
-        st.session_state.current += 1
-        st.session_state.time_per_task = total_duration / len(st.session_state.tasks)
-        st.return()
 
 # Flashcards
 if mode == "Generate Flashcards" and st.button("Submit"):
