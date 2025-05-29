@@ -14,7 +14,7 @@ Their notes say: "{notes_text or 'no notes provided'}"
 
 ---
 
-🎯 Your task is to generate a study plan using only the most relevant methods from this list:
+Your task is to generate a study plan using only the most relevant methods from this list:
 
 - Active Recall (quiz questions, blurting)
 - Spaced Repetition / Leitner Flashcards
@@ -29,7 +29,7 @@ Their notes say: "{notes_text or 'no notes provided'}"
 
 ---
 
-📚 Choose techniques based on content type:
+Choose techniques based on content type:
 
 - For **conceptual topics** (e.g. biology, philosophy, history):
   → use Feynman, mind maps, YouTube primers, active recall.
