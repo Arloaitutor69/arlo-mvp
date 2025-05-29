@@ -134,9 +134,15 @@ if st.session_state.auto_mode and st.session_state.tasks:
                     st.markdown(f"- {q}")
 
         if not st.session_state.in_timer:
-            if st.button("▶ Start Task Timer"):
-                st.session_state.in_timer = True
-                st.rerun()
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("▶ Start Task Timer"):
+                    st.session_state.in_timer = True
+                    st.rerun()
+            with col2:
+                if st.button("⏭ I finished this task"):
+                    st.session_state.current_task_index += 1
+                    st.rerun()
         else:
             run_timer(int(st.session_state.time_per_task))
             st.session_state.in_timer = False
