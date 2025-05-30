@@ -113,7 +113,8 @@ elif st.session_state.stage == "chat":
             
                         
                 # ---------- TOOL EXECUTION RENDERING ----------                
-            if "tool_mode" in st.session_state:
+            if "tool_mode" not in st.session_state:
+                st.warning("Select a tool mode.")
                 elif st.session_state.tool_mode == "flashcard":
                     st.subheader("📚 Flashcard Practice")
             
