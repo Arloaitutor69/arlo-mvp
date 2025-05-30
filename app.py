@@ -108,10 +108,9 @@ elif st.session_state.stage == "session":
                 st.markdown(f"**🙋 You:** {msg['user']}")
 
         st.markdown("---")
-        user_input = st.text_input("Type your response and press Enter:", key="input_box")
 
         with st.form("chat_input_form", clear_on_submit=True):
-            user_input = st.text_input("Type your response:", key="input_box")
+            user_input = st.text_input("Type your response:", key="chat_input_field")
             submitted = st.form_submit_button("Send")
         
             if submitted and user_input:
