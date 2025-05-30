@@ -112,86 +112,84 @@ elif st.session_state.stage == "chat":
                 reply = f"⚠️ Error: {e}"
             
                         
-            # ---------- TOOL EXECUTION RENDERING ----------
-            if "tool_mode" in st.session_state:
-                
-            elif st.session_state.tool_mode == "flashcard":
-                st.subheader("📚 Flashcard Practice")
-        
-                cards = st.session_state.get("flashcards", [])
-                index = st.session_state.get("flash_index", 0)
-        
-                if index < len(cards):
-                    card = cards[index]
-                    question = card['question']
-                    answer = card['answer']
-        
-                    import streamlit.components.v1 as components
-        
-                    html_card = f"""
-                    <style>
-                        .flip-card {{
-                          background-color: transparent;
-                          width: 300px;
-                          height: 200px;
-                          perspective: 1000px;
-                          margin: auto;
-                        }}
-                        .flip-card-inner {{
-                          position: relative;
-                          width: 100%;
-                          height: 100%;
-                          text-align: center;
-                          transition: transform 0.6s;
-                          transform-style: preserve-3d;
-                        }}
-                        .flip-card:hover .flip-card-inner {{
-                          transform: rotateY(180deg);
-                        }}
-                        .flip-card-front, .flip-card-back {{
-                          position: absolute;
-                          width: 100%;
-                          height: 100%;
-                          -webkit-backface-visibility: hidden;
-                          backface-visibility: hidden;
-                          display: flex;
-                          align-items: center;
-                          justify-content: center;
-                          border: 2px solid #014421;
-                          border-radius: 10px;
-                          font-size: 18px;
-                          padding: 10px;
-                        }}
-                        .flip-card-front {{
-                          background-color: #014421;
-                          color: white;
-                        }}
-                        .flip-card-back {{
-                          background-color: #ffffff;
-                          color: black;
-                          transform: rotateY(180deg);
-                        }}
-                    </style>
-                    <div class="flip-card">
-                      <div class="flip-card-inner">
-                        <div class="flip-card-front">
-                          {question}
+                # ---------- TOOL EXECUTION RENDERING ----------                
+                elif st.session_state.tool_mode == "flashcard":
+                    st.subheader("📚 Flashcard Practice")
+            
+                    cards = st.session_state.get("flashcards", [])
+                    index = st.session_state.get("flash_index", 0)
+            
+                    if index < len(cards):
+                        card = cards[index]
+                        question = card['question']
+                        answer = card['answer']
+            
+                        import streamlit.components.v1 as components
+            
+                        html_card = f"""
+                        <style>
+                            .flip-card {{
+                              background-color: transparent;
+                              width: 300px;
+                              height: 200px;
+                              perspective: 1000px;
+                              margin: auto;
+                            }}
+                            .flip-card-inner {{
+                              position: relative;
+                              width: 100%;
+                              height: 100%;
+                              text-align: center;
+                              transition: transform 0.6s;
+                              transform-style: preserve-3d;
+                            }}
+                            .flip-card:hover .flip-card-inner {{
+                              transform: rotateY(180deg);
+                            }}
+                            .flip-card-front, .flip-card-back {{
+                              position: absolute;
+                              width: 100%;
+                              height: 100%;
+                              -webkit-backface-visibility: hidden;
+                              backface-visibility: hidden;
+                              display: flex;
+                              align-items: center;
+                              justify-content: center;
+                              border: 2px solid #014421;
+                              border-radius: 10px;
+                              font-size: 18px;
+                              padding: 10px;
+                            }}
+                            .flip-card-front {{
+                              background-color: #014421;
+                              color: white;
+                            }}
+                            .flip-card-back {{
+                              background-color: #ffffff;
+                              color: black;
+                              transform: rotateY(180deg);
+                            }}
+                        </style>
+                        <div class="flip-card">
+                          <div class="flip-card-inner">
+                            <div class="flip-card-front">
+                              {question}
+                            </div>
+                            <div class="flip-card-back">
+                              {answer}
+                            </div>
+                          </div>
                         </div>
-                        <div class="flip-card-back">
-                          {answer}
-                        </div>
-                      </div>
-                    </div>
-                    """
-        
-                    components.html(html_card, height=250)
-        
-                    if st.button("Next Flashcard"):
-                        st.session_state.flash_index += 1
-                        st.rerun()
-                else:
-                    st.success("✅ You've completed all flashcards.")
-                    st.session_state.tool_mode = None
+                        """
+            
+                        components.html(html_card, height=250)
+            
+                        if st.button("Next Flashcard"):
+                            st.session_state.flash_index += 1
+                            st.rerun()
+                    else:
+                        st.success("✅ You've completed all flashcards.")
+                        st.session_state.tool_mode = None
 
                 elif st.session_state.tool_mode == "blurting":
                     st.subheader("🗣 Blurting Practice")
