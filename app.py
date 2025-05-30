@@ -4,19 +4,14 @@ import requests
 import time
 import json
 
-st.set_page_config(page_title="ARLO Tutor", page_icon="🌱", layout="wide")
+# ---------- PAGE CONFIG ----------
+st.set_page_config(page_title="ARLO Tutor", layout="wide")
 
-# ---------- STYLING ----------
+# ---------- CSS STYLING ----------
 st.markdown("""
     <style>
-        body {
-            background-color: #000000;
-            color: white;
-        }
-        .main {
-            background-color: #000000;
-            color: white;
-        }
+        body { background-color: #000000; color: white; }
+        .main { background-color: #000000; color: white; }
         header, .css-18e3th9 {
             background-color: #014421 !important;
             color: white;
@@ -30,93 +25,75 @@ st.markdown("""
             padding: 10px;
             border-radius: 10px;
             text-align: center;
+            font-size: 22px;
         }
     </style>
 """, unsafe_allow_html=True)
 
-# ---------- STATE INIT ----------
-if "stage" not in st.session_state:
-    st.session_state.stage = "setup"
-if "chat_history" not in st.session_state:
-    st.session_state.chat_history = []
-if "current_step" not in st.session_state:
-    st.session_state.current_step = 0
-if "topic" not in st.session_state:
-    st.session_state.topic = ""
-if "notes" not in st.session_state:
-    st.session_state.notes = ""
-if "duration" not in st.session_state:
-    st.session_state.duration = 45
-if "timer_running" not in st.session_state:
-    st.session_state.timer_running = False
-if "timer_remaining" not in st.session_state:
-    st.session_state.timer_remaining = 60 * 45
+# ---------- SESSION STATE ----------
+defaults = {
+    "stage": "setup",
+    "topic": "",
+    "notes": "",
+    "duration": 45,
+    "chat_history": [],
+    "current_step": 0,
+    "timer_remaining": 2700,
+    "timer_running": False,
+}
+for key, value in defaults.items():
+    if key not in st.session_state:
+        st.session_state[key] = value
 
-# ---------- PAGE LOGIC ----------
-st.title("🌱 ARLO — Your AI Study Partner")
+# ---------- PAGE HEADER ----------
+st.title("🌲 ARLO — Your Personal AI Study Coach")
 
+# ---------- SETUP SCREEN ----------
 if st.session_state.stage == "setup":
-    st.subheader("Build Your Study Session")
+    st.subheader("📋 Set Up Your Smart Study Session")
 
-    topic = st.text_input("What are you studying today?")
-    notes = st.text_area("Paste your notes or leave blank:")
-    duration = st.slider("Study session length (minutes)", 15, 120, 45, 5)
+    topic = st.text_input("Topic of study", value=st.session_state.topic)
+    notes = st.text_area("Paste notes here (optional)", value=st.session_state.notes)
+    duration = st.slider("Total session duration (minutes)", 15, 120, 45, 5)
 
-    if st.button("Start My Smart Session"):
-        try:
-            res = requests.post("http://127.0.0.1:8000/generate-session", json={
-                "subject": topic,
-                "duration_minutes": duration,
-                "notes_text": notes
-            })
+    if st.button("Start Session") and topic:
+        st.session_state.topic = topic
+        st.session_state.notes = notes
+        st.session_state.duration = duration
+        st.session_state.timer_remaining = duration * 60
+        st.session_state.stage = "chat"
+        st.session_state.chat_history = [{
+            "user": "",
+            "arlo": f"Hi! I'm ARLO. Let's begin our study session on **{topic}**. Ready to start?"
+        }]
+        st.rerun()
 
-            if res.status_code == 200:
-                raw = res.json().get("session_plan")
-                plan = json.loads(raw) if isinstance(raw, str) else raw
-                st.session_state.tasks = plan["tasks"]
-                st.session_state.time_per_task = duration / max(len(plan["tasks"]), 1)
-                st.session_state.current_task = 0
-                st.session_state.timer_remaining = int(st.session_state.time_per_task * 60)
-                st.session_state.timer_running = False
-                st.session_state.topic = topic
-                st.session_state.notes = notes
-                st.session_state.stage = "session"
-
-                # Prime ARLO chat
-                arlo_intro = f"Hi! I'm ARLO, your study coach. Let's begin your session on **{topic}**. Ready?"
-                st.session_state.chat_history.append({
-                    "user": "",
-                    "arlo": arlo_intro
-                })
-                st.rerun()
-            else:
-                st.error("❌ Could not generate session.")
-        except Exception as e:
-            st.error(f"⚠️ Error: {e}")
-
-elif st.session_state.stage == "session":
-    col1, col2 = st.columns([4, 1])
+# ---------- CHAT SESSION ----------
+elif st.session_state.stage == "chat":
+    col1, col2 = st.columns([5, 1])
 
     with col1:
-        st.subheader("🧠 ARLO Tutor Session")
+        st.subheader(f"🧠 Studying: {st.session_state.topic}")
+        st.markdown("---")
 
-        # Display chat history
-        for msg in st.session_state.chat_history:
-            if msg["arlo"]:
-                st.markdown(f"**🧠 ARLO:** {msg['arlo']}")
-            if msg["user"]:
-                st.markdown(f"**🙋 You:** {msg['user']}")
+        # Display conversation history
+        recent_turns = st.session_state.chat_history[-6:]  # only show last 6 turns
+        for turn in recent_turns:
+            if turn["arlo"]:
+                st.markdown(f"**🧠 ARLO:** {turn['arlo']}")
+            if turn["user"]:
+                st.markdown(f"**🙋 You:** {turn['user']}")
+
 
         st.markdown("---")
-###
-        
+
+        # Chat input form (safe from repetition)
         with st.form("chat_input_form", clear_on_submit=True):
-            user_message = st.text_input("Type your response below:")
-        
-            submitted = st.form_submit_button("Send")
-        
-        if submitted and user_message.strip():
-            # Prepare payload for ARLO backend
+            user_message = st.text_input("Your response:")
+            send_it = st.form_submit_button("Send")
+
+        if send_it and user_message.strip():
+            # Send to backend for ARLO reply
             payload = {
                 "topic": st.session_state.topic,
                 "notes_text": st.session_state.notes,
@@ -124,60 +101,67 @@ elif st.session_state.stage == "session":
                 "user_input": user_message,
                 "history": st.session_state.chat_history,
             }
-        
+
             try:
                 response = requests.post("http://127.0.0.1:8000/next-task", json=payload)
-                arlo_reply = response.json().get("arlo_reply", "⚠️ ARLO did not reply.")
+                reply = response.json().get("arlo_reply", "⚠️ ARLO did not reply.")
             except Exception as e:
-                arlo_reply = f"⚠️ Error contacting ARLO: {e}"
-        
+                reply = f"⚠️ Error: {e}"
+
+            # Append to chat history
             st.session_state.chat_history.append({
                 "user": user_message,
-                "arlo": arlo_reply
-            })
-            st.session_state.current_step += 1
-        
-            # Prevent re-triggering by exiting early
-            st.stop()
-
-##
-
-        if user_message:
-            # Send to /next-task
-            payload = {
-                "topic": st.session_state.topic,
-                "notes_text": st.session_state.notes,
-                "current_step": st.session_state.current_step,
-                "user_input": user_input,
-                "history": st.session_state.chat_history
-            }
-
-            try:
-                res = requests.post("http://127.0.0.1:8000/next-task", json=payload)
-                arlo_reply = res.json().get("arlo_reply", "⚠️ ARLO did not reply.")
-            except Exception as e:
-                arlo_reply = f"⚠️ Error contacting ARLO: {e}"
-
-            # Update session state
-            st.session_state.chat_history.append({
-                "user": user_input,
-                "arlo": arlo_reply
+                "arlo": reply
             })
             st.session_state.current_step += 1
             st.rerun()
 
     with col2:
-        st.markdown("### ⏳ Timer")
+        st.markdown("### ⏳ Time Remaining")
         mins, secs = divmod(st.session_state.timer_remaining, 60)
-        st.markdown(f"<div class='timer-box'><h2>{mins:02}:{secs:02}</h2></div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='timer-box'>{mins:02}:{secs:02}</div>", unsafe_allow_html=True)
 
-        if st.button("⏸ Pause" if st.session_state.timer_running else "▶ Resume"):
-            st.session_state.timer_running = not st.session_state.timer_running
+        col_pause, col_add = st.columns(2)
+        with col_pause:
+            if st.button("⏯ Pause" if st.session_state.timer_running else "▶ Resume"):
+                st.session_state.timer_running = not st.session_state.timer_running
+                st.rerun()
 
-        if st.button("➕ Add 5 Min"):
-            st.session_state.timer_remaining += 5 * 60
+        with col_add:
+            if st.button("➕ +5 min"):
+                st.session_state.timer_remaining += 300
+                st.rerun()
 
+        # Timer countdown (only ticks when running)
         if st.session_state.timer_running:
             time.sleep(1)
             st.session_state.timer_remaining -= 1
+            if st.session_state.timer_remaining <= 0:
+                st.session_state.timer_running = False
             st.rerun()
+        # End session if timer hits 0
+        if st.session_state.timer_remaining <= 0 and not st.session_state.timer_running:
+            st.session_state.stage = "complete"
+            st.rerun()
+
+elif st.session_state.stage == "complete":
+    st.success("🎉 Your session is complete!")
+    st.markdown("Well done! Here's a final summary of your session and what to review tonight.")
+
+    # Call backend for review sheet
+    try:
+        review_res = requests.post("http://127.0.0.1:8000/generate-review-sheet", json={
+            "topic": st.session_state.topic,
+            "notes_text": st.session_state.notes,
+            "missed_flashcards": [],
+            "feynman_feedback": ""
+        })
+        review = review_res.json().get("review_sheet", "No review content received.")
+        st.markdown(f"### 🛏 Bedtime Review Sheet\n{review}")
+    except Exception as e:
+        st.error(f"⚠️ Could not fetch review sheet: {e}")
+
+    if st.button("🔄 Start New Session"):
+        for key in st.session_state.keys():
+            del st.session_state[key]
+        st.rerun()
