@@ -108,7 +108,11 @@ elif st.session_state.stage == "session":
                 st.markdown(f"**🙋 You:** {msg['user']}")
 
         st.markdown("---")
-        user_input = st.text_input("Type your response and press Enter:", key="user_input")
+        user_input = st.text_input("Type your response and press Enter:", key="input_box")
+
+        if user_input:
+            # Clear input on submit
+            st.session_state.input_box = ""  # 👈 this resets the input box
 
         if user_input:
             # Send to /next-task
