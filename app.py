@@ -114,25 +114,85 @@ elif st.session_state.stage == "chat":
                         
             # ---------- TOOL EXECUTION RENDERING ----------
             if "tool_mode" in st.session_state:
-            
-                if st.session_state.tool_mode == "flashcard":
-                    st.subheader("📚 Flashcard Practice")
-            
-                    cards = st.session_state.get("flashcards", [])
-                    index = st.session_state.get("flash_index", 0)
-            
-                    if index < len(cards):
-                        card = cards[index]
-                        st.markdown(f"**Q{index+1}: {card['question']}**")
-                        if st.button("Show Answer"):
-                            st.markdown(f"**A{index+1}: {card['answer']}**")
-                        if st.button("Next Flashcard"):
-                            st.session_state.flash_index += 1
-                            st.rerun()
-                    else:
-                        st.success("✅ You've completed all flashcards.")
-                        st.session_state.tool_mode = None
-            
+                
+            elif st.session_state.tool_mode == "flashcard":
+                st.subheader("📚 Flashcard Practice")
+        
+                cards = st.session_state.get("flashcards", [])
+                index = st.session_state.get("flash_index", 0)
+        
+                if index < len(cards):
+                    card = cards[index]
+                    question = card['question']
+                    answer = card['answer']
+        
+                    import streamlit.components.v1 as components
+        
+                    html_card = f"""
+                    <style>
+                        .flip-card {{
+                          background-color: transparent;
+                          width: 300px;
+                          height: 200px;
+                          perspective: 1000px;
+                          margin: auto;
+                        }}
+                        .flip-card-inner {{
+                          position: relative;
+                          width: 100%;
+                          height: 100%;
+                          text-align: center;
+                          transition: transform 0.6s;
+                          transform-style: preserve-3d;
+                        }}
+                        .flip-card:hover .flip-card-inner {{
+                          transform: rotateY(180deg);
+                        }}
+                        .flip-card-front, .flip-card-back {{
+                          position: absolute;
+                          width: 100%;
+                          height: 100%;
+                          -webkit-backface-visibility: hidden;
+                          backface-visibility: hidden;
+                          display: flex;
+                          align-items: center;
+                          justify-content: center;
+                          border: 2px solid #014421;
+                          border-radius: 10px;
+                          font-size: 18px;
+                          padding: 10px;
+                        }}
+                        .flip-card-front {{
+                          background-color: #014421;
+                          color: white;
+                        }}
+                        .flip-card-back {{
+                          background-color: #ffffff;
+                          color: black;
+                          transform: rotateY(180deg);
+                        }}
+                    </style>
+                    <div class="flip-card">
+                      <div class="flip-card-inner">
+                        <div class="flip-card-front">
+                          {question}
+                        </div>
+                        <div class="flip-card-back">
+                          {answer}
+                        </div>
+                      </div>
+                    </div>
+                    """
+        
+                    components.html(html_card, height=250)
+        
+                    if st.button("Next Flashcard"):
+                        st.session_state.flash_index += 1
+                        st.rerun()
+                else:
+                    st.success("✅ You've completed all flashcards.")
+                    st.session_state.tool_mode = None
+
                 elif st.session_state.tool_mode == "blurting":
                     st.subheader("🗣 Blurting Practice")
                     user_blurt = st.text_area("Write everything you remember (from memory):")
@@ -166,44 +226,44 @@ elif st.session_state.stage == "chat":
                         st.rerun()
 
             
-            elif st.session_state.tool_mode == "mindmap":
-                st.subheader("🧭 Interactive Mind Map")
-                try:
-                    res = requests.post("http://127.0.0.1:8000/generate-mindmap", json={
-                        "topic": st.session_state.topic,
-                        "notes_text": st.session_state.notes
-                    })
-                    data = res.json()
-                    topic = data.get("topic", "Mind Map")
-                    nodes = data.get("nodes", {})
-        
-                    from pyvis.network import Network
-                    import networkx as nx
-                    import streamlit.components.v1 as components
-        
-                    net = Network(height="600px", width="100%", bgcolor="#000000", font_color="white")
-                    net.barnes_hut()
-        
-                    net.add_node(topic, label=topic, shape='ellipse', color="#00FF00")
-        
-                    for sub, children in nodes.items():
-                        net.add_node(sub, label=sub, shape='box', color="#228B22")
-                        net.add_edge(topic, sub)
-                        for child in children:
-                            net.add_node(child, label=child, shape='dot', color="#AAAAAA")
-                            net.add_edge(sub, child)
-        
-                    net.save_graph("/tmp/mindmap.html")
-                    HtmlFile = open("/tmp/mindmap.html", 'r', encoding='utf-8')
-                    source_code = HtmlFile.read()
-                    components.html(source_code, height=600, scrolling=True)
-        
-                except Exception as e:
-                    st.error(f"⚠️ Could not load mind map: {e}")
-        
-                if st.button("✅ Done with Mind Map"):
-                    st.session_state.tool_mode = None
-                    st.rerun()
+                elif st.session_state.tool_mode == "mindmap":
+                    st.subheader("🧭 Interactive Mind Map")
+                    try:
+                        res = requests.post("http://127.0.0.1:8000/generate-mindmap", json={
+                            "topic": st.session_state.topic,
+                            "notes_text": st.session_state.notes
+                        })
+                        data = res.json()
+                        topic = data.get("topic", "Mind Map")
+                        nodes = data.get("nodes", {})
+            
+                        from pyvis.network import Network
+                        import networkx as nx
+                        import streamlit.components.v1 as components
+            
+                        net = Network(height="600px", width="100%", bgcolor="#000000", font_color="white")
+                        net.barnes_hut()
+            
+                        net.add_node(topic, label=topic, shape='ellipse', color="#00FF00")
+            
+                        for sub, children in nodes.items():
+                            net.add_node(sub, label=sub, shape='box', color="#228B22")
+                            net.add_edge(topic, sub)
+                            for child in children:
+                                net.add_node(child, label=child, shape='dot', color="#AAAAAA")
+                                net.add_edge(sub, child)
+            
+                        net.save_graph("/tmp/mindmap.html")
+                        HtmlFile = open("/tmp/mindmap.html", 'r', encoding='utf-8')
+                        source_code = HtmlFile.read()
+                        components.html(source_code, height=600, scrolling=True)
+            
+                    except Exception as e:
+                        st.error(f"⚠️ Could not load mind map: {e}")
+            
+                    if st.button("✅ Done with Mind Map"):
+                        st.session_state.tool_mode = None
+                        st.rerun()
 
 
             # Intelligent response handling
