@@ -79,10 +79,11 @@ elif st.session_state.stage == "chat":
         # Display conversation history
         recent_turns = st.session_state.chat_history[-6:]  # only show last 6 turns
         for turn in recent_turns:
-            if turn["arlo"]:
-                st.markdown(f"**🧠 ARLO:** {turn['arlo']}")
             if turn["user"]:
                 st.markdown(f"**🙋 You:** {turn['user']}")
+            if turn["arlo"]:
+                st.markdown(f"**🧠 ARLO:** {turn['arlo']}")
+
 
 
         st.markdown("---")
@@ -119,7 +120,11 @@ elif st.session_state.stage == "chat":
     with col2:
         st.markdown("### ⏳ Time Remaining")
         mins, secs = divmod(st.session_state.timer_remaining, 60)
-        st.markdown(f"<div class='timer-box'>{mins:02}:{secs:02}</div>", unsafe_allow_html=True)
+        st.markdown(f"### ⏳ {mins:02}:{secs:02}")
+        progress = st.progress(1.0)  # full at start
+        elapsed = st.session_state.duration * 60 - st.session_state.timer_remaining
+        percent = max(0, 1 - (elapsed / (st.session_state.duration * 60)))
+        progress.progress(percent)
 
         col_pause, col_add = st.columns(2)
         with col_pause:
