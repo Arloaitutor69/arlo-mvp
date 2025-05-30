@@ -164,7 +164,7 @@ elif st.session_state.stage == "session":
         if st.session_state.timer_running:
             time.sleep(1)
             st.session_state.timer_remaining -= 1
-            st.experimental_rerun()
+            st.rerun()
 
 # --- ARLO Chat Sidebar ---
 with st.sidebar:
