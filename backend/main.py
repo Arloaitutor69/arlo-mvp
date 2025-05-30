@@ -1,18 +1,13 @@
+# backend/main.py
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-import json
 import os
-
-from flashcard_generator import generate_flashcards
-from feynman_feedback import get_feynman_feedback
-from session_planner import generate_study_plan
-from Chat_Quiz_Utils import generate_chat_response, generate_quiz
+import openai
 
 app = FastAPI()
 
-# Allow CORS for frontend
+# CORS setup
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -21,74 +16,39 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ---------- Pydantic Models ----------
-class SessionRequest(BaseModel):
-    subject: str
-    duration_minutes: int
-    notes_text: str
+openai.api_key = os.getenv("OPENAI_API_KEY")
 
-class FlashcardRequest(BaseModel):
-    topic: str
-    notes_text: str
-    difficulty: str
-    format: str
+if not openai.api_key:
+    raise RuntimeError("OPENAI_API_KEY environment variable not set. Please export it in your terminal.")
 
-class FeynmanRequest(BaseModel):
-    topic: str
-    user_explanation: str
-
-class ReviewSheetRequest(BaseModel):
-    topic: str
-    notes_text: str
-    missed_flashcards: list[str]
-    feynman_feedback: str
-
-class ChatRequest(BaseModel):
-    message: str
-
-class QuizRequest(BaseModel):
-    topic: str
-    notes_text: str
-    num_questions: int
-
-# ---------- Endpoints ----------
-@app.post("/session")
-async def generate_session_plan(req: SessionRequest):
-    try:
-        plan = generate_study_plan(req.subject, req.duration_minutes, req.notes_text)
-        return {"plan": plan}
-    except Exception as e:
-        return {"error": str(e)}
-
-@app.post("/flashcards")
-async def flashcards(req: FlashcardRequest):
-    try:
-        cards = generate_flashcards(req.topic, req.notes_text, req.difficulty, req.format)
-        return {"flashcards": cards}
-    except Exception as e:
-        return {"error": str(e)}
-
-@app.post("/feynman")
-async def feynman(req: FeynmanRequest):
-    try:
-        feedback = get_feynman_feedback(req.topic, req.user_explanation)
-        return {"feedback": feedback}
-    except Exception as e:
-        return {"error": str(e)}
+@app.get("/")
+def root():
+    return {"status": "ARLO backend is running"}
 
 @app.post("/chat")
-async def chat(req: ChatRequest):
-    try:
-        reply = generate_chat_response(req.message)
-        return {"response": reply}
-    except Exception as e:
-        return {"error": str(e)}
+async def chat(request: Request):
+    print("[INFO] /chat endpoint hit")
+    data = await request.json()
+    user_input = data.get("message", "")
+    print(f"[DEBUG] user_input = {user_input}")
 
-@app.post("/quiz")
-async def quiz(req: QuizRequest):
+    if not user_input:
+        return {"response": "Empty message received."}
+
     try:
-        quiz_json = generate_quiz(req.topic, req.notes_text, req.num_questions)
-        quiz = json.loads(quiz_json)
-        return {"quiz": quiz}
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "You are a helpful AI tutor."},
+                {"role": "user", "content": user_input}
+            ]
+        )
+
+        reply = response["choices"][0]["message"]["content"]
+        print("[DEBUG] reply:", reply)
+
+        return {"response": reply}
+
     except Exception as e:
-        return {"error": str(e)}
+        print("[ERROR] OpenAI failure:", e)
+        return {"response": f"Error occurred: {str(e)}"}
