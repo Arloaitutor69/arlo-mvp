@@ -183,3 +183,56 @@ def generate_mindmap(data: MindmapRequest):
     )
 
     return {"mindmap": response.choices[0].message.content.strip()}
+from fastapi import Request
+from pydantic import BaseModel
+
+class TaskProgress(BaseModel):
+    topic: str
+    notes_text: str
+    current_step: int
+    user_input: str
+    history: list
+
+@app.post("/next-task")
+def next_task(payload: TaskProgress):
+    topic = payload.topic
+    notes = payload.notes_text
+    step = payload.current_step
+    user_input = payload.user_input or ""
+    history = payload.history or []
+
+    system_prompt = (
+        "You are ARLO, a highly intelligent and friendly AI study tutor. "
+        "You're walking a student through an interactive study session on the topic: "
+        f"'{topic}'. Their notes are:\n\n{notes}\n\n"
+        "You must teach them the material clearly and conversationally, and actively use relevant study techniques (flashcards, Feynman, blurting, mind maps) to help them retain it. "
+        "After each response from the student, you continue based on how they did. "
+        "Be warm, focused, and step-by-step. Only generate one step at a time."
+    )
+
+    chat_history = [{"role": "system", "content": system_prompt}]
+
+    # Append past turns
+    for turn in history:
+        chat_history.append({"role": "user", "content": turn["user"]})
+        chat_history.append({"role": "assistant", "content": turn["arlo"]})
+
+    # Append current turn
+    if user_input:
+        chat_history.append({"role": "user", "content": user_input})
+
+    # Generate next step
+    import openai
+    import os
+    openai.api_key = os.getenv("OPENAI_API_KEY")
+
+    try:
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",  # or use gpt-4 if needed
+            messages=chat_history,
+            temperature=0.7
+        )
+        reply = response.choices[0].message.content.strip()
+        return {"arlo_reply": reply}
+    except Exception as e:
+        return {"arlo_reply": f"⚠️ ARLO had trouble generating the next step: {e}"}
