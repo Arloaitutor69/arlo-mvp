@@ -165,6 +165,47 @@ elif st.session_state.stage == "chat":
                         st.session_state.tool_mode = None
                         st.rerun()
 
+            
+            elif st.session_state.tool_mode == "mindmap":
+                st.subheader("🧭 Interactive Mind Map")
+                try:
+                    res = requests.post("http://127.0.0.1:8000/generate-mindmap", json={
+                        "topic": st.session_state.topic,
+                        "notes_text": st.session_state.notes
+                    })
+                    data = res.json()
+                    topic = data.get("topic", "Mind Map")
+                    nodes = data.get("nodes", {})
+        
+                    from pyvis.network import Network
+                    import networkx as nx
+                    import streamlit.components.v1 as components
+        
+                    net = Network(height="600px", width="100%", bgcolor="#000000", font_color="white")
+                    net.barnes_hut()
+        
+                    net.add_node(topic, label=topic, shape='ellipse', color="#00FF00")
+        
+                    for sub, children in nodes.items():
+                        net.add_node(sub, label=sub, shape='box', color="#228B22")
+                        net.add_edge(topic, sub)
+                        for child in children:
+                            net.add_node(child, label=child, shape='dot', color="#AAAAAA")
+                            net.add_edge(sub, child)
+        
+                    net.save_graph("/tmp/mindmap.html")
+                    HtmlFile = open("/tmp/mindmap.html", 'r', encoding='utf-8')
+                    source_code = HtmlFile.read()
+                    components.html(source_code, height=600, scrolling=True)
+        
+                except Exception as e:
+                    st.error(f"⚠️ Could not load mind map: {e}")
+        
+                if st.button("✅ Done with Mind Map"):
+                    st.session_state.tool_mode = None
+                    st.rerun()
+
+
             # Intelligent response handling
             insert_tool = None
             tool_data = None
