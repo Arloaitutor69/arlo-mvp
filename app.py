@@ -112,12 +112,55 @@ elif st.session_state.stage == "chat":
                 reply = f"⚠️ Error: {e}"
 
             # Append to chat history
+            # Intelligent response handling
+            insert_tool = None
+            tool_data = None
+            
+            # Check what ARLO said
+            if isinstance(reply, str):
+                reply_lower = reply.lower()
+                if "flashcard" in reply_lower:
+                    insert_tool = "flashcard"
+                elif "blurting" in reply_lower:
+                    insert_tool = "blurting"
+                elif "feynman" in reply_lower or "teach back" in reply_lower:
+                    insert_tool = "feynman"
+                elif "mind map" in reply_lower:
+                    insert_tool = "mindmap"
+            
+            # Save ARLO message
             st.session_state.chat_history.append({
                 "user": user_message,
                 "arlo": reply
             })
             st.session_state.current_step += 1
-            st.rerun()
+            
+            # Trigger study tool interaction
+            if insert_tool == "flashcard":
+                st.session_state.tool_mode = "flashcard"
+                res = requests.post("http://127.0.0.1:8000/generate-flashcards", json={
+                    "topic": st.session_state.topic,
+                    "notes_text": st.session_state.notes,
+                    "difficulty": "medium",
+                    "format": "Q&A"
+                })
+                flashcards = res.json().get("flashcards", [])
+                st.session_state.flashcards = flashcards
+                st.session_state.flash_index = 0
+                st.rerun()
+            
+            elif insert_tool == "blurting":
+                st.session_state.tool_mode = "blurting"
+                st.rerun()
+            
+            elif insert_tool == "feynman":
+                st.session_state.tool_mode = "feynman"
+                st.rerun()
+            
+            elif insert_tool == "mindmap":
+                st.session_state.tool_mode = "mindmap"
+                st.rerun()
+
 
     with col2:
         st.markdown("### ⏳ Time Remaining")
