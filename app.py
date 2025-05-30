@@ -137,7 +137,7 @@ elif st.session_state.stage == "session":
                 st.session_state.current_step += 1
         
                 # Force clean rerun after sending
-                st.experimental_rerun()
+                st.rerun()
 
 
         if user_input:
