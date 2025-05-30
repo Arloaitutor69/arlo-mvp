@@ -110,8 +110,61 @@ elif st.session_state.stage == "chat":
                 reply = response.json().get("arlo_reply", "⚠️ ARLO did not reply.")
             except Exception as e:
                 reply = f"⚠️ Error: {e}"
+            
+                        
+            # ---------- TOOL EXECUTION RENDERING ----------
+            if "tool_mode" in st.session_state:
+            
+                if st.session_state.tool_mode == "flashcard":
+                    st.subheader("📚 Flashcard Practice")
+            
+                    cards = st.session_state.get("flashcards", [])
+                    index = st.session_state.get("flash_index", 0)
+            
+                    if index < len(cards):
+                        card = cards[index]
+                        st.markdown(f"**Q{index+1}: {card['question']}**")
+                        if st.button("Show Answer"):
+                            st.markdown(f"**A{index+1}: {card['answer']}**")
+                        if st.button("Next Flashcard"):
+                            st.session_state.flash_index += 1
+                            st.rerun()
+                    else:
+                        st.success("✅ You've completed all flashcards.")
+                        st.session_state.tool_mode = None
+            
+                elif st.session_state.tool_mode == "blurting":
+                    st.subheader("🗣 Blurting Practice")
+                    user_blurt = st.text_area("Write everything you remember (from memory):")
+                    if st.button("Submit Blurting"):
+                        res = requests.post("http://127.0.0.1:8000/blurting-feedback", json={
+                            "topic": st.session_state.topic,
+                            "user_blurting": user_blurt,
+                            "reference_notes": st.session_state.notes
+                        })
+                        feedback = res.json().get("blurting_feedback", "")
+                        st.markdown("### 🔍 Feedback")
+                        st.markdown(feedback)
+                        st.session_state.tool_mode = None
+                        st.rerun()
+            
+                elif st.session_state.tool_mode == "feynman":
+                    st.subheader("🧠 Feynman Technique (Teach Back)")
+                    explanation = st.text_area("Explain the concept in your own words:")
+                    if st.button("Submit Explanation"):
+                        res = requests.post("http://127.0.0.1:8000/feynman-feedback", json={
+                            "topic": st.session_state.topic,
+                            "user_explanation": explanation
+                        })
+                        result = res.json().get("feynman_response", {})
+                        st.markdown("### 💬 Feedback")
+                        st.markdown(result.get("feedback", "No feedback."))
+                        st.markdown("### Follow-Up Questions")
+                        for q in result.get("follow_up_questions", []):
+                            st.markdown(f"- {q}")
+                        st.session_state.tool_mode = None
+                        st.rerun()
 
-            # Append to chat history
             # Intelligent response handling
             insert_tool = None
             tool_data = None
@@ -160,6 +213,7 @@ elif st.session_state.stage == "chat":
             elif insert_tool == "mindmap":
                 st.session_state.tool_mode = "mindmap"
                 st.rerun()
+
 
 
     with col2:
