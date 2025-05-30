@@ -110,9 +110,31 @@ elif st.session_state.stage == "session":
         st.markdown("---")
         user_input = st.text_input("Type your response and press Enter:", key="input_box")
 
-        if user_input:
-            # Clear input on submit
-            st.session_state.input_box = ""  # 👈 this resets the input box
+        with st.form("chat_input_form", clear_on_submit=True):
+            user_input = st.text_input("Type your response:", key="input_box")
+            submitted = st.form_submit_button("Send")
+        
+            if submitted and user_input:
+                payload = {
+                    "topic": st.session_state.topic,
+                    "notes_text": st.session_state.notes,
+                    "current_step": st.session_state.current_step,
+                    "user_input": user_input,
+                    "history": st.session_state.chat_history
+                }
+        
+                try:
+                    res = requests.post("http://127.0.0.1:8000/next-task", json=payload)
+                    arlo_reply = res.json().get("arlo_reply", "⚠️ ARLO did not reply.")
+                except Exception as e:
+                    arlo_reply = f"⚠️ Error contacting ARLO: {e}"
+        
+                st.session_state.chat_history.append({
+                    "user": user_input,
+                    "arlo": arlo_reply
+                })
+                st.session_state.current_step += 1
+                st.rerun()
 
         if user_input:
             # Send to /next-task
