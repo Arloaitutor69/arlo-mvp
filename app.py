@@ -142,7 +142,7 @@ elif st.session_state.stage == "session":
 
 ##
 
-        if user_input:
+        if user_message:
             # Send to /next-task
             payload = {
                 "topic": st.session_state.topic,
