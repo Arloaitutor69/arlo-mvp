@@ -114,7 +114,6 @@ elif st.session_state.stage == "chat":
                         
                 # ---------- TOOL EXECUTION RENDERING ----------                
             if "tool_mode" in st.session_state:
-        
                 elif st.session_state.tool_mode == "flashcard":
                     st.subheader("📚 Flashcard Practice")
             
