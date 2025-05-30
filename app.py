@@ -3,6 +3,8 @@ import streamlit as st
 import requests
 import time
 import json
+import streamlit.components.v1 as components
+
 
 # ---------- PAGE CONFIG ----------
 st.set_page_config(page_title="ARLO Tutor", layout="wide")
@@ -136,6 +138,41 @@ elif st.session_state.stage == "chat":
             if st.button("➕ +5 min"):
                 st.session_state.timer_remaining += 300
                 st.rerun()
+
+        ###
+
+        # Timer calculation
+        elapsed = st.session_state.duration * 60 - st.session_state.timer_remaining
+        percent = max(0, min(100, 100 * elapsed / (st.session_state.duration * 60)))
+        remaining_minutes = st.session_state.timer_remaining // 60
+        remaining_seconds = st.session_state.timer_remaining % 60
+        
+        circle_html = f"""
+        <div style="display: flex; justify-content: center;">
+          <div style="position: relative; width: 150px; height: 150px;">
+            <svg viewBox="0 0 36 36" width="150" height="150">
+              <path
+                style="fill: none; stroke: #eee; stroke-width: 3.8;"
+                d="M18 2.0845
+                   a 15.9155 15.9155 0 0 1 0 31.831
+                   a 15.9155 15.9155 0 0 1 0 -31.831"
+              />
+              <path
+                style="fill: none; stroke: #00FF00; stroke-width: 3.8; stroke-dasharray: {percent}, 100; transition: stroke-dasharray 1s linear;"
+                d="M18 2.0845
+                   a 15.9155 15.9155 0 0 1 0 31.831
+                   a 15.9155 15.9155 0 0 1 0 -31.831"
+              />
+              <text x="18" y="20.35" font-size="6" text-anchor="middle" fill="white">
+                {remaining_minutes:02}:{remaining_seconds:02}
+              </text>
+            </svg>
+          </div>
+        </div>
+        """
+        
+        components.html(circle_html, height=180)
+
 
         # Timer countdown (only ticks when running)
         if st.session_state.timer_running:
