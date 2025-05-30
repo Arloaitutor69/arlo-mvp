@@ -109,11 +109,12 @@ elif st.session_state.stage == "session":
 
         st.markdown("---")
 
-        with st.form("chat_input_form", clear_on_submit=True):
-            user_input = st.text_input("Type your response:", key="chat_input_field")
+        with st.form(key="chat_input_form", clear_on_submit=True):
+            user_input = st.text_input("Type your response:")
+        
             submitted = st.form_submit_button("Send")
         
-            if submitted and user_input:
+            if submitted and user_input.strip():
                 payload = {
                     "topic": st.session_state.topic,
                     "notes_text": st.session_state.notes,
@@ -128,12 +129,16 @@ elif st.session_state.stage == "session":
                 except Exception as e:
                     arlo_reply = f"⚠️ Error contacting ARLO: {e}"
         
+                # Update session history and advance step
                 st.session_state.chat_history.append({
-                    "user": user_input,
+                    "user": user_input.strip(),
                     "arlo": arlo_reply
                 })
                 st.session_state.current_step += 1
-                st.rerun()
+        
+                # Force clean rerun after sending
+                st.experimental_rerun()
+
 
         if user_input:
             # Send to /next-task
