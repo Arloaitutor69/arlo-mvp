@@ -1,4 +1,4 @@
-# ARLO MVP — Reworked Full Session Experience
+# ARLO Final app.py (Full MVP) — Setup screen, session flow, timer, chatbot
 import streamlit as st
 import requests
 import time
@@ -8,36 +8,15 @@ import os
 from pyvis.network import Network
 import streamlit.components.v1 as components
 
-# Initialize session state safely
-defaults = {
-    "topic": "",
-    "notes": "",
-    "current_task": 0,
-    "timer_remaining": 0,
-    "timer_running": False,
-    "tasks": [],
-    "stage": "setup"
-}
-for key, val in defaults.items():
-    if key not in st.session_state:
-        st.session_state[key] = val
-
-
 st.set_page_config(page_title="ARLO Study Session", layout="wide")
 
-# Custom styles
+# --- Style ---
 st.markdown("""
     <style>
         body { background-color: #000000; }
         .main { background-color: #000000; color: white; }
-        header, .css-18e3th9 {
-            background-color: #014421 !important;
-            color: white;
-        }
-        .stButton>button {
-            background-color: #014421;
-            color: white;
-        }
+        header, .css-18e3th9 { background-color: #014421 !important; color: white; }
+        .stButton>button { background-color: #014421; color: white; }
         .timer-circle {
             border-radius: 50%;
             border: 6px solid #00cc66;
@@ -54,26 +33,21 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
+# --- Init State ---
+defaults = {
+    "stage": "setup", "topic": "", "notes": "",
+    "current_task": 0, "timer_remaining": 0,
+    "timer_running": False, "tasks": [], "time_per_task": 25
+}
+for k, v in defaults.items():
+    if k not in st.session_state:
+        st.session_state[k] = v
+
 st.title("🌲 ARLO — Personalized AI Study Partner")
 
-# == Session Setup Phase ==
-if "stage" not in st.session_state:
-    st.session_state.stage = "setup"
-
+# --- Setup Phase ---
 if st.session_state.stage == "setup":
     st.header("📋 Setup Your Study Session")
-    topic = st.text_input("What topic are you studying?")
-    notes = st.text_area("Paste any notes or context here:")
-    duration = st.slider("How many minutes would you like to study?", 15, 120, 45, 5)
-
-if "topic" not in st.session_state:
-    st.session_state.topic = ""
-
-if "notes" not in st.session_state:
-    st.session_state.notes = ""
-
-    if st.button("Start Smart Study Session") and topic:
-            st.header("📋 Setup Your Study Session")
     topic = st.text_input("What topic are you studying?")
     notes = st.text_area("Paste any notes or context here:")
     duration = st.slider("How many minutes would you like to study?", 15, 120, 45, 5)
@@ -102,12 +76,11 @@ if "notes" not in st.session_state:
         except Exception as e:
             st.error(f"Error generating session: {e}")
 
-# == Study Session Phase ==
+# --- Session Screen ---
 elif st.session_state.stage == "session":
     st.header(f"🧠 Studying: {st.session_state.topic}")
     col1, col2 = st.columns([5, 1])
 
-    # === Main Task Display ===
     with col1:
         tasks = st.session_state.tasks
         idx = st.session_state.current_task
@@ -116,8 +89,6 @@ elif st.session_state.stage == "session":
             st.subheader(f"Task {idx + 1}/{len(tasks)}")
             st.markdown(task)
 
-            st.markdown("### Tools & Responses")
-            # TOOL DETECTION
             if "flashcard" in task.lower():
                 res = requests.post("http://127.0.0.1:8000/generate-flashcards", json={
                     "topic": st.session_state.topic, "notes_text": st.session_state.notes,
@@ -170,7 +141,6 @@ elif st.session_state.stage == "session":
                 st.session_state.current_task += 1
                 st.session_state.timer_remaining = int(st.session_state.time_per_task * 60)
                 st.rerun()
-
         else:
             st.success("🎉 All tasks complete!")
             review = requests.post("http://127.0.0.1:8000/generate-review-sheet", json={
@@ -183,25 +153,20 @@ elif st.session_state.stage == "session":
             st.markdown(review.json().get("review_sheet", ""))
             st.session_state.stage = "complete"
 
-    # === Timer Controls ===
     with col2:
         st.markdown("### ⏳ Time Left")
         mins, secs = divmod(st.session_state.timer_remaining, 60)
         st.markdown(f"<div class='timer-circle'>{mins:02}:{secs:02}</div>", unsafe_allow_html=True)
-
         if st.button("⏸ Pause" if st.session_state.timer_running else "▶ Resume"):
             st.session_state.timer_running = not st.session_state.timer_running
-
         if st.button("+5 min"):
             st.session_state.timer_remaining += 5 * 60
+        if st.session_state.timer_running:
+            time.sleep(1)
+            st.session_state.timer_remaining -= 1
+            st.experimental_rerun()
 
-    # === Timer Update Mechanism ===
-    if st.session_state.timer_running:
-        time.sleep(1)
-        st.session_state.timer_remaining -= 1
-        st.experimental_rerun()
-
-# == Chatbot Access Panel ==
+# --- ARLO Chat Sidebar ---
 with st.sidebar:
     st.header("🤖 Chat with ARLO")
     user_question = st.text_input("Ask ARLO anything:")
@@ -213,3 +178,4 @@ with st.sidebar:
         })
         st.markdown("**ARLO says:**")
         st.markdown(chat_res.json().get("reply", "No response."))
+
