@@ -89,14 +89,14 @@ elif st.session_state.stage == "session":
             st.subheader(f"Task {idx + 1}/{len(tasks)}")
             st.markdown(task)
 
-            if "flashcard" in task.lower():
+            if isinstance(task, str) and "flashcard" in task.lower():
                 res = requests.post("http://127.0.0.1:8000/generate-flashcards", json={
                     "topic": st.session_state.topic, "notes_text": st.session_state.notes,
                     "difficulty": "medium", "format": "Q&A"
                 })
                 st.json(res.json())
 
-            elif "feynman" in task.lower():
+            elif isinstance(task, str) and "feynman" in task.lower():
                 exp = st.text_area("Explain the topic in your own words:")
                 if st.button("Submit Explanation"):
                     feyn = requests.post("http://127.0.0.1:8000/feynman-feedback", json={
@@ -107,7 +107,7 @@ elif st.session_state.stage == "session":
                     for q in parsed.get("follow_up_questions", []):
                         st.markdown(f"- {q}")
 
-            elif "blurting" in task.lower():
+            elif isinstance(task, str) and "blurting" in task.lower():
                 blurt = st.text_area("Write everything you know about the topic:")
                 if st.button("Submit Blurting"):
                     res = requests.post("http://127.0.0.1:8000/blurting-feedback", json={
@@ -117,7 +117,7 @@ elif st.session_state.stage == "session":
                     })
                     st.markdown(res.json().get("blurting_feedback", ""))
 
-            elif "mind map" in task.lower():
+            elif isinstance(task, str) and "mind map" in task.lower():
                 res = requests.post("http://127.0.0.1:8000/generate-mindmap", json={
                     "topic": st.session_state.topic,
                     "notes_text": st.session_state.notes
