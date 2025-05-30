@@ -8,6 +8,21 @@ import os
 from pyvis.network import Network
 import streamlit.components.v1 as components
 
+# Initialize session state safely
+defaults = {
+    "topic": "",
+    "notes": "",
+    "current_task": 0,
+    "timer_remaining": 0,
+    "timer_running": False,
+    "tasks": [],
+    "stage": "setup"
+}
+for key, val in defaults.items():
+    if key not in st.session_state:
+        st.session_state[key] = val
+
+
 st.set_page_config(page_title="ARLO Study Session", layout="wide")
 
 # Custom styles
@@ -58,6 +73,12 @@ if "notes" not in st.session_state:
     st.session_state.notes = ""
 
     if st.button("Start Smart Study Session") and topic:
+            st.header("📋 Setup Your Study Session")
+    topic = st.text_input("What topic are you studying?")
+    notes = st.text_area("Paste any notes or context here:")
+    duration = st.slider("How many minutes would you like to study?", 15, 120, 45, 5)
+
+    if st.button("Start Smart Study Session") and topic:
         try:
             res = requests.post("http://127.0.0.1:8000/generate-session", json={
                 "subject": topic,
@@ -80,6 +101,7 @@ if "notes" not in st.session_state:
                 st.error("Could not generate study session.")
         except Exception as e:
             st.error(f"Error generating session: {e}")
+
 # == Study Session Phase ==
 elif st.session_state.stage == "session":
     st.header(f"🧠 Studying: {st.session_state.topic}")
