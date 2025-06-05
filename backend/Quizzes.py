@@ -6,7 +6,7 @@ openai.api_key = os.getenv("OPENAI_API_KEY")
 def generate_chat_response(message: str) -> str:
     prompt = f"You are an AI tutor. Respond helpfully to: {message}"
     result = openai.ChatCompletion.create(
-        model="gpt-4",
+        model="gpt-3.5",
         messages=[{"role": "user", "content": prompt}]
     )
     return result["choices"][0]["message"]["content"]
@@ -23,7 +23,7 @@ Return a JSON list where each item has:
 - 'answer': the correct choice from the list
 """
     result = openai.ChatCompletion.create(
-        model="gpt-4",
+        model="gpt-3.5",
         messages=[{"role": "user", "content": prompt}]
     )
     return result["choices"][0]["message"]["content"]
