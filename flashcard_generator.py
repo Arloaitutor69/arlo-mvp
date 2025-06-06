@@ -29,12 +29,11 @@ Return ONLY a valid JSON array of objects in this format:
 Do not include explanations, headers, or any other text — just return the JSON array.
 """
 
-    # Call OpenAI with the generated prompt
+    # Properly aligned API call
     response = openai.ChatCompletion.create(
         model="gpt-3.5-turbo",
         messages=[{"role": "user", "content": prompt}],
         temperature=0.7
     )
 
-    # Return the raw string output from GPT (should be a JSON array)
     return response['choices'][0]['message']['content']
