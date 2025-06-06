@@ -1,7 +1,7 @@
 import os
 from openai import OpenAI
 
-# Set up the client explicitly
+# ✅ Create a proper OpenAI client object
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 def generate_flashcards(topic: str, notes_text: str, difficulty: str = "medium", format: str = "Q&A"):
@@ -28,6 +28,7 @@ Return ONLY a valid JSON array of objects in this format:
 Do not include explanations, headers, or any other text — just return the JSON array.
 """
 
+    # ✅ Use the client object — no proxies error
     response = client.chat.completions.create(
         model="gpt-3.5-turbo",
         messages=[{"role": "user", "content": prompt}],
