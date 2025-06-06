@@ -1,37 +1,40 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-import requests
+from pydantic import BaseModel
+from typing import List
+import json
 import os
 from dotenv import load_dotenv
+from flashcard_generator import generate_flashcards
 
-# Load environment variables from .env (for local dev)
+# Load local .env variables (optional)
 load_dotenv()
 
-# App instance
+# FastAPI app
 app = FastAPI()
 
-# Allow cross-origin requests from Lovable frontend
+# CORS configuration for Lovable frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Replace with Lovable domain if needed
+    allow_origins=["https://405e367a-b787-41ce-904a-d1882e6a9b65.lovableproject.com"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-from pydantic import BaseModel
-from typing import List
-import json
-from flashcard_generator import generate_flashcards
+# Health check endpoint
+@app.get("/ping")
+def health_check():
+    return {"status": "ok"}
 
-# Input format from Lovable
+# Flashcard request model
 class FlashcardRequest(BaseModel):
     topic: str
     content: str
     difficulty: str = "medium"
     count: int = 10
 
-# Output card schema
+# Flashcard response item model
 class FlashcardItem(BaseModel):
     id: str
     front: str
@@ -39,6 +42,7 @@ class FlashcardItem(BaseModel):
     difficulty: str
     category: str
 
+# Flashcard generation endpoint
 @app.post("/api/flashcards")
 def create_flashcards(data: FlashcardRequest):
     raw = generate_flashcards(data.topic, data.content, data.difficulty)
@@ -55,7 +59,7 @@ def create_flashcards(data: FlashcardRequest):
             front=card.get("question", ""),
             back=card.get("answer", ""),
             difficulty=data.difficulty,
-            category="basic_derivatives"  # Can update logic here later
+            category="basic_derivatives"
         ))
 
     return {
@@ -63,19 +67,3 @@ def create_flashcards(data: FlashcardRequest):
         "total_cards": len(flashcards),
         "estimated_time": f"{len(flashcards) * 1.5:.0f} minutes"
     }
-
-# Example Supabase call
-@app.get("/supabase-users")
-def get_users():
-    supabase_url = os.getenv("SUPABASE_URL")
-    supabase_key = os.getenv("SUPABASE_KEY")
-
-    response = requests.get(
-        f"{supabase_url}/rest/v1/users",
-        headers={
-            "apikey": supabase_key,
-            "Authorization": f"Bearer {supabase_key}",
-        },
-    )
-    return response.json()
-
