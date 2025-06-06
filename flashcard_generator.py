@@ -4,7 +4,7 @@ import os
 openai.api_key = os.getenv("OPENAI_API_KEY")
 
 def generate_flashcards(topic: str, notes_text: str, difficulty: str = "medium", format: str = "Q&A"):
-    prompt = f"""
+   prompt = f"""
 You are a flashcard tutor generating study cards from the following topic and notes.
 
 Topic: "{topic}"
@@ -18,10 +18,13 @@ Use only one of these formats:
 - "fill-in-the-blank" → Sentence with a missing term
 - "multiple-choice" → (Not supported yet — just return Q&A for now)
 
-Return output as a JSON array of objects:
-[{{ "question": "...", "answer": "..." }}]
+Return ONLY a valid JSON array of objects in this format:
+[
+  {{ "question": "What is ...?", "answer": "..." }},
+  {{ "question": "...?", "answer": "..." }}
+]
 
-Only include flashcards, no explanation.
+Do not include explanations, headers, or any other text — just return the JSON array.
 """
     response = openai.ChatCompletion.create(
         model="gpt-3.5-turbo",
