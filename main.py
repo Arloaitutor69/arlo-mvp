@@ -7,13 +7,12 @@ import os
 from dotenv import load_dotenv
 from flashcard_generator import generate_flashcards
 
-# Load local .env variables (optional)
+# Load local .env variables
 load_dotenv()
 
-# FastAPI app
 app = FastAPI()
 
-# CORS configuration for Lovable frontend
+# Allow CORS from your Lovable frontend
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["https://405e367a-b787-41ce-904a-d1882e6a9b65.lovableproject.com"],
@@ -22,23 +21,24 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Root route
 @app.get("/")
-def home():
+def root():
     return {"message": "ARLO backend is alive"}
 
-# Health check endpoint
+# Health check route
 @app.get("/ping")
 def health_check():
     return {"status": "ok"}
 
-# Flashcard request model
+# Flashcard input schema
 class FlashcardRequest(BaseModel):
     topic: str
     content: str
     difficulty: str = "medium"
     count: int = 10
 
-# Flashcard response item model
+# Flashcard output schema
 class FlashcardItem(BaseModel):
     id: str
     front: str
@@ -46,15 +46,22 @@ class FlashcardItem(BaseModel):
     difficulty: str
     category: str
 
-# Flashcard generation endpoint
+# Flashcard generation route
 @app.post("/api/flashcards")
 def create_flashcards(data: FlashcardRequest):
     raw = generate_flashcards(data.topic, data.content, data.difficulty)
 
+    print("RAW GPT OUTPUT:\n", raw)  # 👈 log GPT response before parsing
+
     try:
         parsed = json.loads(raw)
-    except json.JSONDecodeError:
-        return {"error": "AI returned invalid JSON", "raw": raw}
+    except json.JSONDecodeError as e:
+        print("JSON ERROR:", str(e))  # 👈 log parse failure
+        return {
+            "error": "AI returned invalid JSON",
+            "raw": raw,
+            "message": str(e)
+        }
 
     flashcards = []
     for i, card in enumerate(parsed[:data.count]):
