@@ -22,6 +22,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.get("/")
+def home():
+    return {"message": "ARLO backend is alive"}
+
 # Health check endpoint
 @app.get("/ping")
 def health_check():
