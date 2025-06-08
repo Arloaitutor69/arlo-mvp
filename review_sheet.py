@@ -37,6 +37,20 @@ class ReviewSheet(BaseModel):
     explanations: List[str]
 
 # ---------------------------
+# GPT API Call
+# ---------------------------
+def call_gpt(prompt: str) -> str:
+    response = openai.ChatCompletion.create(
+        model="gpt-3.5-turbo",
+        messages=[
+            {"role": "system", "content": "You are a helpful tutor."},
+            {"role": "user", "content": prompt}
+        ],
+        temperature=0.7
+    )
+    return response.choices[0].message.content.strip()
+
+# ---------------------------
 # Prompt Generator
 # ---------------------------
 def build_review_prompt(data: ReviewRequest) -> str:
@@ -77,7 +91,7 @@ def generate_review_sheet(data: ReviewRequest):
     raw_output = call_gpt(prompt)
 
     try:
-        parsed = eval(raw_output)
+        parsed = eval(raw_output) if raw_output.startswith("{") else {}
         return ReviewSheet(
             summary=parsed.get("summary", ""),
             memorization_facts=parsed.get("memorization_facts", []),
