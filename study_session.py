@@ -77,17 +77,21 @@ def generate_study_session(data: StudySessionRequest):
             ],
             temperature=0.6
         )
-
         gpt_raw = completion.choices[0].message.content
-        print("🤖 GPT raw response:\n", gpt_raw)
 
+        # 🛠 Remove Markdown-style code block wrapper if present
+        if gpt_raw.strip().startswith("```json") or gpt_raw.strip().startswith("```"):
+            gpt_raw = gpt_raw.strip().split("\n", 1)[1].rsplit("```", 1)[0].strip()
+        
+        print("🤖 GPT raw response:\n", gpt_raw)
+        
         # Parse GPT output
         try:
             block_list = json.loads(gpt_raw)
         except json.JSONDecodeError as e:
             print("❌ JSON parse error:", str(e))
             raise HTTPException(status_code=500, detail="Invalid JSON from GPT")
-
+        
         # Time tracking
         current = 0
         blocks = []
