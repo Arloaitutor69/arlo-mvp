@@ -23,7 +23,7 @@ from flashcard_generator import router as flashcard_router
 from quiz import router as quiz_router
 from study_session import router as study_session_router
 from chatbot import router as chatbot_router
-from review_sheet_backend import router as review_router
+from review_sheet import router as review_router
 
 # --- Include all routes ---
 app.include_router(flashcard_router)
