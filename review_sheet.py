@@ -3,6 +3,7 @@ from pydantic import BaseModel
 from typing import List, Optional
 import openai
 import os
+import json
 
 # ---------------------------
 # Setup
@@ -91,13 +92,15 @@ def generate_review_sheet(data: ReviewRequest):
     raw_output = call_gpt(prompt)
 
     try:
-        parsed = eval(raw_output) if raw_output.startswith("{") else {}
+        parsed = json.loads(raw_output)
         return ReviewSheet(
             summary=parsed.get("summary", ""),
             memorization_facts=parsed.get("memorization_facts", []),
             explanations=parsed.get("explanations", [])
         )
-    except Exception:
+    except Exception as e:
+        print("🔴 GPT RAW OUTPUT:\n", raw_output)
+        print("❌ Error parsing GPT output as JSON:", e)
         return ReviewSheet(
             summary="Unable to parse GPT response.",
             memorization_facts=[],
