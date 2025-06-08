@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 from flashcard_generator import generate_flashcards
 
 from quiz import router as quiz_router  # ✅ import the new quiz module
+from study_session import router as study_session_router
 
 
 # Load local .env variables
@@ -25,8 +26,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
+# including routers
 app.include_router(quiz_router)
+app.include_router(study_session_router)
 
 # Root route
 @app.get("/")
