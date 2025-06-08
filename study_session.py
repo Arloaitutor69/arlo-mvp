@@ -4,19 +4,21 @@ from typing import List, Optional, Dict
 import uuid
 import openai
 import os
+import json
+
+# Load environment variable
+openai.api_key = os.getenv("OPENAI_API_KEY")
 
 router = APIRouter()
 
-# Load your OpenAI key from env
-openai.api_key = os.getenv("OPENAI_API_KEY")
-
-# ==== Request + Response Models ====
+# Request format
 class StudySessionRequest(BaseModel):
     topic: str
     duration: int  # in minutes
     difficulty: Optional[str] = "medium"
     target_level: Optional[str] = "high_school"
 
+# Each study block
 class SessionBlock(BaseModel):
     id: str
     phase: str
@@ -27,58 +29,70 @@ class SessionBlock(BaseModel):
     payload: Optional[Dict] = None
     lovable_component: Optional[str] = None
 
+# Final response
 class StudySessionResponse(BaseModel):
     session_id: str
     topic: str
     total_duration: int
     blocks: List[SessionBlock]
 
-# ==== Helper: GPT Prompt Construction ====
-def build_gpt_prompt(topic: str, duration: int, difficulty: str, level: str):
-    return (
-        f"""
-        Create an optimal {duration}-minute study session on "{topic}" for a {level} student.
-        Use techniques like: flashcards, quiz, Feynman explanation, blurting, active recall.
-        Output JSON only: a list of blocks. Each block must include:
-        - phase (string)
-        - duration (int, in minutes)
-        - description (string)
-        - tool (string, e.g., 'flashcards', 'quiz', 'feynman', 'blurting', 'chatbot')
-        - payload (dict, optional): config for tool (e.g., question_count)
-        - lovable_component (string): which UI type to trigger (e.g., 'flashcard-carousel', 'quiz-form')
-        Return only raw JSON.
-        """
-    )
+# Helper: Build GPT system message
+def build_gpt_prompt(topic: str, duration: int, difficulty: str, level: str) -> str:
+    return f"""
+Create a {duration}-minute study session on the topic \"{topic}\" for a {level} student.
 
-# ==== GPT-Driven Study Plan Generator ====
+Use evidence-based techniques like:
+- flashcards
+- quiz
+- Feynman technique
+- blurting
+- active recall
+
+Output a JSON array. Each item should be:
+- phase: one of [\"priming\", \"flashcards\", \"quiz\", \"feynman\", \"blurting\", \"review\"]
+- duration: in minutes
+- description: what the student will do
+- tool: matching the backend module (e.g., \"flashcards\", \"quiz\", \"feynman\", \"blurting\", \"chatbot\")
+- payload: optional dictionary (e.g., question_count, target_level)
+- lovable_component: UI component name (e.g., \"flashcard-carousel\", \"quiz-form\", \"chat-bubble\")
+
+Return raw JSON only, no explanation.
+"""
+
 @router.post("/api/study-session", response_model=StudySessionResponse)
 def generate_study_session(data: StudySessionRequest):
+    print("📩 Received study session request:")
+    print(data)
+
     try:
         prompt = build_gpt_prompt(data.topic, data.duration, data.difficulty, data.target_level)
+        print("📤 Prompt sent to GPT:\n", prompt)
 
+        # OpenAI call
         completion = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
             messages=[
-                {"role": "system", "content": "You are an expert study coach AI."},
+                {"role": "system", "content": "You are a world-class AI tutor and study coach."},
                 {"role": "user", "content": prompt}
             ],
             temperature=0.6
         )
 
-        blocks_raw = completion.choices[0].message.content
+        gpt_raw = completion.choices[0].message.content
+        print("🤖 GPT raw response:\n", gpt_raw)
 
-        # Safely evaluate stringified JSON response
-        import json
+        # Parse GPT output
         try:
-            blocks_json = json.loads(blocks_raw)
-        except json.JSONDecodeError:
-            raise HTTPException(status_code=500, detail="Failed to parse GPT response.")
+            block_list = json.loads(gpt_raw)
+        except json.JSONDecodeError as e:
+            print("❌ JSON parse error:", str(e))
+            raise HTTPException(status_code=500, detail="Invalid JSON from GPT")
 
-        # Time tracker
+        # Time tracking
         current = 0
         blocks = []
 
-        for block in blocks_json:
+        for block in block_list:
             duration = block.get("duration", 5)
             blocks.append(SessionBlock(
                 id=f"block_{uuid.uuid4().hex[:6]}",
@@ -92,6 +106,8 @@ def generate_study_session(data: StudySessionRequest):
             ))
             current += duration
 
+        print("✅ Session plan built with", len(blocks), "blocks.")
+
         return StudySessionResponse(
             session_id=f"session_{uuid.uuid4().hex[:6]}",
             topic=data.topic,
@@ -100,4 +116,5 @@ def generate_study_session(data: StudySessionRequest):
         )
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"GPT error: {str(e)}")
+        print("🔥 Unexpected error:", str(e))
+        raise HTTPException(status_code=500, detail="Study session generation failed.")
