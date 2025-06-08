@@ -25,7 +25,6 @@ app.add_middleware(
 )
 
 
-app.include_router(flashcard_router)
 app.include_router(quiz_router)
 
 # Root route
