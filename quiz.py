@@ -3,20 +3,20 @@
 from fastapi import APIRouter
 from pydantic import BaseModel
 from typing import List, Literal, Union
-import random
 import uuid
+import random
 
-# Router setup
+# Set up router for quiz generation
 router = APIRouter()
 
-# Define input schema
+# Input model
 class QuizRequest(BaseModel):
     topic: str
     difficulty: Literal["easy", "medium", "hard"]
     question_count: int
     question_types: List[Literal["multiple_choice", "true_false"]]
 
-# Define output schema
+# Output models
 class QuizQuestion(BaseModel):
     id: int
     type: Literal["multiple_choice", "true_false"]
@@ -29,9 +29,9 @@ class QuizResponse(BaseModel):
     quiz_id: str
     questions: List[QuizQuestion]
 
-# Helper function to generate dummy questions (replace with LLM or DB later)
+# Dummy quiz generation logic
 def generate_questions(data: QuizRequest) -> List[QuizQuestion]:
-    sample_questions = []
+    questions = []
 
     for i in range(1, data.question_count + 1):
         q_type = random.choice(data.question_types)
@@ -40,7 +40,7 @@ def generate_questions(data: QuizRequest) -> List[QuizQuestion]:
             question = QuizQuestion(
                 id=i,
                 type="multiple_choice",
-                question=f"What is a key part of {data.topic.lower()}?",
+                question=f"What is a key part of {data.topic}?",
                 options=["Nucleus", "Mitochondria", "Ribosome", "Vacuole"],
                 correct_answer="Nucleus",
                 explanation="The nucleus contains DNA and controls cell activities."
@@ -54,11 +54,11 @@ def generate_questions(data: QuizRequest) -> List[QuizQuestion]:
                 explanation="Most biological processes in this topic involve cellular activity."
             )
 
-        sample_questions.append(question)
+        questions.append(question)
 
-    return sample_questions
+    return questions
 
-# POST endpoint
+# POST endpoint for quiz generation
 @router.post("/api/quiz", response_model=QuizResponse)
 async def create_quiz(data: QuizRequest):
     quiz_id = f"quiz_{uuid.uuid4().hex[:6]}"
