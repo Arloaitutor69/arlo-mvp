@@ -6,6 +6,8 @@ import json
 import os
 from dotenv import load_dotenv
 from flashcard_generator import generate_flashcards
+from quiz import router as quiz_router  # ✅ import the new quiz module
+
 
 # Load local .env variables
 load_dotenv()
@@ -21,6 +23,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
 # Root route
 @app.get("/")
 def root():
@@ -30,6 +33,11 @@ def root():
 @app.get("/ping")
 def health_check():
     return {"status": "ok"}
+
+# Optional: root for testing
+@app.get("/")
+def read_root():
+    return {"message": "ARLO backend is running"}
 
 # Flashcard input schema
 class FlashcardRequest(BaseModel):
