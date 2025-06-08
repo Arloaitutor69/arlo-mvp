@@ -11,8 +11,7 @@ app = FastAPI()
 # --- CORS config for Lovable frontend ---
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # ✅ TEMPORARY: allow all for debugging
-    ## put back after: ## allow_origins=["https://405e367a-b787-41ce-904a-d1882e6a9b65.lovableproject.com"],
+    put back after: ## allow_origins=["https://405e367a-b787-41ce-904a-d1882e6a9b65.lovableproject.com"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
