@@ -33,34 +33,38 @@ class ReviewRequest(BaseModel):
 
 class ReviewSheet(BaseModel):
     summary: str
-    weak_areas: List[str]
-    active_recall_questions: List[str]
-    blurt_prompt: str
-    mind_map_outline: List[str]
+    memorization_facts: List[str]
+    explanations: List[str]
 
 # ---------------------------
 # Prompt Generator
 # ---------------------------
 def build_review_prompt(data: ReviewRequest) -> str:
     log_text = "\n".join([
-        f"Phase: {entry.phase}\nQ: {entry.question}\nA: {entry.user_answer}\nCorrect: {entry.correct}\nFeedback: {entry.gpt_feedback}\n"
+        f"Q: {entry.question}\nA: {entry.user_answer}\nCorrect: {entry.correct}\nFeedback: {entry.gpt_feedback}\n"
         for entry in data.log if entry.question
     ])
 
     prompt = f"""
-You are Arlo, an AI tutor summarizing a student's session on the topic '{data.topic}'.
-The session lasted {data.duration} minutes and used these techniques: {', '.join(data.phases_used)}.
+You are Arlo, a helpful AI tutor.
+The student just finished a study session on "{data.topic}" using: {', '.join(data.phases_used)}.
+It lasted {data.duration} minutes.
 
-The student struggled most with: {', '.join(data.weak_areas)}.
-Here is what they worked on:
-
+Their weak areas were: {', '.join(data.weak_areas)}.
+Here is the session log:
 {log_text}
 
-Create a bedtime review sheet. Include:
-1. A warm session summary.
-2. A short list of active recall questions.
-3. A blurt prompt (ask them to recall from memory).
-4. A basic mind map outline with key steps or subtopics.
+Based on this, generate a bedtime review sheet with ONLY:
+1. A short personalized summary of what the student worked on and struggled with.
+2. A list of key facts the student should memorize before bed (especially from missed questions).
+3. Simple, clear explanations of any concepts they misunderstood.
+
+Output in JSON:
+{
+  "summary": "...",
+  "memorization_facts": ["..."],
+  "explanations": ["..."]
+}
 """
     return prompt
 
@@ -84,29 +88,21 @@ def call_gpt(prompt: str) -> str:
 @router.post("/api/review-sheet", response_model=ReviewSheet)
 def generate_review_sheet(data: ReviewRequest):
     prompt = build_review_prompt(data)
-    output = call_gpt(prompt)
+    raw_output = call_gpt(prompt)
 
-    # Minimal parser (assumes formatted output, else fallback)
-    lines = output.split("\n")
-    summary = lines[0].strip()
-    questions, mindmap = [], []
-    blurt_prompt = "Write everything you remember about the topic."
-
-    for line in lines:
-        if line.startswith("-") and "?" in line:
-            questions.append(line.strip("- "))
-        elif "blurt" in line.lower():
-            blurt_prompt = line.strip("- ")
-        elif line.startswith("*") or (":" in line and "?" not in line):
-            mindmap.append(line.strip("* "))
-
-    return ReviewSheet(
-        summary=summary,
-        weak_areas=data.weak_areas,
-        active_recall_questions=questions,
-        blurt_prompt=blurt_prompt,
-        mind_map_outline=mindmap
-    )
+    try:
+        parsed = eval(raw_output)
+        return ReviewSheet(
+            summary=parsed.get("summary", ""),
+            memorization_facts=parsed.get("memorization_facts", []),
+            explanations=parsed.get("explanations", [])
+        )
+    except Exception:
+        return ReviewSheet(
+            summary="Unable to parse GPT response.",
+            memorization_facts=[],
+            explanations=[]
+        )
 
 # ---------------------------
 # Attach router
