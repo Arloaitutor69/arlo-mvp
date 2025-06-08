@@ -1,6 +1,6 @@
 from fastapi import APIRouter, FastAPI
 from pydantic import BaseModel
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, Any
 import openai
 import os
 import logging
@@ -31,6 +31,7 @@ class Phase(BaseModel):
     tool: str
     lovable_component: str
     payload: Optional[PhasePayload] = None
+    description: Optional[str] = None
 
 class SessionSummary(BaseModel):
     topic: str
@@ -41,6 +42,9 @@ class ChatbotInput(BaseModel):
     user_input: str
     current_phase: Phase
     session_summary: SessionSummary
+    personalized_context: Optional[Dict[str, Any]] = None
+    message_history: Optional[List[Dict[str, str]]] = []
+    learning_analytics: Optional[Dict[str, Any]] = None
 
 class ActionSuggestion(BaseModel):
     type: str  # e.g., "next_phase"
@@ -55,11 +59,33 @@ class ChatbotResponse(BaseModel):
 # Prompt Builder
 # ---------------------------
 def build_prompt(data: ChatbotInput) -> str:
+    context = ""
+
+    # Add personalized context
+    if data.personalized_context:
+        context += f"\nPersonalized context: {data.personalized_context}"
+
+    # Add last 10 messages
+    if data.message_history:
+        context += "\nRecent conversation history:\n"
+        for msg in data.message_history[-10:]:
+            role = msg.get("role", "user")
+            content = msg.get("content", "")
+            context += f"{role}: {content}\n"
+
+    # Add learning analytics
+    if data.learning_analytics:
+        context += f"\nLearning analytics: {data.learning_analytics}"
+
     base = f"""
 You are Arlo, a friendly and brilliant AI tutor helping a high school student learn {data.session_summary.topic}.
 They are currently in the {data.current_phase.phase} phase.
 Use a warm, human-like tone. Respond like you're sitting next to them.
+{context}
 """
+
+    if data.current_phase.description:
+        base += f"\nTeaching goal for this phase: {data.current_phase.description}\n"
 
     user_input = data.user_input.strip()
     phase = data.current_phase.phase
