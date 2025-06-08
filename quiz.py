@@ -1,18 +1,16 @@
-# quiz.py
-
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import List, Literal, Union
 import uuid
 import openai
 import os
+import json
 
-# Load your OpenAI API key
 openai.api_key = os.getenv("OPENAI_API_KEY")
 
 router = APIRouter()
 
-# --- Request and Response Models ---
+# --- Models ---
 
 class QuizRequest(BaseModel):
     topic: str
@@ -32,50 +30,49 @@ class QuizResponse(BaseModel):
     quiz_id: str
     questions: List[QuizQuestion]
 
-# --- GPT-4 Question Generator ---
+# --- GPT Wrapper ---
 
 def call_gpt_for_quiz(topic: str, difficulty: str, count: int, types: List[str]) -> List[QuizQuestion]:
     system_msg = "You are an expert tutor generating quiz questions in JSON."
     user_msg = f"""
 Generate {count} quiz questions about the topic: "{topic}", difficulty: "{difficulty}", using ONLY these types: {types}.
-Format your response as a JSON list of objects with keys: id, type, question, options (null if not needed), correct_answer, and explanation.
+Each question must include:
+- id (integer)
+- type (as in the list above)
+- question (string)
+- options (list of choices or null for true/false and fill-in-the-blank)
+- correct_answer (string)
+- explanation (string)
 
-Example output:
-[
-  {{
-    "id": 1,
-    "type": "multiple_choice",
-    "question": "...",
-    "options": ["A", "B", "C", "D"],
-    "correct_answer": "B",
-    "explanation": "..."
-  }},
-  ...
-]
+Return a valid JSON array. Do NOT wrap in markdown or include any notes or headings.
 """
 
     try:
         response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",  # or gpt-4 if enabled
+            model="gpt-3.5-turbo",
             messages=[
                 {"role": "system", "content": system_msg},
                 {"role": "user", "content": user_msg}
             ],
-            temperature=0.7,
+            temperature=0.6,
             max_tokens=1200
         )
-        # Parse JSON directly from response text
-        import json
-        json_data = response['choices'][0]['message']['content']
-        raw_questions = json.loads(json_data)
 
+        content = response['choices'][0]['message']['content'].strip()
+
+        # 🧼 Remove Markdown code wrapper if GPT adds one
+        if content.startswith("```"):
+            lines = content.splitlines()
+            content = "\n".join(lines[1:-1]).strip()
+
+        raw_questions = json.loads(content)
         return [QuizQuestion(**q) for q in raw_questions]
 
     except Exception as e:
-        print(f"Error: {e}")
+        print("❌ GPT Error:", e)
         raise HTTPException(status_code=500, detail="Failed to generate quiz questions from GPT")
 
-# --- FastAPI Endpoint ---
+# --- API Route ---
 
 @router.post("/api/quiz", response_model=QuizResponse)
 async def create_quiz(data: QuizRequest):
