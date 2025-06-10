@@ -31,18 +31,14 @@ class BlurtingResponse(BaseModel):
 
 def generate_blurting_prompt(topic: str, content_summary: Optional[str], blurted_response: str) -> str:
     context = f"\nContext:\n{content_summary}" if content_summary else ""
-    return f"""
-You're an educational coach helping a student review their memory of the topic: "{topic}".{context}
-
-The student wrote this from memory:
-"""{blurted_response}"""
-
-Evaluate their explanation. Return a JSON object with:
-- "feedback": a paragraph highlighting what they did well and gently pointing out what was missing.
-- "missed_concepts": a list of key ideas or facts they forgot or explained poorly.
-
-Only return valid JSON.
-"""
+    return (
+        f"You're an educational coach helping a student review their memory of the topic: \"{topic}\".{context}\n\n"
+        f'The student wrote this from memory:\n"""\n{blurted_response}\n"""\n\n'
+        "Evaluate their explanation. Return a JSON object with:\n"
+        "- \"feedback\": a paragraph highlighting what they did well and gently pointing out what was missing.\n"
+        "- \"missed_concepts\": a list of key ideas or facts they forgot or explained poorly.\n\n"
+        "Only return valid JSON."
+    )
 
 # ======================
 # Main API Endpoint
