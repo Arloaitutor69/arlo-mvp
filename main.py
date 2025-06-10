@@ -8,12 +8,13 @@ load_dotenv()
 
 app = FastAPI()
 
-# --- CORS config for Lovable frontend ---
+# === CORS Setup ===
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "https://405e367a-b787-41ce-904a-d1882e6a9b65.lovableproject.com",
-        "https://*.lovableproject.com"  # Optional wildcard for future subdomain changes
+        "https://arlo-study-craft.lovable.app",   # Your actual Lovable app
+        #"https://app.arloapp.ai",                 # Custom domain (if used)
+        "http://localhost:10000"                   # Local dev (optional)
     ],
     allow_credentials=True,
     allow_methods=["*"],
