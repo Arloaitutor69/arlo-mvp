@@ -12,9 +12,9 @@ app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "https://arlo-study-craft.lovable.app",   # Your actual Lovable app
-        #"https://app.arloapp.ai",                 # Custom domain (if used)
-        "http://localhost:10000"                   # Local dev (optional)
+        "https://arlo-study-craft.lovable.app",   # Production Lovable app
+        "https://id-preview--405e367a-b787-41ce-904a-d1882e6a9b65.lovable.app",  # Lovable Preview (Editor mode)
+        "http://localhost:10000",                  # Local dev (optional)
     ],
     allow_credentials=True,
     allow_methods=["*"],
