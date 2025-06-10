@@ -3,3 +3,4 @@ uvicorn[standard]==0.27.1
 openai==0.28.1
 python-dotenv==1.0.1
 requests==2.31.0
+PyPDF2
