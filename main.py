@@ -27,6 +27,7 @@ from study_session import router as study_session_router
 from chatbot import router as chatbot_router
 from review_sheet import router as review_router
 from backend.feynman_feedback import router as feynman_router 
+from upload_pdf import router as upload_pdf_router
 
 # --- Include all routes ---
 app.include_router(flashcard_router)
@@ -35,6 +36,7 @@ app.include_router(study_session_router)
 app.include_router(chatbot_router)
 app.include_router(review_router)
 app.include_router(feynman_router)
+app.include_router(upload_pdf_router, prefix="/api")
 
 # --- Root and health check ---
 @app.get("/")
