@@ -24,7 +24,7 @@ from quiz import router as quiz_router
 from study_session import router as study_session_router
 from chatbot import router as chatbot_router
 from review_sheet import router as review_router
-from feynman_feedback import router as feynman_router  
+from backend.feynman_feedback import router as feynman_router 
 
 # --- Include all routes ---
 app.include_router(flashcard_router)
