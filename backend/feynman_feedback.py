@@ -1,31 +1,60 @@
-import openai
-import os
+# backend/feynman_feedback.py
 
+from fastapi import APIRouter
+from pydantic import BaseModel
+from typing import Optional
+import openai
+import json
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
 openai.api_key = os.getenv("OPENAI_API_KEY")
 
-def get_feynman_feedback(topic: str, user_explanation: str):
-    prompt = f"""
-You are an AI tutor helping a student understand a topic by evaluating their explanation.
+router = APIRouter()
 
-Topic: "{topic}"
-Student's Explanation: "{user_explanation}"
+class FeynmanRequest(BaseModel):
+    concept: str
+    user_explanation: str
+    personalized_context: Optional[str] = None
 
-Your job:
-- Give 1–2 sentences of friendly feedback.
-- Be supportive and encouraging, but point out any unclear or inaccurate parts.
-- Ask 2 follow-up questions that guide the student to reflect or go deeper.
+class FeynmanResponse(BaseModel):
+    message: str
+    follow_up_question: Optional[str]
+    action_suggestion: Optional[str] = "stay_in_phase"
 
-Return only valid JSON in this format:
+@router.post("/api/feynman", response_model=FeynmanResponse)
+async def run_feynman_phase(data: FeynmanRequest):
+    try:
+        prompt = f"""
+You're ARLO, an excited AI tutor helping a student master topics using the Feynman technique.
+
+Concept: {data.concept}
+Student's Explanation: {data.user_explanation}
+{f'Extra Context: {data.personalized_context}' if data.personalized_context else ''}
+
+Instructions:
+1. If correct but wordy or unclear, ask clarifying questions or say "Explain it like I'm 10."
+2. If mostly right, fill in missing info and guide them.
+3. If confused, explain from scratch.
+
+Respond in this JSON format:
 {{
-  "feedback": "your feedback here",
-  "follow_up_questions": ["question 1", "question 2"]
+  "message": "...",
+  "follow_up_question": "...",
+  "action_suggestion": "stay_in_phase"
 }}
 """
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.7,
+        )
+        return json.loads(response.choices[0].message["content"])
+    except Exception as e:
+        return {
+            "message": f"Oops! {str(e)}",
+            "follow_up_question": "Can you explain that again?",
+            "action_suggestion": "stay_in_phase"
+        }
 
-    response = openai.ChatCompletion.create(
-        model="gpt-3.5-turbo",
-        messages=[{ "role": "user", "content": prompt }],
-        temperature=0.7
-    )
-
-    return response['choices'][0]['message']['content']
