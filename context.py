@@ -88,32 +88,24 @@ def should_trigger_synthesis(new_entry: ContextUpdate) -> bool:
 def synthesize_context_gpt() -> dict:
     logs = get_supabase().table("context_log").select("*").order("id").execute().data
 
-    prompt = (
-        "You are ARLO's memory engine. Read the raw study logs below and return ONLY valid JSON. "
-        "Do not include markdown, explanation, or formatting. Your response must exactly match this structure: 
-"
-        "{
-"
-        "  \"current_topic\": string or null,
-"
-        "  \"user_goals\": list of strings,
-"
-        "  \"weak_areas\": list of strings,
-"
-        "  \"emphasized_facts\": list of strings,
-"
-        "  \"preferred_learning_styles\": list of strings,
-"
-        "  \"review_queue\": list of strings,
-"
-        "  \"learning_history\": list of objects (each with concept, phase, depth, source_summary, etc.)
-"
-        "}
+    prompt = f"""
+You are ARLO's memory engine. Read the raw study logs below and return ONLY valid JSON.
+Do not include markdown, explanation, or formatting.
+Your response must exactly match this structure:
 
-"
-        "Raw Logs:
-" + json.dumps(logs, indent=2)
-    )
+{{
+  "current_topic": string or null,
+  "user_goals": [string],
+  "weak_areas": [string],
+  "emphasized_facts": [string],
+  "preferred_learning_styles": [string],
+  "review_queue": [string],
+  "learning_history": [object]
+}}
+
+Raw Logs:
+{json.dumps(logs, indent=2)}
+"""
 
     response = openai.ChatCompletion.create(
         model="gpt-3.5-turbo",
@@ -130,10 +122,7 @@ def synthesize_context_gpt() -> dict:
         parsed = json.loads(raw_content)
         return parsed
     except json.JSONDecodeError:
-        raise HTTPException(status_code=500, detail=f"Failed to parse GPT output:
-{raw_content}")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to parse GPT output: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to parse GPT output:\\n{raw_content}")
 
 # ------------------------------
 # Routes
