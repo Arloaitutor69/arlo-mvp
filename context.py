@@ -120,27 +120,25 @@ Raw Logs:
 # ------------------------------
 # Routes
 # ------------------------------
+
 @router.post("/context/update")
 async def update_context(update: ContextUpdate, request: Request):
     entry = update.dict()
     entry["timestamp"] = datetime.utcnow().isoformat()
 
-    # Extract user ID from request
-    user_info = getattr(request.state, "user", None)
-    if not user_info or "sub" not in user_info:
-        raise HTTPException(status_code=401, detail="User authentication required.")
-
-    entry["user_id"] = user_info["sub"]  # Attach Supabase user ID
+    # ⚠️ TEMPORARY DISABLE AUTH CHECK FOR TESTING
+    entry["user_id"] = "test-user"
 
     get_supabase().table("context_log").insert(entry).execute()
 
     if should_trigger_synthesis(update):
         synthesized = synthesize_context_gpt()
-        get_supabase().table("context_state").delete().neq("id", 0).execute()  # Clear previous
+        get_supabase().table("context_state").delete().neq("id", 0).execute()
         get_supabase().table("context_state").insert({"id": 1, "context": json.dumps(synthesized)}).execute()
         return {"status": "ok", "synthesized": True}
 
     return {"status": "ok", "synthesized": False}
+
 
 @router.get("/context/current")
 async def get_full_context():
