@@ -17,7 +17,7 @@ def get_supabase() -> Client:
     global supabase
     if not supabase:
         url = os.getenv("SUPABASE_URL") or os.getenv("SUPABASE_UR")
-        key = os.getenv("SUPABASE_SERVICE_ROLE")  # NOTE: use service role for writing context
+        key = os.getenv("SUPABASE_KEY") or os.getenv("SUPABASE_SERVICE_ROLE")
         if not url or not key:
             raise RuntimeError("SUPABASE_URL or SUPABASE_SERVICE_ROLE not set")
         supabase = create_client(url, key)
