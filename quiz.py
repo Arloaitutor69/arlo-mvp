@@ -1,3 +1,4 @@
+# ✅ Final, stable quiz module with full context integration
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import List, Literal, Union
@@ -7,6 +8,7 @@ import json
 import openai
 import requests
 
+# --- Init ---
 openai.api_key = os.getenv("OPENAI_API_KEY")
 CONTEXT_API = os.getenv("CONTEXT_API_BASE", "https://arlo-mvp-2.onrender.com")
 
@@ -67,7 +69,7 @@ def log_learning_event(topic, summary, count):
     except Exception as e:
         print("❌ Failed to log learning event:", e)
 
-# --- GPT Helper ---
+# --- GPT Generator ---
 def generate_questions(topic, difficulty, count, types, context):
     system_msg = "You are a quiz tutor who writes clear, factual questions in JSON."
 
@@ -124,19 +126,13 @@ No extra text. No markdown.
         print("❌ GPT generation failed:", e)
         raise HTTPException(status_code=500, detail="GPT quiz generation failed")
 
-# --- Test Endpoint ---
-@router.get("/api/quiz/test")
-def quiz_health_check():
-    return {"status": "helpers loaded"}
-
+# --- Endpoint ---
 @router.post("/api/quiz", response_model=QuizResponse)
 async def create_quiz(req: QuizRequest):
     print("🚀 Received quiz request:", req)
 
-    # Fetch context
     context = fetch_context()
 
-    # Generate GPT-based questions
     questions = generate_questions(
         topic=req.topic,
         difficulty=req.difficulty,
@@ -145,20 +141,14 @@ async def create_quiz(req: QuizRequest):
         context=context
     )
 
-    # Build response
     quiz_id = f"quiz_{uuid.uuid4().hex[:6]}"
     summary = "; ".join(q.question for q in questions)
 
-    # Log learning event to context
     log_learning_event(req.topic, summary, len(questions))
 
     return QuizResponse(quiz_id=quiz_id, questions=questions)
 
-    35.227.187.87:0 - "GET / HTTP/1.1" 200 OK
-🚀 Received quiz request: topic='Photosynthesis' difficulty='medium' question_count=2 question_types=['multiple_choice', 'true_false']
-📥 Fetching context slice...
-❌ Failed to fetch context: HTTPSConnectionPool(host='arlo-mvp-2.onrender.com', port=443): Read timed out. (read timeout=5)
-🧠 Sending request to GPT...
-❌ Failed to log learning event: HTTPSConnectionPool(host='arlo-mvp-2.onrender.com', port=443): Read timed out. (read timeout=5)
-INFO:     68.21.131.206:0 - "POST /api/quiz HTTP/1.1" 200 OK
-
+# --- Health Check ---
+@router.get("/api/quiz/test")
+def test():
+    return {"status": "ok", "message": "quiz router is live"}
