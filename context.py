@@ -5,15 +5,20 @@ from datetime import datetime
 import uuid
 import json
 import openai
+import os
+from supabase import create_client, Client
 
+# ------------------------------
+# Supabase Configuration (load from env)
+# ------------------------------
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+# ------------------------------
+# Router
+# ------------------------------
 router = APIRouter()
-
-# ------------------------------
-# In-memory storage (can be replaced by Supabase later)
-# ------------------------------
-
-raw_log = []
-latest_context = {}
 
 # ------------------------------
 # Pydantic Models
@@ -40,7 +45,7 @@ class ContextUpdate(BaseModel):
     feedback_flag: Optional[bool] = False
 
 # ------------------------------
-# Utilities
+# Helper Functions
 # ------------------------------
 
 def score_source(source: str) -> int:
@@ -57,41 +62,41 @@ def score_source(source: str) -> int:
     return priority.get(source, 50)
 
 def should_trigger_synthesis(new_entry: ContextUpdate) -> bool:
+    res = supabase.table("context_log").select("source").order("id", desc=True).limit(5).execute()
+    recent_entries = res.data if res.data else []
     if new_entry.feedback_flag:
         return True
-    recent_entries = raw_log[-5:]
     if len(recent_entries) >= 3:
-        sources = {entry.source for entry in recent_entries}
+        sources = {entry["source"] for entry in recent_entries}
         if len(sources) >= 2:
             return True
     return False
 
-def synthesize_context() -> dict:
-    # This could be replaced by a call to GPT. For now we simulate logic.
-    context = {
-        "current_topic": None,
-        "user_goals": [],
-        "preferred_learning_styles": [],
-        "weak_areas": [],
-        "emphasized_facts": [],
-        "review_queue": [],
-        "learning_history": []
-    }
-    for entry in raw_log:
-        data = entry.dict()
-        if data.get("current_topic") and not context["current_topic"]:
-            context["current_topic"] = data["current_topic"]
-        context["user_goals"] += data.get("user_goals", [])
-        context["preferred_learning_styles"] += data.get("preferred_learning_styles", [])
-        context["weak_areas"] += data.get("weak_areas", [])
-        context["emphasized_facts"] += data.get("emphasized_facts", [])
-        context["review_queue"] += data.get("review_queue", [])
-        if data.get("learning_event"):
-            context["learning_history"].append(data["learning_event"].dict())
-    # Deduplicate
-    for key in ["user_goals", "preferred_learning_styles", "weak_areas", "emphasized_facts", "review_queue"]:
-        context[key] = list(set(context[key]))
-    return context
+def synthesize_context_gpt() -> dict:
+    logs = supabase.table("context_log").select("*").order("id").execute().data
+    prompt = """
+You are ARLO's memory engine. Based on the raw study data below, generate a structured context object.
+Include fields: current_topic, user_goals, weak_areas, emphasized_facts, preferred_learning_styles, review_queue, learning_history.
+Deduplicate and summarize where appropriate.
+
+Raw Logs:
+""" + json.dumps(logs, indent=2)
+
+    response = openai.ChatCompletion.create(
+        model="gpt-3.5-turbo",
+        messages=[
+            {"role": "system", "content": "You are a context synthesis engine for an educational AI."},
+            {"role": "user", "content": prompt}
+        ],
+        temperature=0.3,
+        max_tokens=800
+    )
+
+    try:
+        parsed = json.loads(response.choices[0].message["content"])
+        return parsed
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to parse GPT output: {str(e)}")
 
 # ------------------------------
 # Routes
@@ -99,27 +104,36 @@ def synthesize_context() -> dict:
 
 @router.post("/context/update")
 async def update_context(update: ContextUpdate):
-    raw_log.append(update)
+    entry = update.dict()
+    entry["timestamp"] = datetime.utcnow().isoformat()
+    supabase.table("context_log").insert(entry).execute()
+
     if should_trigger_synthesis(update):
-        global latest_context
-        latest_context = synthesize_context()
-    return {"status": "ok", "synthesized": should_trigger_synthesis(update)}
+        synthesized = synthesize_context_gpt()
+        supabase.table("context_state").delete().neq("id", 0).execute()  # Clear previous
+        supabase.table("context_state").insert({"id": 1, "context": json.dumps(synthesized)}).execute()
+        return {"status": "ok", "synthesized": True}
+
+    return {"status": "ok", "synthesized": False}
 
 @router.get("/context/current")
 async def get_full_context():
-    if not latest_context:
+    res = supabase.table("context_state").select("context").eq("id", 1).single().execute()
+    if not res.data:
         raise HTTPException(status_code=404, detail="Context not yet synthesized.")
-    return latest_context
+    return json.loads(res.data["context"])
 
 @router.get("/context/slice")
 async def get_context_slice():
-    if not latest_context:
+    res = supabase.table("context_state").select("context").eq("id", 1).single().execute()
+    if not res.data:
         raise HTTPException(status_code=404, detail="Context not yet synthesized.")
+    ctx = json.loads(res.data["context"])
     return {
-        "current_topic": latest_context.get("current_topic"),
-        "user_goals": latest_context.get("user_goals"),
-        "weak_areas": latest_context.get("weak_areas"),
-        "emphasized_facts": latest_context.get("emphasized_facts"),
-        "preferred_learning_styles": latest_context.get("preferred_learning_styles"),
-        "review_queue": latest_context.get("review_queue")
+        "current_topic": ctx.get("current_topic"),
+        "user_goals": ctx.get("user_goals"),
+        "weak_areas": ctx.get("weak_areas"),
+        "emphasized_facts": ctx.get("emphasized_facts"),
+        "preferred_learning_styles": ctx.get("preferred_learning_styles"),
+        "review_queue": ctx.get("review_queue")
     }
