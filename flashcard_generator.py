@@ -119,6 +119,8 @@ Do not include explanations, headers, or any other text — just the JSON.
         raise HTTPException(status_code=500, detail="Failed to generate flashcards.")
 
     flashcards = []
+    questions_summary = []
+
     for item in cards[:data.count]:
         flashcards.append(FlashcardItem(
             id=f"card_{uuid.uuid4().hex[:6]}",
@@ -127,12 +129,22 @@ Do not include explanations, headers, or any other text — just the JSON.
             difficulty=data.difficulty,
             category=data.topic
         ))
+        questions_summary.append(item.get("question", ""))
 
-    # Post to context manager after flashcard generation
+    # Post to context manager with learning_event and metadata
     post_context_update({
         "source": "flashcards",
         "phase": "flashcards",
         "event_type": "generation",
+        "learning_event": {
+            "concept": data.topic,
+            "phase": "flashcards",
+            "confidence": 0.5,
+            "depth": "shallow",
+            "source_summary": "; ".join(questions_summary),
+            "repetition_count": 1,
+            "review_scheduled": False
+        },
         "data": {
             "topic": data.topic,
             "difficulty": data.difficulty,
