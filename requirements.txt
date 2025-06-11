@@ -5,4 +5,4 @@ python-dotenv==1.0.1
 requests==2.31.0
 PyPDF2==3.0.1
 python-multipart
-supabase-py
+git+https://github.com/supabase-community/supabase-py.git@v1.0.3
