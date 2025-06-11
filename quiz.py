@@ -1,4 +1,4 @@
-# ✅ Fully patched quiz module with context input + learning_event output logging
+# ✅ Debug-patched quiz module with context logging + test route
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -38,16 +38,21 @@ class QuizResponse(BaseModel):
 
 def fetch_context_slice():
     try:
+        print("🔎 Fetching context from /context/slice...")
         res = requests.get(f"{CONTEXT_BASE_URL}/api/context/slice")
-        if res.status_code == 200:
-            return res.json()
+        res.raise_for_status()
+        context = res.json()
+        print("✅ Context received:", context)
+        return context
     except Exception as e:
         print("❌ Context fetch failed:", e)
-    return {}
+        return {}
 
 def post_context_update(payload: dict):
     try:
-        requests.post(f"{CONTEXT_BASE_URL}/api/context/update", json=payload)
+        print("📤 Posting context update...")
+        res = requests.post(f"{CONTEXT_BASE_URL}/api/context/update", json=payload)
+        print("✅ Context update status:", res.status_code)
     except Exception as e:
         print("❌ Context update failed:", e)
 
@@ -89,6 +94,7 @@ No extra text. No markdown.
 """
 
     try:
+        print("⚙ Calling GPT for quiz generation...")
         response = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
             messages=[
@@ -100,6 +106,7 @@ No extra text. No markdown.
         )
 
         content = response['choices'][0]['message']['content'].strip()
+        print("🧠 GPT raw output:", content[:200])  # Preview output
 
         if content.startswith("```"):
             content = "\n".join(content.strip().splitlines()[1:-1])
@@ -111,14 +118,17 @@ No extra text. No markdown.
         print("❌ GPT Error:", e)
         raise HTTPException(status_code=500, detail="Failed to generate quiz questions from GPT")
 
-# --- Route ---
+# --- Routes ---
 
 @router.post("/api/quiz", response_model=QuizResponse)
 async def create_quiz(data: QuizRequest):
+    print("🚀 /api/quiz called with:", data)
+
     if not data.question_types:
         raise HTTPException(status_code=400, detail="Must include at least one question type.")
 
     context = fetch_context_slice()
+
     quiz_id = f"quiz_{uuid.uuid4().hex[:6]}"
     questions = call_gpt_for_quiz(
         topic=data.topic,
@@ -151,3 +161,9 @@ async def create_quiz(data: QuizRequest):
     })
 
     return QuizResponse(quiz_id=quiz_id, questions=questions)
+
+# --- Health Check ---
+
+@router.get("/api/quiz/test")
+def test_quiz_module():
+    return {"status": "ok", "message": "Quiz module is live"}
