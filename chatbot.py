@@ -4,22 +4,22 @@ from typing import Optional, List, Dict, Any
 import openai
 import os
 import logging
+import requests
 
 # ---------------------------
 # Setup
 # ---------------------------
 openai.api_key = os.getenv("OPENAI_API_KEY")
+CONTEXT_BASE_URL = os.getenv("CONTEXT_API_BASE", "https://arlo-mvp-2.onrender.com")
 
-# Enable logging for debugging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("chatbot")
 
-# FastAPI app and router setup
 app = FastAPI()
 router = APIRouter()
 
 # ---------------------------
-# Pydantic Schemas
+# Schemas
 # ---------------------------
 class PhasePayload(BaseModel):
     question: Optional[str] = None
@@ -42,150 +42,135 @@ class ChatbotInput(BaseModel):
     user_input: str
     current_phase: Phase
     session_summary: SessionSummary
-    personalized_context: Optional[Dict[str, Any]] = None
     message_history: Optional[List[Dict[str, str]]] = []
-    learning_analytics: Optional[Dict[str, Any]] = None
 
 class ActionSuggestion(BaseModel):
-    type: str  # e.g., "next_phase"
+    type: str
     reason: Optional[str] = None
 
 class ChatbotResponse(BaseModel):
     message: str
     follow_up_question: Optional[str] = None
     action_suggestion: Optional[ActionSuggestion] = None
+    context_update_required: bool = False
+    learning_concepts_covered: Optional[List[str]] = None
+    new_user_goal: Optional[str] = None
 
 # ---------------------------
-# Prompt Builder
+# Helpers
 # ---------------------------
-def build_prompt(data: ChatbotInput) -> str:
-    context = ""
+def get_context_slice() -> Dict[str, Any]:
+    try:
+        response = requests.get(f"{CONTEXT_BASE_URL}/api/context/slice")
+        response.raise_for_status()
+        return response.json()
+    except Exception as e:
+        logger.warning(f"Context fetch failed: {e}")
+        return {}
 
-    # Add personalized context
-    if data.personalized_context:
-        context += f"\nPersonalized context: {data.personalized_context}"
+def build_prompt(data: ChatbotInput, context: Dict[str, Any]) -> str:
+    ctx = []
+    if context.get("current_topic"):
+        ctx.append(f"Current topic: {context['current_topic']}")
+    if context.get("user_goals"):
+        ctx.append(f"User goals: {', '.join(context['user_goals'])}")
+    if context.get("weak_areas"):
+        ctx.append(f"Weak areas: {', '.join(context['weak_areas'])}")
+    if context.get("emphasized_facts"):
+        ctx.append(f"Emphasized facts: {', '.join(context['emphasized_facts'])}")
+    if context.get("preferred_learning_styles"):
+        ctx.append(f"Preferred learning styles: {', '.join(context['preferred_learning_styles'])}")
 
-    # Add last 10 messages
-    if data.message_history:
-        context += "\nRecent conversation history:\n"
-        for msg in data.message_history[-10:]:
-            role = msg.get("role", "user")
-            content = msg.get("content", "")
-            context += f"{role}: {content}\n"
-
-    # Add learning analytics
-    if data.learning_analytics:
-        context += f"\nLearning analytics: {data.learning_analytics}"
+    recent_messages = "\n".join([
+        f"{msg['role']}: {msg['content']}" for msg in data.message_history[-3:]
+    ])
 
     base = f"""
-You are Arlo, a friendly and brilliant AI tutor helping a high school student learn {data.session_summary.topic}.
-They are currently in the {data.current_phase.phase} phase.
-Use a warm, human-like tone. Respond like you're sitting next to them.
-{context}
-"""
+You are Arlo, an expert AI tutor.
+Avoid greetings or filler phrases like 'Hey there' or 'Nice to see you.'
+Respond directly and clearly like a human teacher sitting next to the student.
+Focus first on the student’s current question, and supplement only with relevant context.
+{'\n'.join(ctx)}
 
-    if data.current_phase.description:
-        base += f"\nTeaching goal for this phase: {data.current_phase.description}\n"
+Recent conversation:
+{recent_messages}
+"""
 
     user_input = data.user_input.strip()
     phase = data.current_phase.phase
     payload = data.current_phase.payload or PhasePayload()
 
     if phase == "flashcards" and payload.question:
-        return base + f'''
-Student just answered a flashcard:
+        return base + f"""
+Flashcard:
 Q: {payload.question}
-A: {payload.user_answer}
-
-Give helpful, encouraging feedback.
-Then respond to their input: "{user_input}"'''
+User answered: {payload.user_answer}
+Follow-up input: {user_input}
+Give concise correction or reinforcement.
+"""
 
     elif phase == "feynman":
-        return base + f'''
-The student is trying to explain the topic out loud using the Feynman technique.
+        return base + f"""
+The student is explaining aloud.
 They said: "{user_input}"
-
-Evaluate their explanation. Be supportive. Ask them to clarify any weak points.'''
-
-    elif phase == "teaching":
-        return base + f'''
-The student is currently learning. They said: "{user_input}"
-
-Respond with an explanation or follow-up question.'''
+Help them identify gaps and improve the explanation.
+"""
 
     elif phase == "quiz" and payload.question:
-        return base + f'''
-The student is answering a quiz:
+        return base + f"""
+Quiz:
 Q: {payload.question}
-A: {payload.user_answer}
-
-Give correction and encouragement.
-Respond to their input: "{user_input}"'''
+User answered: {payload.user_answer}
+Follow-up input: {user_input}
+Correct and explain.
+"""
 
     elif phase == "blurting":
-        return base + f'''
-The student is using the blurting technique, trying to recall everything about the topic.
+        return base + f"""
+The student is blurting — trying to recall everything about the topic.
 They said: "{user_input}"
-
-Identify missing pieces and encourage memory reinforcement.'''
+Point out missing info and help reinforce.
+"""
 
     else:
-        return base + f'''
+        return base + f"""
 Student said: "{user_input}"
-Respond appropriately.'''
+Respond with helpful explanation or next step.
+"""
 
-# ---------------------------
-# GPT API Call
-# ---------------------------
 def call_gpt(prompt: str) -> str:
     try:
         response = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
             messages=[
-                {"role": "system", "content": "You are a helpful tutor."},
+                {"role": "system", "content": "You are a helpful AI tutor."},
                 {"role": "user", "content": prompt}
             ],
-            temperature=0.7
+            temperature=0.5,
+            max_tokens=500
         )
         return response.choices[0].message.content.strip()
     except Exception as e:
         logger.error(f"Error calling GPT: {e}")
-        return "Sorry, there was a problem generating a response. Please try again."
+        return "Sorry, I had trouble generating a response."
 
-# ---------------------------
-# Endpoint
-# ---------------------------
 @router.post("/api/chatbot", response_model=ChatbotResponse)
 def chatbot_handler(data: ChatbotInput):
-    logger.info("Received request for chatbot")
-    prompt = build_prompt(data)
-    logger.debug(f"Prompt sent to GPT:\n{prompt}")
-
+    logger.info("Chatbot request received")
+    context = get_context_slice()
+    prompt = build_prompt(data, context)
+    logger.debug(f"Prompt:\n{prompt}")
     gpt_reply = call_gpt(prompt)
-    logger.info("Received response from GPT")
 
-    # Heuristic suggestion to move on if feedback contains "correct"
     action = None
     if data.current_phase.phase in ["flashcards", "quiz"] and "correct" in gpt_reply.lower():
-        action = ActionSuggestion(
-            type="next_phase",
-            reason="Student seems to understand this concept."
-        )
+        action = ActionSuggestion(type="next_phase", reason="Answer was correct")
 
     return ChatbotResponse(
         message=gpt_reply,
         follow_up_question=None,
-        action_suggestion=action
+        action_suggestion=action,
+        context_update_required=False
     )
 
-# ---------------------------
-# Attach router
-# ---------------------------
 app.include_router(router)
-
-# ---------------------------
-# For Local Debugging
-# ---------------------------
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=10000)
