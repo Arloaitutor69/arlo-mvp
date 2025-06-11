@@ -140,7 +140,7 @@ def test_learning_log():
             "concept": "Photosynthesis",
             "phase": "quiz",
             "confidence": 0.7,
-            "depth": "moderate",
+            "depth": "intermediate",   # ✅ valid
             "source_summary": "Test question 1; Test question 2",
             "repetition_count": 2,
             "review_scheduled": True
