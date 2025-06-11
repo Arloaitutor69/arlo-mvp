@@ -1,12 +1,32 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
+from fastapi.middleware import Middleware
 from dotenv import load_dotenv
 import os
+import jwt
 
 # Load environment variables from .env
 load_dotenv()
 
-app = FastAPI()
+# --- Middleware for extracting user info from JWT ---
+class AuthMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        auth_header = request.headers.get("Authorization")
+        if auth_header and auth_header.startswith("Bearer "):
+            token = auth_header.split(" ")[1]
+            try:
+                decoded = jwt.decode(token, options={"verify_signature": False})
+                request.state.user = decoded
+            except Exception as e:
+                print("❌ JWT decode error:", e)
+                request.state.user = {}
+        else:
+            request.state.user = {}
+        return await call_next(request)
+
+# Create FastAPI app with middleware
+app = FastAPI(middleware=[Middleware(AuthMiddleware)])
 
 # === CORS Setup ===
 app.add_middleware(
@@ -21,7 +41,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# --- Modular routers (FastAPI style) ---
+# --- Modular routers ---
 from flashcard_generator import router as flashcard_router
 from quiz import router as quiz_router
 from study_session import router as study_session_router
@@ -30,9 +50,7 @@ from review_sheet import router as review_router
 from backend.feynman_feedback import router as feynman_router 
 from upload_pdf import router as upload_pdf_router
 from blurting import router as blurting_router
-from context import router as context_router  # Make sure path matches your project
-
-
+from context import router as context_router
 
 # --- Include all routes ---
 app.include_router(flashcard_router)
@@ -53,4 +71,3 @@ def root():
 @app.get("/ping")
 def health_check():
     return {"status": "ok"}
-
