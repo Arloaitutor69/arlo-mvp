@@ -27,6 +27,10 @@ def get_supabase() -> Client:
 # ------------------------------
 # Router
 # ------------------------------
+
+# ------------------------------
+# Router
+# ------------------------------
 router = APIRouter()
 
 # ------------------------------
@@ -83,13 +87,33 @@ def should_trigger_synthesis(new_entry: ContextUpdate) -> bool:
 
 def synthesize_context_gpt() -> dict:
     logs = get_supabase().table("context_log").select("*").order("id").execute().data
-    prompt = """
-You are ARLO's memory engine. Based on the raw study data below, generate a structured context object.
-Include fields: current_topic, user_goals, weak_areas, emphasized_facts, preferred_learning_styles, review_queue, learning_history.
-Deduplicate and summarize where appropriate.
 
-Raw Logs:
-""" + json.dumps(logs, indent=2)
+    prompt = (
+        "You are ARLO's memory engine. Read the raw study logs below and return ONLY valid JSON. "
+        "Do not include markdown, explanation, or formatting. Your response must exactly match this structure: 
+"
+        "{
+"
+        "  \"current_topic\": string or null,
+"
+        "  \"user_goals\": list of strings,
+"
+        "  \"weak_areas\": list of strings,
+"
+        "  \"emphasized_facts\": list of strings,
+"
+        "  \"preferred_learning_styles\": list of strings,
+"
+        "  \"review_queue\": list of strings,
+"
+        "  \"learning_history\": list of objects (each with concept, phase, depth, source_summary, etc.)
+"
+        "}
+
+"
+        "Raw Logs:
+" + json.dumps(logs, indent=2)
+    )
 
     response = openai.ChatCompletion.create(
         model="gpt-3.5-turbo",
@@ -101,9 +125,13 @@ Raw Logs:
         max_tokens=800
     )
 
+    raw_content = response.choices[0].message["content"]
     try:
-        parsed = json.loads(response.choices[0].message["content"])
+        parsed = json.loads(raw_content)
         return parsed
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=500, detail=f"Failed to parse GPT output:
+{raw_content}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to parse GPT output: {str(e)}")
 
