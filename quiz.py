@@ -128,3 +128,29 @@ No extra text. No markdown.
 @router.get("/api/quiz/test")
 def quiz_health_check():
     return {"status": "helpers loaded"}
+
+@router.post("/api/quiz", response_model=QuizResponse)
+async def create_quiz(req: QuizRequest):
+    print("🚀 Received quiz request:", req)
+
+    # Fetch context
+    context = fetch_context()
+
+    # Generate GPT-based questions
+    questions = generate_questions(
+        topic=req.topic,
+        difficulty=req.difficulty,
+        count=req.question_count,
+        types=req.question_types,
+        context=context
+    )
+
+    # Build response
+    quiz_id = f"quiz_{uuid.uuid4().hex[:6]}"
+    summary = "; ".join(q.question for q in questions)
+
+    # Log learning event to context
+    log_learning_event(req.topic, summary, len(questions))
+
+    return QuizResponse(quiz_id=quiz_id, questions=questions)
+
