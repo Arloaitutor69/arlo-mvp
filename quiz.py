@@ -5,8 +5,10 @@ import uuid
 import openai
 import os
 import json
+import requests
 
 openai.api_key = os.getenv("OPENAI_API_KEY")
+CONTEXT_BASE_URL = os.getenv("CONTEXT_API_BASE", "https://arlo-mvp-2.onrender.com")
 
 router = APIRouter()
 
@@ -30,21 +32,58 @@ class QuizResponse(BaseModel):
     quiz_id: str
     questions: List[QuizQuestion]
 
+# --- Helpers ---
+
+def fetch_context_slice():
+    try:
+        res = requests.get(f"{CONTEXT_BASE_URL}/api/context/slice")
+        if res.status_code == 200:
+            return res.json()
+    except Exception as e:
+        print("❌ Context fetch failed:", e)
+    return {}
+
+def post_context_update(payload: dict):
+    try:
+        requests.post(f"{CONTEXT_BASE_URL}/api/context/update", json=payload)
+    except Exception as e:
+        print("❌ Context update failed:", e)
+
 # --- GPT Wrapper ---
 
-def call_gpt_for_quiz(topic: str, difficulty: str, count: int, types: List[str]) -> List[QuizQuestion]:
-    system_msg = "You are an expert tutor generating quiz questions in JSON."
-    user_msg = f"""
-Generate {count} quiz questions about the topic: "{topic}", difficulty: "{difficulty}", using ONLY these types: {types}.
-Each question must include:
-- id (integer)
-- type (as in the list above)
-- question (string)
-- options (list of choices or null for true/false and fill-in-the-blank)
-- correct_answer (string)
-- explanation (string)
+def call_gpt_for_quiz(topic: str, difficulty: str, count: int, types: List[str], context: dict) -> List[QuizQuestion]:
+    system_msg = "You are an expert tutor generating quiz questions in JSON format."
 
-Return a valid JSON array. Do NOT wrap in markdown or include any notes or headings.
+    current_topic = context.get("current_topic", "")
+    weak_areas = ", ".join(context.get("weak_areas", []))
+    emphasized_facts = ", ".join(context.get("emphasized_facts", []))
+    user_goals = ", ".join(context.get("user_goals", []))
+    review_queue = ", ".join(context.get("review_queue", []))
+
+    user_msg = f"""
+Generate {count} quiz questions about the topic: "{topic}" (context topic: "{current_topic}"), difficulty: "{difficulty}".
+
+Allowed types: {types}
+
+Please personalize:
+- Prioritize these weak areas: {weak_areas or 'none'}
+- Reinforce these emphasized facts: {emphasized_facts or 'none'}
+- Tailor explanations to user goals: {user_goals or 'none'}
+- Optionally include 1–2 review questions: {review_queue or 'none'}
+
+Return ONLY a valid JSON array of objects like:
+[
+  {{
+    "id": 1,
+    "type": "multiple_choice",
+    "question": "...",
+    "options": ["A", "B", "C", "D"],
+    "correct_answer": "...",
+    "explanation": "..."
+  }},
+  ...
+]
+No extra text. No markdown.
 """
 
     try:
@@ -60,10 +99,8 @@ Return a valid JSON array. Do NOT wrap in markdown or include any notes or headi
 
         content = response['choices'][0]['message']['content'].strip()
 
-        # 🧼 Remove Markdown code wrapper if GPT adds one
         if content.startswith("```"):
-            lines = content.splitlines()
-            content = "\n".join(lines[1:-1]).strip()
+            content = "\n".join(content.strip().splitlines()[1:-1])
 
         raw_questions = json.loads(content)
         return [QuizQuestion(**q) for q in raw_questions]
@@ -72,19 +109,44 @@ Return a valid JSON array. Do NOT wrap in markdown or include any notes or headi
         print("❌ GPT Error:", e)
         raise HTTPException(status_code=500, detail="Failed to generate quiz questions from GPT")
 
-# --- API Route ---
+# --- Route ---
 
 @router.post("/api/quiz", response_model=QuizResponse)
 async def create_quiz(data: QuizRequest):
     if not data.question_types:
         raise HTTPException(status_code=400, detail="Must include at least one question type.")
 
+    context = fetch_context_slice()
     quiz_id = f"quiz_{uuid.uuid4().hex[:6]}"
     questions = call_gpt_for_quiz(
         topic=data.topic,
         difficulty=data.difficulty,
         count=data.question_count,
-        types=data.question_types
+        types=data.question_types,
+        context=context
     )
+
+    # Summarize questions for logging
+    summary = "; ".join([q.question for q in questions])
+
+    # Post to context manager with learning event
+    post_context_update({
+        "source": "quiz",
+        "phase": "quiz",
+        "event_type": "generation",
+        "learning_event": {
+            "concept": data.topic,
+            "phase": "quiz",
+            "confidence": 0.5,
+            "depth": "shallow",
+            "source_summary": summary,
+            "repetition_count": 1,
+            "review_scheduled": False
+        },
+        "data": {
+            "question_count": len(questions),
+            "difficulty": data.difficulty
+        }
+    })
 
     return QuizResponse(quiz_id=quiz_id, questions=questions)
