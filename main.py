@@ -5,6 +5,10 @@ from fastapi.middleware import Middleware
 from dotenv import load_dotenv
 import os
 import jwt
+import sys
+import traceback
+
+
 
 # Load environment variables from .env
 load_dotenv()
@@ -24,6 +28,17 @@ class AuthMiddleware(BaseHTTPMiddleware):
         else:
             request.state.user = {}
         return await call_next(request)
+
+
+
+@app.middleware("http")
+async def log_exceptions(request, call_next):
+    try:
+        return await call_next(request)
+    except Exception as e:
+        traceback.print_exc()
+        sys.stderr.write(f"🔥 UNCAUGHT EXCEPTION: {e}\n")
+        raise
 
 # Create FastAPI app with middleware
 app = FastAPI(middleware=[Middleware(AuthMiddleware)])
