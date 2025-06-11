@@ -154,3 +154,11 @@ async def create_quiz(req: QuizRequest):
 
     return QuizResponse(quiz_id=quiz_id, questions=questions)
 
+    35.227.187.87:0 - "GET / HTTP/1.1" 200 OK
+🚀 Received quiz request: topic='Photosynthesis' difficulty='medium' question_count=2 question_types=['multiple_choice', 'true_false']
+📥 Fetching context slice...
+❌ Failed to fetch context: HTTPSConnectionPool(host='arlo-mvp-2.onrender.com', port=443): Read timed out. (read timeout=5)
+🧠 Sending request to GPT...
+❌ Failed to log learning event: HTTPSConnectionPool(host='arlo-mvp-2.onrender.com', port=443): Read timed out. (read timeout=5)
+INFO:     68.21.131.206:0 - "POST /api/quiz HTTP/1.1" 200 OK
+
