@@ -16,10 +16,10 @@ supabase: Optional[Client] = None
 def get_supabase() -> Client:
     global supabase
     if not supabase:
-        url = os.getenv("SUPABASE_UR") or os.getenv("SUPABASE_URL")
-        key = os.getenv("SUPABASE_KEY") or os.getenv("SUPABASE_ANON_KEY") or os.getenv("SUPABASE_SERVICE_ROLE")
+        url = os.getenv("SUPABASE_URL") or os.getenv("SUPABASE_UR")
+        key = os.getenv("SUPABASE_KEY") or os.getenv("SUPABASE_SERVICE_ROLE")
         if not url or not key:
-            raise RuntimeError("Missing Supabase env vars: SUPABASE_UR and SUPABASE_KEY required.")
+            raise RuntimeError("SUPABASE_URL or SUPABASE_SERVICE_ROLE not set")
         supabase = create_client(url, key)
     return supabase
 
@@ -93,7 +93,17 @@ Your response must exactly match this structure:
   "emphasized_facts": [string],
   "preferred_learning_styles": [string],
   "review_queue": [string],
-  "learning_history": [object]
+  "learning_history": [
+    {{
+      "concept": string,
+      "phase": string,
+      "confidence": float,
+      "depth": "shallow" | "intermediate" | "deep",
+      "source_summary": string,
+      "repetition_count": int,
+      "review_scheduled": boolean
+    }}
+  ]
 }}
 
 Raw Logs:
@@ -120,25 +130,24 @@ Raw Logs:
 # ------------------------------
 # Routes
 # ------------------------------
-
 @router.post("/context/update")
 async def update_context(update: ContextUpdate, request: Request):
     entry = update.dict()
     entry["timestamp"] = datetime.utcnow().isoformat()
 
-    # ⚠️ TEMPORARY DISABLE AUTH CHECK FOR TESTING
-    #entry["user_id"] = "test-user"
+    # Attempt user extraction but skip enforcement
+    user_info = getattr(request.state, "user", None)
+    entry["user_id"] = user_info.get("sub", "test-user") if user_info else "test-user"
 
     get_supabase().table("context_log").insert(entry).execute()
 
     if should_trigger_synthesis(update):
         synthesized = synthesize_context_gpt()
-        get_supabase().table("context_state").delete().neq("id", 0).execute()
+        get_supabase().table("context_state").delete().neq("id", 0).execute()  # Clear previous
         get_supabase().table("context_state").insert({"id": 1, "context": json.dumps(synthesized)}).execute()
         return {"status": "ok", "synthesized": True}
 
     return {"status": "ok", "synthesized": False}
-
 
 @router.get("/context/current")
 async def get_full_context():
