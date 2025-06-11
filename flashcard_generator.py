@@ -88,46 +88,27 @@ Do not include explanations, headers, or any other text — just the JSON.
 """
 
     try:
-        response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.7
-        )
-        raw = response.choices[0].message.content.strip()
+    response = openai.ChatCompletion.create(
+        model="gpt-3.5-turbo",
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.7
+    )
 
-        if raw.startswith("```"):
-            raw = "\n".join(raw.strip().splitlines()[1:-1])
+    raw = response.choices[0].message.content.strip()
 
+    # 🔍 GPT sometimes wraps output in Markdown — unwrap if needed
+    if raw.startswith("```"):
+        raw = "\n".join(raw.strip().splitlines()[1:-1])
+
+    print("🧠 Raw GPT output:\n", raw)  # ✅ THIS IS NEW
+
+    try:
         cards = json.loads(raw)
+    except Exception as parse_error:
+        print("❌ JSON parsing failed:\n", parse_error)
+        raise HTTPException(status_code=500, detail="GPT returned bad JSON format.")
 
-    except Exception as e:
-        print("⚠️ Error:", e)
-        raise HTTPException(status_code=500, detail="Failed to generate flashcards")
+except Exception as e:
+    print("⚠️ GPT API Error:", e)
+    raise HTTPException(status_code=500, detail="Failed to generate flashcards.")
 
-    flashcards = []
-    for i, item in enumerate(cards[:data.count]):
-        flashcards.append(FlashcardItem(
-            id=f"card_{uuid.uuid4().hex[:6]}",
-            front=item.get("question", "No question."),
-            back=item.get("answer", "No answer."),
-            difficulty=data.difficulty,
-            category=data.topic
-        ))
-
-    # Post to context manager after flashcard generation
-    post_context_update({
-        "source": "flashcards",
-        "phase": "flashcards",
-        "event_type": "generation",
-        "data": {
-            "topic": data.topic,
-            "difficulty": data.difficulty,
-            "flashcard_count": len(flashcards)
-        }
-    })
-
-    return {
-        "flashcards": flashcards,
-        "total_cards": len(flashcards),
-        "estimated_time": f"{len(flashcards) * 1.5:.0f} minutes"
-    }
