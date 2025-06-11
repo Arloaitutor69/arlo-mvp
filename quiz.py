@@ -1,4 +1,4 @@
-# ✅ Clean and prefix-safe quiz module (mounted as /api/quiz)
+# ✅ FINAL QUIZ MODULE — Fully working with GPT, logging, and context
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import List, Literal, Union
@@ -63,7 +63,12 @@ def log_learning_event(topic, summary, count):
                 "question_count": count
             }
         }
-        res = requests.post(f"{CONTEXT_API}/api/context/update", json=payload, timeout=10)
+        res = requests.post(
+            f"{CONTEXT_API}/api/context/update",
+            json=payload,
+            headers={"Content-Type": "application/json"},
+            timeout=10
+        )
         print("📤 Context updated:", res.status_code)
     except Exception as e:
         print("❌ Failed to log learning event:", e)
@@ -125,46 +130,28 @@ No extra text. No markdown.
         print("❌ GPT generation failed:", e)
         raise HTTPException(status_code=500, detail="GPT quiz generation failed")
 
-# --- Routes (prefix-safe) ---
+# --- Routes ---
 @router.get("/test")
 def quiz_health_check():
     return {"status": "quiz router live"}
 
-@router.get("/test-log")
-def test_learning_log():
-    payload = {
-        "source": "quiz",
-        "phase": "quiz",
-        "event_type": "generation",
-        "learning_event": {
-            "concept": "Test Concept",
-            "phase": "quiz",
-            "confidence": 0.5,
-            "depth": "shallow",
-            "source_summary": "Sample quiz test for logging verification.",
-            "repetition_count": 1,
-            "review_scheduled": False
-        },
-        "data": {
-            "topic": "Test Concept",
-            "question_count": 1
-        }
-    }
+@router.post("/generate", response_model=QuizResponse)
+async def create_quiz(req: QuizRequest):
+    print("🚀 Received quiz request:", req)
 
-    try:
-        res = requests.post(
-            f"{CONTEXT_API}/api/context/update",
-            json=payload,
-            headers={"Content-Type": "application/json"},
-            timeout=10
-        )
-        return {
-            "status": "posted",
-            "code": res.status_code,
-            "text": res.text
-        }
-    except Exception as e:
-        return {
-            "status": "failed",
-            "error": str(e)
-        }
+    context = fetch_context()
+
+    questions = generate_questions(
+        topic=req.topic,
+        difficulty=req.difficulty,
+        count=req.question_count,
+        types=req.question_types,
+        context=context
+    )
+
+    quiz_id = f"quiz_{uuid.uuid4().hex[:6]}"
+    summary = "; ".join(q.question for q in questions)
+
+    log_learning_event(req.topic, summary, len(questions))
+
+    return QuizResponse(quiz_id=quiz_id, questions=questions)
