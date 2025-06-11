@@ -1,3 +1,5 @@
+# ✅ Fully patched flashcard module with context-aware learning_event logging
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import List, Optional
@@ -105,7 +107,7 @@ Do not include explanations, headers, or any other text — just the JSON.
         if raw.startswith("```"):
             raw = "\n".join(raw.strip().splitlines()[1:-1])
 
-        print("🧠 Raw GPT output:\n", raw)
+        print("🧐 Raw GPT output:\n", raw)
 
         try:
             cards = json.loads(raw)
@@ -131,7 +133,7 @@ Do not include explanations, headers, or any other text — just the JSON.
         ))
         questions_summary.append(item.get("question", ""))
 
-    # Post to context manager with learning_event and metadata
+    # ✅ Post to context manager with learning_event and metadata
     post_context_update({
         "source": "flashcards",
         "phase": "flashcards",
