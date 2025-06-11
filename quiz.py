@@ -1,3 +1,5 @@
+# ✅ Fully patched quiz module with valid learning_event logging
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import List, Literal, Union
@@ -61,7 +63,7 @@ def call_gpt_for_quiz(topic: str, difficulty: str, count: int, types: List[str],
     review_queue = ", ".join(context.get("review_queue", []))
 
     user_msg = f"""
-Generate {count} quiz questions about the topic: "{topic}" (context topic: "{current_topic}"), difficulty: "{difficulty}".
+Generate {count} quiz questions about the topic: \"{topic}\" (context topic: \"{current_topic}\"), difficulty: \"{difficulty}\".
 
 Allowed types: {types}
 
@@ -126,10 +128,10 @@ async def create_quiz(data: QuizRequest):
         context=context
     )
 
-    # Summarize questions for logging
+    # Summarize questions to provide GPT trace for memory logging
     summary = "; ".join([q.question for q in questions])
 
-    # Post to context manager with learning event
+    # ✅ Post structured learning_event to context manager
     post_context_update({
         "source": "quiz",
         "phase": "quiz",
@@ -142,10 +144,6 @@ async def create_quiz(data: QuizRequest):
             "source_summary": summary,
             "repetition_count": 1,
             "review_scheduled": False
-        },
-        "data": {
-            "question_count": len(questions),
-            "difficulty": data.difficulty
         }
     })
 
