@@ -1,4 +1,4 @@
-# ✅ Final, stable quiz module with full context integration
+# ✅ Clean and prefix-safe quiz module (mounted as /api/quiz)
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import List, Literal, Union
@@ -8,7 +8,6 @@ import json
 import openai
 import requests
 
-# --- Init ---
 openai.api_key = os.getenv("OPENAI_API_KEY")
 CONTEXT_API = os.getenv("CONTEXT_API_BASE", "https://arlo-mvp-2.onrender.com")
 
@@ -37,7 +36,7 @@ class QuizResponse(BaseModel):
 def fetch_context():
     try:
         print("📥 Fetching context slice...")
-        res = requests.get(f"{CONTEXT_API}/api/context/slice", timeout=5)
+        res = requests.get(f"{CONTEXT_API}/api/context/slice", timeout=10)
         res.raise_for_status()
         return res.json()
     except Exception as e:
@@ -64,12 +63,12 @@ def log_learning_event(topic, summary, count):
                 "question_count": count
             }
         }
-        res = requests.post(f"{CONTEXT_API}/api/context/update", json=payload, timeout=5)
+        res = requests.post(f"{CONTEXT_API}/api/context/update", json=payload, timeout=10)
         print("📤 Context updated:", res.status_code)
     except Exception as e:
         print("❌ Failed to log learning event:", e)
 
-# --- GPT Generator ---
+# --- GPT Helper ---
 def generate_questions(topic, difficulty, count, types, context):
     system_msg = "You are a quiz tutor who writes clear, factual questions in JSON."
 
@@ -126,8 +125,38 @@ No extra text. No markdown.
         print("❌ GPT generation failed:", e)
         raise HTTPException(status_code=500, detail="GPT quiz generation failed")
 
-# --- Endpoint ---
-@router.post("/api/quiz", response_model=QuizResponse)
+# --- Routes (prefix-safe) ---
+@router.get("/test")
+def quiz_health_check():
+    return {"status": "quiz router live"}
+
+@router.get("/test-log")
+def test_learning_log():
+    payload = {
+        "source": "quiz",
+        "phase": "quiz",
+        "event_type": "generation",
+        "learning_event": {
+            "concept": "Photosynthesis",
+            "phase": "quiz",
+            "confidence": 0.7,
+            "depth": "moderate",
+            "source_summary": "Test question 1; Test question 2",
+            "repetition_count": 2,
+            "review_scheduled": True
+        },
+        "data": {
+            "topic": "Photosynthesis",
+            "question_count": 2
+        }
+    }
+    try:
+        res = requests.post(f"{CONTEXT_API}/api/context/update", json=payload, timeout=10)
+        return {"status": "posted", "code": res.status_code, "text": res.text}
+    except Exception as e:
+        return {"status": "failed", "error": str(e)}
+
+@router.post("/", response_model=QuizResponse)
 async def create_quiz(req: QuizRequest):
     print("🚀 Received quiz request:", req)
 
@@ -147,8 +176,3 @@ async def create_quiz(req: QuizRequest):
     log_learning_event(req.topic, summary, len(questions))
 
     return QuizResponse(quiz_id=quiz_id, questions=questions)
-
-# --- Health Check ---
-@router.get("/api/quiz/test")
-def test():
-    return {"status": "ok", "message": "quiz router is live"}
