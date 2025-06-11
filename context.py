@@ -16,10 +16,10 @@ supabase: Optional[Client] = None
 def get_supabase() -> Client:
     global supabase
     if not supabase:
-        url = os.getenv("SUPABASE_URL") or os.getenv("SUPABASE_UR")
-        key = os.getenv("SUPABASE_KEY") or os.getenv("SUPABASE_SERVICE_ROLE")
+        url = os.getenv("SUPABASE_UR") or os.getenv("SUPABASE_URL")
+        key = os.getenv("SUPABASE_KEY") or os.getenv("SUPABASE_ANON_KEY") or os.getenv("SUPABASE_SERVICE_ROLE")
         if not url or not key:
-            raise RuntimeError("SUPABASE_URL or SUPABASE_SERVICE_ROLE not set")
+            raise RuntimeError("Missing Supabase env vars: SUPABASE_UR and SUPABASE_KEY required.")
         supabase = create_client(url, key)
     return supabase
 
