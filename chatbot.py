@@ -85,12 +85,14 @@ def build_prompt(data: ChatbotInput, context: Dict[str, Any]) -> str:
         f"{msg['role']}: {msg['content']}" for msg in data.message_history[-3:]
     ])
 
+    ctx_text = "\n".join(ctx)
+
     base = f"""
 You are Arlo, an expert AI tutor.
 Avoid greetings or filler phrases like 'Hey there' or 'Nice to see you.'
 Respond directly and clearly like a human teacher sitting next to the student.
 Focus first on the student’s current question, and supplement only with relevant context.
-{'\n'.join(ctx)}
+{ctx_text}
 
 Recent conversation:
 {recent_messages}
