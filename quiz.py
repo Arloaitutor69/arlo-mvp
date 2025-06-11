@@ -1,4 +1,4 @@
-# ✅ Fully patched quiz module with valid learning_event logging
+# ✅ Fully patched quiz module with context input + learning_event output logging
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -128,10 +128,8 @@ async def create_quiz(data: QuizRequest):
         context=context
     )
 
-    # Summarize questions to provide GPT trace for memory logging
     summary = "; ".join([q.question for q in questions])
 
-    # ✅ Post structured learning_event to context manager
     post_context_update({
         "source": "quiz",
         "phase": "quiz",
@@ -144,6 +142,11 @@ async def create_quiz(data: QuizRequest):
             "source_summary": summary,
             "repetition_count": 1,
             "review_scheduled": False
+        },
+        "data": {
+            "topic": data.topic,
+            "difficulty": data.difficulty,
+            "question_count": len(questions)
         }
     })
 
