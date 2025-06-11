@@ -32,7 +32,7 @@ class FlashcardItem(BaseModel):
 # --- Helper to fetch context slice from context manager ---
 def fetch_context_slice():
     try:
-        response = requests.get(f"{CONTEXT_BASE_URL}/api/context/slice?fields=emphasized_facts,weak_areas,user_goals")
+        response = requests.get(f"{CONTEXT_BASE_URL}/api/context/slice")
         if response.status_code == 200:
             return response.json()
     except Exception as e:
@@ -53,13 +53,18 @@ def generate_flashcards(data: FlashcardRequest):
     # Build GPT prompt using context slice to personalize
     personalization = ""
     if context:
+        current_topic = context.get("current_topic", "")
         emphasized = ", ".join(context.get("emphasized_facts", []))
         weak_areas = ", ".join(context.get("weak_areas", []))
         user_goals = ", ".join(context.get("user_goals", []))
+        review_queue = ", ".join(context.get("review_queue", []))
+
         personalization = f"""
+Current session topic: {current_topic or data.topic}
 Emphasize these facts: {emphasized or 'N/A'}
 Prioritize these weak areas: {weak_areas or 'N/A'}
 Tailor to user goals: {user_goals or 'N/A'}
+Optionally include 1–2 review cards on: {review_queue or 'none'}
 """
 
     prompt = f"""
