@@ -137,7 +137,12 @@ async def update_context(update: ContextUpdate, request: Request):
 
     # Attempt user extraction but skip enforcement
     user_info = getattr(request.state, "user", None)
-    entry["user_id"] = user_info.get("sub", "test-user") if user_info else "test-user"
+    # Use a fixed dummy UUID in dev mode if user is not authenticated
+    entry["user_id"] = (
+        user_info["sub"]
+        if user_info and "sub" in user_info
+        else "00000000-0000-0000-0000-000000000000"
+    )
 
     get_supabase().table("context_log").insert(entry).execute()
 
