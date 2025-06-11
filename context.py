@@ -9,11 +9,19 @@ import os
 from supabase import create_client, Client
 
 # ------------------------------
-# Supabase Configuration (load from env)
+# Supabase lazy initialization
 # ------------------------------
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY")
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+supabase: Optional[Client] = None
+
+def get_supabase() -> Client:
+    global supabase
+    if not supabase:
+        url = os.getenv("SUPABASE_URL")
+        key = os.getenv("SUPABASE_KEY")
+        if not url or not key:
+            raise RuntimeError("SUPABASE_URL or SUPABASE_KEY not set.")
+        supabase = create_client(url, key)
+    return supabase
 
 # ------------------------------
 # Router
@@ -62,7 +70,7 @@ def score_source(source: str) -> int:
     return priority.get(source, 50)
 
 def should_trigger_synthesis(new_entry: ContextUpdate) -> bool:
-    res = supabase.table("context_log").select("source").order("id", desc=True).limit(5).execute()
+    res = get_supabase().table("context_log").select("source").order("id", desc=True).limit(5).execute()
     recent_entries = res.data if res.data else []
     if new_entry.feedback_flag:
         return True
@@ -73,7 +81,7 @@ def should_trigger_synthesis(new_entry: ContextUpdate) -> bool:
     return False
 
 def synthesize_context_gpt() -> dict:
-    logs = supabase.table("context_log").select("*").order("id").execute().data
+    logs = get_supabase().table("context_log").select("*").order("id").execute().data
     prompt = """
 You are ARLO's memory engine. Based on the raw study data below, generate a structured context object.
 Include fields: current_topic, user_goals, weak_areas, emphasized_facts, preferred_learning_styles, review_queue, learning_history.
@@ -106,26 +114,26 @@ Raw Logs:
 async def update_context(update: ContextUpdate):
     entry = update.dict()
     entry["timestamp"] = datetime.utcnow().isoformat()
-    supabase.table("context_log").insert(entry).execute()
+    get_supabase().table("context_log").insert(entry).execute()
 
     if should_trigger_synthesis(update):
         synthesized = synthesize_context_gpt()
-        supabase.table("context_state").delete().neq("id", 0).execute()  # Clear previous
-        supabase.table("context_state").insert({"id": 1, "context": json.dumps(synthesized)}).execute()
+        get_supabase().table("context_state").delete().neq("id", 0).execute()  # Clear previous
+        get_supabase().table("context_state").insert({"id": 1, "context": json.dumps(synthesized)}).execute()
         return {"status": "ok", "synthesized": True}
 
     return {"status": "ok", "synthesized": False}
 
 @router.get("/context/current")
 async def get_full_context():
-    res = supabase.table("context_state").select("context").eq("id", 1).single().execute()
+    res = get_supabase().table("context_state").select("context").eq("id", 1).single().execute()
     if not res.data:
         raise HTTPException(status_code=404, detail="Context not yet synthesized.")
     return json.loads(res.data["context"])
 
 @router.get("/context/slice")
 async def get_context_slice():
-    res = supabase.table("context_state").select("context").eq("id", 1).single().execute()
+    res = get_supabase().table("context_state").select("context").eq("id", 1).single().execute()
     if not res.data:
         raise HTTPException(status_code=404, detail="Context not yet synthesized.")
     ctx = json.loads(res.data["context"])
