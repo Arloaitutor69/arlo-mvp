@@ -1,21 +1,20 @@
-# ✅ Debug-patched quiz module with context logging + test route
-
+# ✅ Final, stable quiz module with full context integration
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import List, Literal, Union
 import uuid
-import openai
 import os
 import json
+import openai
 import requests
 
+# --- Init ---
 openai.api_key = os.getenv("OPENAI_API_KEY")
-CONTEXT_BASE_URL = os.getenv("CONTEXT_API_BASE", "https://arlo-mvp-2.onrender.com")
+CONTEXT_API = os.getenv("CONTEXT_API_BASE", "https://arlo-mvp-2.onrender.com")
 
 router = APIRouter()
 
 # --- Models ---
-
 class QuizRequest(BaseModel):
     topic: str
     difficulty: Literal["easy", "medium", "hard"]
@@ -34,32 +33,45 @@ class QuizResponse(BaseModel):
     quiz_id: str
     questions: List[QuizQuestion]
 
-# --- Helpers ---
-
-def fetch_context_slice():
+# --- Context Helpers ---
+def fetch_context():
     try:
-        print("🔎 Fetching context from /context/slice...")
-        res = requests.get(f"{CONTEXT_BASE_URL}/api/context/slice")
+        print("📥 Fetching context slice...")
+        res = requests.get(f"{CONTEXT_API}/api/context/slice", timeout=5)
         res.raise_for_status()
-        context = res.json()
-        print("✅ Context received:", context)
-        return context
+        return res.json()
     except Exception as e:
-        print("❌ Context fetch failed:", e)
+        print("❌ Failed to fetch context:", e)
         return {}
 
-def post_context_update(payload: dict):
+def log_learning_event(topic, summary, count):
     try:
-        print("📤 Posting context update...")
-        res = requests.post(f"{CONTEXT_BASE_URL}/api/context/update", json=payload)
-        print("✅ Context update status:", res.status_code)
+        payload = {
+            "source": "quiz",
+            "phase": "quiz",
+            "event_type": "generation",
+            "learning_event": {
+                "concept": topic,
+                "phase": "quiz",
+                "confidence": 0.5,
+                "depth": "shallow",
+                "source_summary": summary,
+                "repetition_count": 1,
+                "review_scheduled": False
+            },
+            "data": {
+                "topic": topic,
+                "question_count": count
+            }
+        }
+        res = requests.post(f"{CONTEXT_API}/api/context/update", json=payload, timeout=5)
+        print("📤 Context updated:", res.status_code)
     except Exception as e:
-        print("❌ Context update failed:", e)
+        print("❌ Failed to log learning event:", e)
 
-# --- GPT Wrapper ---
-
-def call_gpt_for_quiz(topic: str, difficulty: str, count: int, types: List[str], context: dict) -> List[QuizQuestion]:
-    system_msg = "You are an expert tutor generating quiz questions in JSON format."
+# --- GPT Generator ---
+def generate_questions(topic, difficulty, count, types, context):
+    system_msg = "You are a quiz tutor who writes clear, factual questions in JSON."
 
     current_topic = context.get("current_topic", "")
     weak_areas = ", ".join(context.get("weak_areas", []))
@@ -68,15 +80,14 @@ def call_gpt_for_quiz(topic: str, difficulty: str, count: int, types: List[str],
     review_queue = ", ".join(context.get("review_queue", []))
 
     user_msg = f"""
-Generate {count} quiz questions about the topic: \"{topic}\" (context topic: \"{current_topic}\"), difficulty: \"{difficulty}\".
+Generate {count} quiz questions on the topic: \"{topic}\" (current context topic: \"{current_topic}\").
+Difficulty: \"{difficulty}\". Allowed types: {types}.
 
-Allowed types: {types}
-
-Please personalize:
-- Prioritize these weak areas: {weak_areas or 'none'}
-- Reinforce these emphasized facts: {emphasized_facts or 'none'}
-- Tailor explanations to user goals: {user_goals or 'none'}
-- Optionally include 1–2 review questions: {review_queue or 'none'}
+Personalize:
+- Weak areas: {weak_areas or 'none'}
+- Emphasized facts: {emphasized_facts or 'none'}
+- User goals: {user_goals or 'none'}
+- Include 1–2 questions from review queue: {review_queue or 'none'}
 
 Return ONLY a valid JSON array of objects like:
 [
@@ -87,14 +98,13 @@ Return ONLY a valid JSON array of objects like:
     "options": ["A", "B", "C", "D"],
     "correct_answer": "...",
     "explanation": "..."
-  }},
-  ...
+  }}
 ]
 No extra text. No markdown.
 """
 
     try:
-        print("⚙ Calling GPT for quiz generation...")
+        print("🧠 Sending request to GPT...")
         response = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
             messages=[
@@ -105,65 +115,40 @@ No extra text. No markdown.
             max_tokens=1200
         )
 
-        content = response['choices'][0]['message']['content'].strip()
-        print("🧠 GPT raw output:", content[:200])  # Preview output
+        raw = response["choices"][0]["message"]["content"].strip()
+        if raw.startswith("```"):
+            raw = "\n".join(raw.splitlines()[1:-1])
 
-        if content.startswith("```"):
-            content = "\n".join(content.strip().splitlines()[1:-1])
-
-        raw_questions = json.loads(content)
-        return [QuizQuestion(**q) for q in raw_questions]
+        parsed = json.loads(raw)
+        return [QuizQuestion(**q) for q in parsed]
 
     except Exception as e:
-        print("❌ GPT Error:", e)
-        raise HTTPException(status_code=500, detail="Failed to generate quiz questions from GPT")
+        print("❌ GPT generation failed:", e)
+        raise HTTPException(status_code=500, detail="GPT quiz generation failed")
 
-# --- Routes ---
-
+# --- Endpoint ---
 @router.post("/api/quiz", response_model=QuizResponse)
-async def create_quiz(data: QuizRequest):
-    print("🚀 /api/quiz called with:", data)
+async def create_quiz(req: QuizRequest):
+    print("🚀 Received quiz request:", req)
 
-    if not data.question_types:
-        raise HTTPException(status_code=400, detail="Must include at least one question type.")
+    context = fetch_context()
 
-    context = fetch_context_slice()
-
-    quiz_id = f"quiz_{uuid.uuid4().hex[:6]}"
-    questions = call_gpt_for_quiz(
-        topic=data.topic,
-        difficulty=data.difficulty,
-        count=data.question_count,
-        types=data.question_types,
+    questions = generate_questions(
+        topic=req.topic,
+        difficulty=req.difficulty,
+        count=req.question_count,
+        types=req.question_types,
         context=context
     )
 
-    summary = "; ".join([q.question for q in questions])
+    quiz_id = f"quiz_{uuid.uuid4().hex[:6]}"
+    summary = "; ".join(q.question for q in questions)
 
-    post_context_update({
-        "source": "quiz",
-        "phase": "quiz",
-        "event_type": "generation",
-        "learning_event": {
-            "concept": data.topic,
-            "phase": "quiz",
-            "confidence": 0.5,
-            "depth": "shallow",
-            "source_summary": summary,
-            "repetition_count": 1,
-            "review_scheduled": False
-        },
-        "data": {
-            "topic": data.topic,
-            "difficulty": data.difficulty,
-            "question_count": len(questions)
-        }
-    })
+    log_learning_event(req.topic, summary, len(questions))
 
     return QuizResponse(quiz_id=quiz_id, questions=questions)
 
 # --- Health Check ---
-
 @router.get("/api/quiz/test")
-def test_quiz_module():
-    return {"status": "ok", "message": "Quiz module is live"}
+def test():
+    return {"status": "ok", "message": "quiz router is live"}
