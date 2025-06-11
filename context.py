@@ -17,16 +17,11 @@ def get_supabase() -> Client:
     global supabase
     if not supabase:
         url = os.getenv("SUPABASE_URL") or os.getenv("SUPABASE_UR")
-        key = os.getenv("SUPABASE_KEY") or os.getenv("SUPABASE_ANON_KEY")
+        key = os.getenv("SUPABASE_SERVICE_ROLE")  # NOTE: use service role for writing context
         if not url or not key:
-            raise RuntimeError("SUPABASE_URL or SUPABASE_KEY not set (or missing fallbacks SUPABASE_UR / SUPABASE_ANON_KEY).")
+            raise RuntimeError("SUPABASE_URL or SUPABASE_SERVICE_ROLE not set")
         supabase = create_client(url, key)
     return supabase
-
-
-# ------------------------------
-# Router
-# ------------------------------
 
 # ------------------------------
 # Router
@@ -36,7 +31,6 @@ router = APIRouter()
 # ------------------------------
 # Pydantic Models
 # ------------------------------
-
 class LearningEvent(BaseModel):
     concept: str
     phase: str
@@ -60,7 +54,6 @@ class ContextUpdate(BaseModel):
 # ------------------------------
 # Helper Functions
 # ------------------------------
-
 def score_source(source: str) -> int:
     priority = {
         'session_planner': 100,
@@ -122,16 +115,23 @@ Raw Logs:
         parsed = json.loads(raw_content)
         return parsed
     except json.JSONDecodeError:
-        raise HTTPException(status_code=500, detail=f"Failed to parse GPT output:\\n{raw_content}")
+        raise HTTPException(status_code=500, detail=f"Failed to parse GPT output:\n{raw_content}")
 
 # ------------------------------
 # Routes
 # ------------------------------
-
 @router.post("/context/update")
-async def update_context(update: ContextUpdate):
+async def update_context(update: ContextUpdate, request: Request):
     entry = update.dict()
     entry["timestamp"] = datetime.utcnow().isoformat()
+
+    # Extract user ID from request
+    user_info = getattr(request.state, "user", None)
+    if not user_info or "sub" not in user_info:
+        raise HTTPException(status_code=401, detail="User authentication required.")
+
+    entry["user_id"] = user_info["sub"]  # Attach Supabase user ID
+
     get_supabase().table("context_log").insert(entry).execute()
 
     if should_trigger_synthesis(update):
