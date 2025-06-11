@@ -16,12 +16,13 @@ supabase: Optional[Client] = None
 def get_supabase() -> Client:
     global supabase
     if not supabase:
-        url = os.getenv("SUPABASE_URL")
-        key = os.getenv("SUPABASE_KEY")
+        url = os.getenv("SUPABASE_URL") or os.getenv("SUPABASE_UR")
+        key = os.getenv("SUPABASE_KEY") or os.getenv("SUPABASE_ANON_KEY")
         if not url or not key:
-            raise RuntimeError("SUPABASE_URL or SUPABASE_KEY not set.")
+            raise RuntimeError("SUPABASE_URL or SUPABASE_KEY not set (or missing fallbacks SUPABASE_UR / SUPABASE_ANON_KEY).")
         supabase = create_client(url, key)
     return supabase
+
 
 # ------------------------------
 # Router
