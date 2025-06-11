@@ -30,6 +30,9 @@ class AuthMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 
+# Create FastAPI app with middleware
+app = FastAPI(middleware=[Middleware(AuthMiddleware)])
+
 
 @app.middleware("http")
 async def log_exceptions(request, call_next):
@@ -40,8 +43,6 @@ async def log_exceptions(request, call_next):
         sys.stderr.write(f"🔥 UNCAUGHT EXCEPTION: {e}\n")
         raise
 
-# Create FastAPI app with middleware
-app = FastAPI(middleware=[Middleware(AuthMiddleware)])
 
 # === CORS Setup ===
 app.add_middleware(
