@@ -5,11 +5,15 @@ import openai
 import os
 import json
 import uuid
+import requests
 
+# Load environment variables
 openai.api_key = os.getenv("OPENAI_API_KEY")
+CONTEXT_BASE_URL = os.getenv("CONTEXT_API_BASE", "https://arlo-mvp-2.onrender.com")
+
 router = APIRouter()
 
-# Input from planner or user
+# --- Input model from the frontend or planner ---
 class FlashcardRequest(BaseModel):
     topic: str
     content: Optional[str] = ""
@@ -17,7 +21,7 @@ class FlashcardRequest(BaseModel):
     count: Optional[int] = 10
     format: Optional[str] = "Q&A"
 
-# Output flashcard schema
+# --- Output schema for flashcard items ---
 class FlashcardItem(BaseModel):
     id: str
     front: str
@@ -25,16 +29,49 @@ class FlashcardItem(BaseModel):
     difficulty: str
     category: str
 
+# --- Helper to fetch context slice from context manager ---
+def fetch_context_slice():
+    try:
+        response = requests.get(f"{CONTEXT_BASE_URL}/api/context/slice?fields=emphasized_facts,weak_areas,user_goals")
+        if response.status_code == 200:
+            return response.json()
+    except Exception as e:
+        print("Context slice fetch failed:", e)
+    return {}
+
+# --- Helper to post context update ---
+def post_context_update(payload: dict):
+    try:
+        requests.post(f"{CONTEXT_BASE_URL}/api/context/update", json=payload)
+    except Exception as e:
+        print("Context update failed:", e)
+
 @router.post("/api/flashcards")
 def generate_flashcards(data: FlashcardRequest):
+    context = fetch_context_slice()
+
+    # Build GPT prompt using context slice to personalize
+    personalization = ""
+    if context:
+        emphasized = ", ".join(context.get("emphasized_facts", []))
+        weak_areas = ", ".join(context.get("weak_areas", []))
+        user_goals = ", ".join(context.get("user_goals", []))
+        personalization = f"""
+Emphasize these facts: {emphasized or 'N/A'}
+Prioritize these weak areas: {weak_areas or 'N/A'}
+Tailor to user goals: {user_goals or 'N/A'}
+"""
+
     prompt = f"""
-You are a flashcard tutor generating study cards from the following topic and notes.
+You are a flashcard tutor generating study cards.
 
 Topic: "{data.topic}"
 Notes: "{data.content or 'Use general knowledge if no notes provided.'}"
 
 Difficulty: {data.difficulty}
 Format: {data.format}
+
+{personalization}
 
 Use only one of these formats:
 - "Q&A" → Basic question/answer
@@ -44,10 +81,10 @@ Use only one of these formats:
 Return ONLY a valid JSON array of objects like:
 [
   {{ "question": "What is ...?", "answer": "..." }},
-  {{ "question": "...?", "answer": "..." }}
+  ...
 ]
 
-Do not include explanations, headers, or any other text — just return the JSON array.
+Do not include explanations, headers, or any other text — just the JSON.
 """
 
     try:
@@ -56,10 +93,8 @@ Do not include explanations, headers, or any other text — just return the JSON
             messages=[{"role": "user", "content": prompt}],
             temperature=0.7
         )
-
         raw = response.choices[0].message.content.strip()
 
-        # Remove markdown block wrapper if GPT adds one
         if raw.startswith("```"):
             raw = "\n".join(raw.strip().splitlines()[1:-1])
 
@@ -78,6 +113,18 @@ Do not include explanations, headers, or any other text — just return the JSON
             difficulty=data.difficulty,
             category=data.topic
         ))
+
+    # Post to context manager after flashcard generation
+    post_context_update({
+        "source": "flashcards",
+        "phase": "flashcards",
+        "event_type": "generation",
+        "data": {
+            "topic": data.topic,
+            "difficulty": data.difficulty,
+            "flashcard_count": len(flashcards)
+        }
+    })
 
     return {
         "flashcards": flashcards,
