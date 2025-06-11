@@ -127,7 +127,7 @@ async def update_context(update: ContextUpdate, request: Request):
     entry["timestamp"] = datetime.utcnow().isoformat()
 
     # ⚠️ TEMPORARY DISABLE AUTH CHECK FOR TESTING
-    entry["user_id"] = "test-user"
+    #entry["user_id"] = "test-user"
 
     get_supabase().table("context_log").insert(entry).execute()
 
