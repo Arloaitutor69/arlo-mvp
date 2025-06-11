@@ -70,7 +70,7 @@ from context import router as context_router
 
 # --- Include all routes ---
 app.include_router(flashcard_router)
-app.include_router(quiz_router)
+app.include_router(quiz_router, prefix="/api/quiz")
 app.include_router(study_session_router)
 app.include_router(chatbot_router)
 app.include_router(review_router)
