@@ -137,42 +137,34 @@ def test_learning_log():
         "phase": "quiz",
         "event_type": "generation",
         "learning_event": {
-            "concept": "Photosynthesis",
+            "concept": "Test Concept",
             "phase": "quiz",
-            "confidence": 0.7,
-            "depth": "intermediate",   # ✅ valid
-            "source_summary": "Test question 1; Test question 2",
-            "repetition_count": 2,
-            "review_scheduled": True
+            "confidence": 0.5,
+            "depth": "shallow",
+            "source_summary": "Sample quiz test for logging verification.",
+            "repetition_count": 1,
+            "review_scheduled": False
         },
         "data": {
-            "topic": "Photosynthesis",
-            "question_count": 2
+            "topic": "Test Concept",
+            "question_count": 1
         }
     }
+
     try:
-        res = requests.post(f"{CONTEXT_API}/api/context/update", json=payload, timeout=10)
-        return {"status": "posted", "code": res.status_code, "text": res.text}
+        res = requests.post(
+            f"{CONTEXT_API}/api/context/update",
+            json=payload,
+            headers={"Content-Type": "application/json"},
+            timeout=10
+        )
+        return {
+            "status": "posted",
+            "code": res.status_code,
+            "text": res.text
+        }
     except Exception as e:
-        return {"status": "failed", "error": str(e)}
-
-@router.post("/", response_model=QuizResponse)
-async def create_quiz(req: QuizRequest):
-    print("🚀 Received quiz request:", req)
-
-    context = fetch_context()
-
-    questions = generate_questions(
-        topic=req.topic,
-        difficulty=req.difficulty,
-        count=req.question_count,
-        types=req.question_types,
-        context=context
-    )
-
-    quiz_id = f"quiz_{uuid.uuid4().hex[:6]}"
-    summary = "; ".join(q.question for q in questions)
-
-    log_learning_event(req.topic, summary, len(questions))
-
-    return QuizResponse(quiz_id=quiz_id, questions=questions)
+        return {
+            "status": "failed",
+            "error": str(e)
+        }
