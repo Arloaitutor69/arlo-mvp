@@ -135,22 +135,25 @@ async def update_context(update: ContextUpdate, request: Request):
     entry = update.dict()
     entry["timestamp"] = datetime.utcnow().isoformat()
 
-    
-    
-        # Try to get user from request.state first
+    # Try to get user from request.state first
     user_info = getattr(request.state, "user", None)
-    
+
     if user_info and "sub" in user_info:
         user_id = user_info["sub"]
     else:
-        # Fallback to parsing from `source` if present in request body
-        source_str = data.get("source", "")
+        # Fallback to parsing from `update.source`
+        source_str = update.source or ""
         if source_str.startswith("user:"):
             user_id = source_str.replace("user:", "")
         else:
             user_id = "00000000-0000-0000-0000-000000000000"
-    
+
     entry["user_id"] = user_id
+
+    # ✅ Add these debug prints here, right before your Supabase insert
+    print("🚨 DEBUG: source_str =", source_str)
+    print("🚨 DEBUG: user_id =", user_id)
+    print("🚨 DEBUG: full context entry =", entry)
 
     get_supabase().table("context_log").insert(entry).execute()
 
