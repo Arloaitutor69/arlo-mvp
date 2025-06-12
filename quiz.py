@@ -9,7 +9,7 @@ import openai
 import requests
 
 openai.api_key = os.getenv("OPENAI_API_KEY")
-CONTEXT_API = os.getenv("CONTEXT_API_BASE", "http://localhost:10000")
+CONTEXT_API = os.getenv("CONTEXT_API_BASE", "https://arlo-mvp-2.onrender.com")
 
 router = APIRouter()
 
