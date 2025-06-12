@@ -6,35 +6,55 @@ from typing import Optional, List
 import openai
 import os
 import json
+import requests
 
 router = APIRouter()
-
-# Set your OpenAI API key from environment variable
 openai.api_key = os.getenv("OPENAI_API_KEY")
+CONTEXT_BASE = os.getenv("CONTEXT_API_BASE", "https://arlo-mvp-2.onrender.com")
 
-# ======================
-# Request and Response Models
-# ======================
+# ========== Models ==========
 
 class BlurtingRequest(BaseModel):
     topic: str
     content_summary: Optional[str] = None
     blurted_response: str
-    context_prompt: Optional[str] = None  # New field
+    context_prompt: Optional[str] = None
+    user_id: Optional[str] = None  # for logging
 
 class BlurtingResponse(BaseModel):
     feedback: str
     missed_concepts: List[str]
-    context_alignment: str  # New field
+    context_alignment: str
 
-# ======================
-# Prompt Generator
-# ======================
+# ========== Context Logging ==========
+
+def post_learning_event_to_context(user_id: str, topic: str, missed_concepts: List[str], feedback: str):
+    payload = {
+        "source": f"user:{user_id}",
+        "current_topic": topic,
+        "weak_areas": missed_concepts,
+        "emphasized_facts": [],  # can be extracted later
+        "review_queue": missed_concepts,
+        "learning_event": {
+            "concept": topic,
+            "phase": "blurting",
+            "confidence": 2 if missed_concepts else 4,
+            "depth": "shallow" if missed_concepts else "medium",
+            "source_summary": feedback[:250],
+            "repetition_count": 1,
+            "review_scheduled": True
+        }
+    }
+    try:
+        requests.post(f"{CONTEXT_BASE}/api/context/update", json=payload, timeout=10)
+    except Exception as e:
+        print(f"❌ Failed to log context: {e}")
+
+# ========== Prompt Generator ==========
 
 def generate_blurting_prompt(topic: str, content_summary: Optional[str], blurted_response: str, context_prompt: Optional[str]) -> str:
     summary_block = f"\nSummary of key concepts:\n{content_summary}" if content_summary else ""
     context_block = f"\nAdditional context for evaluation:\n{context_prompt}" if context_prompt else ""
-    
     return (
         f"You're an educational coach helping a student review their memory of the topic: \"{topic}\"."
         f"{summary_block}"
@@ -47,9 +67,7 @@ def generate_blurting_prompt(topic: str, content_summary: Optional[str], blurted
         "Only return valid JSON."
     )
 
-# ======================
-# Main API Endpoint
-# ======================
+# ========== Endpoint ==========
 
 @router.post("/blurting", response_model=BlurtingResponse)
 async def evaluate_blurting(request: BlurtingRequest):
@@ -70,10 +88,20 @@ async def evaluate_blurting(request: BlurtingRequest):
         content = response.choices[0].message.content.strip()
         parsed = json.loads(content)
 
+        # Log to context
+        if request.user_id:
+            post_learning_event_to_context(
+                request.user_id,
+                request.topic,
+                parsed["missed_concepts"],
+                parsed["feedback"]
+            )
+
         return BlurtingResponse(**parsed)
 
     except json.JSONDecodeError:
         raise HTTPException(status_code=500, detail="Failed to parse GPT response as JSON.")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 
