@@ -135,14 +135,22 @@ async def update_context(update: ContextUpdate, request: Request):
     entry = update.dict()
     entry["timestamp"] = datetime.utcnow().isoformat()
 
-    # Attempt user extraction but skip enforcement
+    
+    
+        # Try to get user from request.state first
     user_info = getattr(request.state, "user", None)
-    # Use a fixed dummy UUID in dev mode if user is not authenticated
-    entry["user_id"] = (
-        user_info["sub"]
-        if user_info and "sub" in user_info
-        else "00000000-0000-0000-0000-000000000000"
-    )
+    
+    if user_info and "sub" in user_info:
+        user_id = user_info["sub"]
+    else:
+        # Fallback to parsing from `source` if present in request body
+        source_str = data.get("source", "")
+        if source_str.startswith("user:"):
+            user_id = source_str.replace("user:", "")
+        else:
+            user_id = "00000000-0000-0000-0000-000000000000"
+    
+    entry["user_id"] = user_id
 
     get_supabase().table("context_log").insert(entry).execute()
 
