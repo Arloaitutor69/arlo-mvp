@@ -1,5 +1,3 @@
-# blurting.py
-
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import Optional, List
@@ -12,28 +10,34 @@ router = APIRouter()
 openai.api_key = os.getenv("OPENAI_API_KEY")
 CONTEXT_BASE = os.getenv("CONTEXT_API_BASE", "https://arlo-mvp-2.onrender.com")
 
-# ========== Models ==========
-
+# Models
 class BlurtingRequest(BaseModel):
     topic: str
     content_summary: Optional[str] = None
     blurted_response: str
     context_prompt: Optional[str] = None
-    user_id: Optional[str] = None  # for logging
+    user_id: Optional[str] = None
 
 class BlurtingResponse(BaseModel):
     feedback: str
     missed_concepts: List[str]
     context_alignment: str
 
-# ========== Context Logging ==========
+# Context functions
+def get_context_slice():
+    try:
+        res = requests.get(f"{CONTEXT_BASE}/api/context/slice", timeout=10)
+        res.raise_for_status()
+        return res.json()
+    except Exception as e:
+        print("❌ Failed to fetch context:", e)
+        return None
 
 def post_learning_event_to_context(user_id: str, topic: str, missed_concepts: List[str], feedback: str):
     payload = {
         "source": f"user:{user_id}",
         "current_topic": topic,
         "weak_areas": missed_concepts,
-        "emphasized_facts": [],  # can be extracted later
         "review_queue": missed_concepts,
         "learning_event": {
             "concept": topic,
@@ -50,8 +54,7 @@ def post_learning_event_to_context(user_id: str, topic: str, missed_concepts: Li
     except Exception as e:
         print(f"❌ Failed to log context: {e}")
 
-# ========== Prompt Generator ==========
-
+# Prompt builder
 def generate_blurting_prompt(topic: str, content_summary: Optional[str], blurted_response: str, context_prompt: Optional[str]) -> str:
     summary_block = f"\nSummary of key concepts:\n{content_summary}" if content_summary else ""
     context_block = f"\nAdditional context for evaluation:\n{context_prompt}" if context_prompt else ""
@@ -67,11 +70,14 @@ def generate_blurting_prompt(topic: str, content_summary: Optional[str], blurted
         "Only return valid JSON."
     )
 
-# ========== Endpoint ==========
-
+# Endpoint
 @router.post("/blurting", response_model=BlurtingResponse)
 async def evaluate_blurting(request: BlurtingRequest):
     try:
+        context_data = get_context_slice()
+        if not request.context_prompt and context_data:
+            request.context_prompt = json.dumps(context_data.get("weak_areas", []))
+
         prompt = generate_blurting_prompt(
             request.topic,
             request.content_summary,
@@ -88,7 +94,6 @@ async def evaluate_blurting(request: BlurtingRequest):
         content = response.choices[0].message.content.strip()
         parsed = json.loads(content)
 
-        # Log to context
         if request.user_id:
             post_learning_event_to_context(
                 request.user_id,
@@ -103,5 +108,3 @@ async def evaluate_blurting(request: BlurtingRequest):
         raise HTTPException(status_code=500, detail="Failed to parse GPT response as JSON.")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
-
