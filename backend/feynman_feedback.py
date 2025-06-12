@@ -36,6 +36,8 @@ def get_context_slice():
         return None
 
 def post_learning_event_to_context(user_id: str, concept: str, feedback: str):
+    user_id = user_id or "00000000-0000-0000-0000-000000000000"  # fallback for dev
+
     payload = {
         "source": f"user:{user_id}",
         "current_topic": concept,
@@ -44,8 +46,8 @@ def post_learning_event_to_context(user_id: str, concept: str, feedback: str):
         "learning_event": {
             "concept": concept,
             "phase": "feynman",
-            "confidence": 3,
-            "depth": "medium",
+            "confidence": 0.5,
+            "depth": "intermediate",
             "source_summary": feedback[:250],
             "repetition_count": 1,
             "review_scheduled": True
