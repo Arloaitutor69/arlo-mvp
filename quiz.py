@@ -1,7 +1,7 @@
 # ✅ FINAL QUIZ MODULE — Fully working with GPT, logging, and context
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
-from typing import List, Literal, Union
+from typing import List, Literal, Union, Optional
 import uuid
 import os
 import json
@@ -19,6 +19,7 @@ class QuizRequest(BaseModel):
     difficulty: Literal["easy", "medium", "hard"]
     question_count: int
     question_types: List[Literal["multiple_choice", "true_false", "fill_in_blank"]]
+    source: Optional[str] = None  # Optional, used to fall back to user ID
 
 class QuizQuestion(BaseModel):
     id: int
@@ -35,7 +36,7 @@ class QuizResponse(BaseModel):
 # --- Context Helpers ---
 def fetch_context():
     try:
-        print("📥 Fetching context slice...")
+        print("📅 Fetching context slice...")
         res = requests.get(f"{CONTEXT_API}/api/context/slice", timeout=10)
         res.raise_for_status()
         return res.json()
@@ -43,10 +44,10 @@ def fetch_context():
         print("❌ Failed to fetch context:", e)
         return {}
 
-def log_learning_event(topic, summary, count):
+def log_learning_event(topic, summary, count, user_id: Optional[str] = None):
     try:
         payload = {
-            "source": "quiz",
+            "source": f"user:{user_id}" if user_id else "quiz",
             "phase": "quiz",
             "event_type": "generation",
             "learning_event": {
@@ -108,7 +109,7 @@ No extra text. No markdown.
 """
 
     try:
-        print("🧠 Sending request to GPT...")
+        print("🧐 Sending request to GPT...")
         response = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
             messages=[
@@ -136,8 +137,17 @@ def quiz_health_check():
     return {"status": "quiz router live"}
 
 @router.post("/generate", response_model=QuizResponse)
-async def create_quiz(req: QuizRequest):
+async def create_quiz(req: QuizRequest, request: Request):
     print("🚀 Received quiz request:", req)
+
+    user_info = getattr(request.state, "user", None)
+
+    if user_info and "sub" in user_info:
+        user_id = user_info["sub"]
+    elif req.source and req.source.startswith("user:"):
+        user_id = req.source.replace("user:", "")
+    else:
+        user_id = None
 
     context = fetch_context()
 
@@ -152,6 +162,6 @@ async def create_quiz(req: QuizRequest):
     quiz_id = f"quiz_{uuid.uuid4().hex[:6]}"
     summary = "; ".join(q.question for q in questions)
 
-    log_learning_event(req.topic, summary, len(questions))
+    log_learning_event(req.topic, summary, len(questions), user_id)
 
     return QuizResponse(quiz_id=quiz_id, questions=questions)
