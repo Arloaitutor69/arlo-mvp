@@ -6,22 +6,58 @@ from typing import Optional
 import openai
 import json
 import os
+import requests
 from dotenv import load_dotenv
 
 load_dotenv()
 openai.api_key = os.getenv("OPENAI_API_KEY")
+CONTEXT_BASE = os.getenv("CONTEXT_API_BASE", "https://arlo-mvp-2.onrender.com")
 
 router = APIRouter()
+
+# =====================
+# Models
+# =====================
 
 class FeynmanRequest(BaseModel):
     concept: str
     user_explanation: str
     personalized_context: Optional[str] = None
+    user_id: Optional[str] = None  # added for context tracking
 
 class FeynmanResponse(BaseModel):
     message: str
     follow_up_question: Optional[str]
     action_suggestion: Optional[str] = "stay_in_phase"
+
+# =====================
+# Context Logger
+# =====================
+
+def post_learning_event_to_context(user_id: str, concept: str, feedback: str):
+    payload = {
+        "source": f"user:{user_id}",
+        "current_topic": concept,
+        "weak_areas": [],
+        "review_queue": [],
+        "learning_event": {
+            "concept": concept,
+            "phase": "feynman",
+            "confidence": 3,
+            "depth": "medium",
+            "source_summary": feedback[:250],
+            "repetition_count": 1,
+            "review_scheduled": True
+        }
+    }
+    try:
+        requests.post(f"{CONTEXT_BASE}/api/context/update", json=payload, timeout=10)
+    except Exception as e:
+        print(f"❌ Failed to log context: {e}")
+
+# =====================
+# Main Endpoint
+# =====================
 
 @router.post("/api/feynman", response_model=FeynmanResponse)
 async def run_feynman_phase(data: FeynmanRequest):
@@ -50,11 +86,18 @@ Respond in this JSON format:
             messages=[{"role": "user", "content": prompt}],
             temperature=0.7,
         )
-        return json.loads(response.choices[0].message["content"])
+
+        parsed = json.loads(response.choices[0].message["content"])
+
+        # Log to context manager
+        if data.user_id:
+            post_learning_event_to_context(data.user_id, data.concept, parsed["message"])
+
+        return parsed
+
     except Exception as e:
         return {
             "message": f"Oops! {str(e)}",
             "follow_up_question": "Can you explain that again?",
             "action_suggestion": "stay_in_phase"
         }
-
