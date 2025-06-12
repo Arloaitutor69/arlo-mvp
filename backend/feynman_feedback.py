@@ -1,5 +1,3 @@
-# backend/feynman_feedback.py
-
 from fastapi import APIRouter
 from pydantic import BaseModel
 from typing import Optional
@@ -15,24 +13,27 @@ CONTEXT_BASE = os.getenv("CONTEXT_API_BASE", "https://arlo-mvp-2.onrender.com")
 
 router = APIRouter()
 
-# =====================
 # Models
-# =====================
-
 class FeynmanRequest(BaseModel):
     concept: str
     user_explanation: str
     personalized_context: Optional[str] = None
-    user_id: Optional[str] = None  # added for context tracking
+    user_id: Optional[str] = None
 
 class FeynmanResponse(BaseModel):
     message: str
     follow_up_question: Optional[str]
     action_suggestion: Optional[str] = "stay_in_phase"
 
-# =====================
-# Context Logger
-# =====================
+# Context helpers
+def get_context_slice():
+    try:
+        res = requests.get(f"{CONTEXT_BASE}/api/context/slice", timeout=10)
+        res.raise_for_status()
+        return res.json()
+    except Exception as e:
+        print("❌ Failed to fetch context:", e)
+        return None
 
 def post_learning_event_to_context(user_id: str, concept: str, feedback: str):
     payload = {
@@ -55,13 +56,14 @@ def post_learning_event_to_context(user_id: str, concept: str, feedback: str):
     except Exception as e:
         print(f"❌ Failed to log context: {e}")
 
-# =====================
-# Main Endpoint
-# =====================
-
+# Endpoint
 @router.post("/api/feynman", response_model=FeynmanResponse)
 async def run_feynman_phase(data: FeynmanRequest):
     try:
+        context_data = get_context_slice()
+        if not data.personalized_context and context_data:
+            data.personalized_context = json.dumps(context_data)
+
         prompt = f"""
 You're ARLO, an excited AI tutor helping a student master topics using the Feynman technique.
 
@@ -81,6 +83,7 @@ Respond in this JSON format:
   "action_suggestion": "stay_in_phase"
 }}
 """
+
         response = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
             messages=[{"role": "user", "content": prompt}],
@@ -89,7 +92,6 @@ Respond in this JSON format:
 
         parsed = json.loads(response.choices[0].message["content"])
 
-        # Log to context manager
         if data.user_id:
             post_learning_event_to_context(data.user_id, data.concept, parsed["message"])
 
