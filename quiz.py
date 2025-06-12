@@ -36,7 +36,7 @@ class QuizResponse(BaseModel):
 # --- Context Helpers ---
 def fetch_context():
     try:
-        print("📅 Fetching context slice...")
+        print("🗕 Fetching context slice...")
         res = requests.get(f"{CONTEXT_API}/api/context/slice", timeout=10)
         res.raise_for_status()
         return res.json()
@@ -70,7 +70,7 @@ def log_learning_event(topic, summary, count, user_id: Optional[str] = None):
             headers={"Content-Type": "application/json"},
             timeout=10
         )
-        print("📤 Context updated:", res.status_code)
+        print("📬 Context updated:", res.status_code)
     except Exception as e:
         print("❌ Failed to log learning event:", e)
 
@@ -125,6 +125,12 @@ No extra text. No markdown.
             raw = "\n".join(raw.splitlines()[1:-1])
 
         parsed = json.loads(raw)
+
+        # ✅ Patch: sanitize correct_answer to string if boolean
+        for q in parsed:
+            if isinstance(q.get("correct_answer"), bool):
+                q["correct_answer"] = str(q["correct_answer"])
+
         return [QuizQuestion(**q) for q in parsed]
 
     except Exception as e:
