@@ -81,7 +81,7 @@ Choose techniques based on content type:
 ---
 
 Respond ONLY with a valid JSON object, no markdown, no explanations.
-Start your reply with `{` and end with `}`.
+Start your reply with `{{` and end with `}}`
 """
 
 
