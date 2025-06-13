@@ -45,33 +45,36 @@ class StudyPlanResponse(BaseModel):
     blocks: List[StudyBlock]
 
 # --- Helper Functions ---
-return (
-    "You are ARLO, an AI-powered tutor designing a structured study session.\n\n"
-    f"The student has {duration} minutes to study the subject: \"{topic}\"."
-    f"{detail_text}{source_text}\n\n"
-    "Instructions:\n"
-    "- First, break the topic into 3–6 instructional units (as in a mini curriculum)\n"
-    "- Assign 1 learning technique per unit\n"
-    "- Choose from: flashcards, quiz, feynman, blurting, arlo_teaching\n"
-    "- Begin with the most important units if time is tight\n"
-    "- End with a review or self-reflection block if possible\n"
-    "- Suggest the best Pomodoro format (e.g. 25/5, 50/10)\n\n"
-    "Return ONLY this JSON:\n"
-    "{{\n"
-    "  \"units_to_cover\": [\"...\"],\n"
-    "  \"pomodoro\": \"25/5\",\n"
-    "  \"techniques\": [\"...\"],\n"
-    "  \"blocks\": [\n"
-    "    {{\n"
-    "      \"unit\": \"...\",\n"
-    "      \"technique\": \"flashcards\",\n"
-    "      \"description\": \"...\",\n"
-    "      \"duration\": 8\n"
-    "    }}\n"
-    "  ]\n"
-    "}}"
-)
+def build_gpt_prompt(topic: str, details: Optional[str], duration: int, level: str, parsed_text: Optional[str]) -> str:
+    detail_text = f"\nThe student mentioned specific goals:\n\"{details.strip()}\"" if details else ""
+    source_text = f"\n\nUse the following source material as the primary base:\n{parsed_text[:3000]}..." if parsed_text else ""
 
+    return (
+        "You are ARLO, an AI-powered tutor designing a structured study session.\n\n"
+        f"The student has {duration} minutes to study the subject: \"{topic}\"."
+        f"{detail_text}{source_text}\n\n"
+        "Instructions:\n"
+        "- First, break the topic into 3–6 instructional units (as in a mini curriculum)\n"
+        "- Assign 1 learning technique per unit\n"
+        "- Choose from: flashcards, quiz, feynman, blurting, arlo_teaching\n"
+        "- Begin with the most important units if time is tight\n"
+        "- End with a review or self-reflection block if possible\n"
+        "- Suggest the best Pomodoro format (e.g. 25/5, 50/10)\n\n"
+        "Return ONLY this JSON:\n"
+        "{{\n"
+        "  \"units_to_cover\": [\"...\"],\n"
+        "  \"pomodoro\": \"25/5\",\n"
+        "  \"techniques\": [\"...\"],\n"
+        "  \"blocks\": [\n"
+        "    {{\n"
+        "      \"unit\": \"...\",\n"
+        "      \"technique\": \"flashcards\",\n"
+        "      \"description\": \"...\",\n"
+        "      \"duration\": 8\n"
+        "    }}\n"
+        "  ]\n"
+        "}}"
+    )
 
 # --- Endpoint ---
 @router.post("/api/plan", response_model=StudyPlanResponse)
