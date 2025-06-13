@@ -61,7 +61,7 @@ class ChatbotResponse(BaseModel):
 # ---------------------------
 def get_context_slice() -> Dict[str, Any]:
     try:
-        response = requests.get(f"{CONTEXT_BASE_URL}/api/context/slice")
+        response = requests.get(f"{CONTEXT_API}/api/context/slice")
         response.raise_for_status()
         return response.json()
     except Exception as e:
@@ -114,7 +114,7 @@ Give concise correction or reinforcement.
     elif phase == "feynman":
         return base + f"""
 The student is explaining aloud.
-They said: "{user_input}"
+They said: \"{user_input}\"
 Help them identify gaps and improve the explanation.
 """
 
@@ -130,13 +130,13 @@ Correct and explain.
     elif phase == "blurting":
         return base + f"""
 The student is blurting — trying to recall everything about the topic.
-They said: "{user_input}"
+They said: \"{user_input}\"
 Point out missing info and help reinforce.
 """
 
     else:
         return base + f"""
-Student said: "{user_input}"
+Student said: \"{user_input}\"
 Respond with helpful explanation or next step.
 """
 
@@ -174,5 +174,19 @@ def chatbot_handler(data: ChatbotInput):
         action_suggestion=action,
         context_update_required=False
     )
+
+@router.post("/api/chatbot/save")
+def save_chat_context(payload: Dict[str, Any]):
+    try:
+        logger.info("Attempting to save context from chatbot")
+        response = requests.post(f"{CONTEXT_API}/api/context/update", json={
+            "source": "chatbot",
+            "updates": payload
+        })
+        response.raise_for_status()
+        return {"status": "ok"}
+    except Exception as e:
+        logger.error(f"Failed to save context: {e}")
+        return {"status": "error", "detail": str(e)}
 
 app.include_router(router)
