@@ -1,5 +1,3 @@
-# ✅ Fully patched flashcard module with context-aware learning_event logging
-
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import List, Optional
@@ -11,7 +9,7 @@ import requests
 
 # Load environment variables
 openai.api_key = os.getenv("OPENAI_API_KEY")
-CONTEXT_API = os.getenv("CONTEXT_API_BASE", "https://arlo-mvp-2.onrender.com")
+CONTEXT_BASE_URL = os.getenv("CONTEXT_API_BASE", "https://arlo-mvp-2.onrender.com")
 
 router = APIRouter()
 
@@ -52,21 +50,14 @@ def post_context_update(payload: dict):
 def generate_flashcards(data: FlashcardRequest):
     context = fetch_context_slice()
 
-    # Build GPT prompt using context slice to personalize
     personalization = ""
     if context:
-        current_topic = context.get("current_topic", "")
-        emphasized = ", ".join(context.get("emphasized_facts", []))
-        weak_areas = ", ".join(context.get("weak_areas", []))
-        user_goals = ", ".join(context.get("user_goals", []))
-        review_queue = ", ".join(context.get("review_queue", []))
-
         personalization = f"""
-Current session topic: {current_topic or data.topic}
-Emphasize these facts: {emphasized or 'N/A'}
-Prioritize these weak areas: {weak_areas or 'N/A'}
-Tailor to user goals: {user_goals or 'N/A'}
-Optionally include 1–2 review cards on: {review_queue or 'none'}
+Current session topic: {context.get('current_topic', data.topic)}
+Emphasize these facts: {', '.join(context.get('emphasized_facts', [])) or 'N/A'}
+Prioritize these weak areas: {', '.join(context.get('weak_areas', [])) or 'N/A'}
+Tailor to user goals: {', '.join(context.get('user_goals', [])) or 'N/A'}
+Optionally include 1–2 review cards on: {', '.join(context.get('review_queue', [])) or 'none'}
 """
 
     prompt = f"""
@@ -103,41 +94,34 @@ Do not include explanations, headers, or any other text — just the JSON.
 
         raw = response.choices[0].message.content.strip()
 
-        # Handle GPT formatting edge case
         if raw.startswith("```"):
             raw = "\n".join(raw.strip().splitlines()[1:-1])
 
-        print("🧐 Raw GPT output:\n", raw)
-
-        try:
-            cards = json.loads(raw)
-        except Exception as parse_error:
-            print("❌ JSON parsing failed:\n", parse_error)
-            print("🔎 GPT raw output again:", raw)
-            raise HTTPException(status_code=500, detail="GPT returned bad JSON format.")
+        cards = json.loads(raw)
 
     except Exception as e:
-        print("⚠️ GPT API Error:", e)
+        print("❌ GPT or parsing error:", e)
         raise HTTPException(status_code=500, detail="Failed to generate flashcards.")
 
     flashcards = []
     questions_summary = []
 
     for item in cards[:data.count]:
+        q = item.get("question", "No question.")
+        a = item.get("answer", "No answer.")
         flashcards.append(FlashcardItem(
             id=f"card_{uuid.uuid4().hex[:6]}",
-            front=item.get("question", "No question."),
-            back=item.get("answer", "No answer."),
+            front=q,
+            back=a,
             difficulty=data.difficulty,
             category=data.topic
         ))
-        questions_summary.append(item.get("question", ""))
+        questions_summary.append(q)
 
-    # ✅ Post to context manager with learning_event and metadata
+    # ✅ Post a concise context log summarizing the flashcards
     post_context_update({
         "source": "flashcards",
-        "phase": "flashcards",
-        "event_type": "generation",
+        "current_topic": data.topic,
         "learning_event": {
             "concept": data.topic,
             "phase": "flashcards",
@@ -146,11 +130,6 @@ Do not include explanations, headers, or any other text — just the JSON.
             "source_summary": "; ".join(questions_summary),
             "repetition_count": 1,
             "review_scheduled": False
-        },
-        "data": {
-            "topic": data.topic,
-            "difficulty": data.difficulty,
-            "flashcard_count": len(flashcards)
         }
     })
 
