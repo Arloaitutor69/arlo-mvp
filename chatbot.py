@@ -177,12 +177,13 @@ def chatbot_handler(data: ChatbotInput):
 
 @router.post("/api/chatbot/save")
 def save_chat_context(payload: Dict[str, Any]):
+    """
+    Allows manual saving of chatbot insights to the context manager.
+    Expects the full payload including `source`, `current_topic`, `learning_event`, etc.
+    """
     try:
-        logger.info("Attempting to save context from chatbot")
-        response = requests.post(f"{CONTEXT_API}/api/context/update", json={
-            "source": "chatbot",
-            "updates": payload
-        })
+        logger.info(f"Forwarding context update from chatbot: {payload}")
+        response = requests.post(f"{CONTEXT_API}/api/context/update", json=payload)
         response.raise_for_status()
         return {"status": "ok"}
     except Exception as e:
