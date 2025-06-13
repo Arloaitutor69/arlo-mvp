@@ -126,7 +126,6 @@ No extra text. No markdown.
 
         parsed = json.loads(raw)
 
-        # ✅ Patch: sanitize correct_answer to string if boolean
         for q in parsed:
             if isinstance(q.get("correct_answer"), bool):
                 q["correct_answer"] = str(q["correct_answer"])
@@ -154,6 +153,8 @@ async def create_quiz(req: QuizRequest, request: Request):
         user_id = req.source.replace("user:", "")
     else:
         user_id = None
+
+    print("🔍 Using user_id:", user_id)
 
     context = fetch_context()
 
