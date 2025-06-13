@@ -45,7 +45,6 @@ class StudyPlanResponse(BaseModel):
     review_sheet: List[str]
     optional_priming_video: Optional[str]
 
-
 # --- Helper Functions ---
 def build_gpt_prompt(topic: str, details: Optional[str], duration: int, level: str) -> str:
     detail_text = f"\nThe student mentioned specific focus areas or goals:\n\"{details.strip()}\"." if details else ""
@@ -81,9 +80,8 @@ Choose techniques based on content type:
 ---
 
 Respond ONLY with a valid JSON object, no markdown, no explanations.
-Start your reply with `{{` and end with `}}`
+Start your reply with `{{` and end with `}}`.
 """
-
 
 @router.post("/api/plan", response_model=StudyPlanResponse)
 def generate_plan(data: StudyPlanRequest):
@@ -100,20 +98,30 @@ def generate_plan(data: StudyPlanRequest):
         )
 
         raw = completion.choices[0].message.content.strip()
+        print("🤖 GPT RAW:", raw)
+
         if raw.startswith("```json"):
             raw = raw.split("```", 1)[-1].strip()
 
         parsed = json.loads(raw)
         session_id = f"session_{uuid.uuid4().hex[:6]}"
 
+        # Safe fallbacks
+        units = parsed.get("units_to_cover", [])
+        techniques = parsed.get("techniques", [])
+        tasks = parsed.get("tasks", [])
+        review_sheet = parsed.get("review_sheet", [])
+        pomodoro = parsed.get("pomodoro", "25/5")
+        priming = parsed.get("optional_priming_video")
+
         # Convert tasks into study blocks
         blocks = []
         total_time = 0
 
-        for idx, task in enumerate(parsed.get("tasks", [])):
+        for idx, task in enumerate(tasks):
             block_id = f"block_{uuid.uuid4().hex[:6]}"
-            unit = parsed["units_to_cover"][min(idx, len(parsed["units_to_cover"]) - 1)]
-            technique = parsed["techniques"][min(idx, len(parsed["techniques"]) - 1)]
+            unit = units[min(idx, len(units)-1)] if units else "General"
+            technique = techniques[min(idx, len(techniques)-1)] if techniques else "feynman"
 
             blocks.append(StudyBlock(
                 id=block_id,
@@ -121,8 +129,8 @@ def generate_plan(data: StudyPlanRequest):
                 technique=technique,
                 phase=technique.lower().replace(" ", "_"),
                 tool=technique.lower().replace(" ", "_"),
-                lovable_component="text-block",  # can be mapped more specifically later
-                duration=8,  # default for now
+                lovable_component="text-block",
+                duration=8,
                 description=task,
                 position=idx,
                 custom=False,
@@ -134,12 +142,12 @@ def generate_plan(data: StudyPlanRequest):
             session_id=session_id,
             topic=data.topic,
             total_duration=total_time,
-            pomodoro=parsed.get("pomodoro", "25/5"),
-            units_to_cover=parsed["units_to_cover"],
-            techniques=parsed["techniques"],
+            pomodoro=pomodoro,
+            units_to_cover=units,
+            techniques=techniques,
             blocks=blocks,
-            review_sheet=parsed.get("review_sheet", []),
-            optional_priming_video=parsed.get("optional_priming_video")
+            review_sheet=review_sheet,
+            optional_priming_video=priming
         )
 
     except Exception as e:
