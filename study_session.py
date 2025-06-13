@@ -45,11 +45,7 @@ class StudyPlanResponse(BaseModel):
     blocks: List[StudyBlock]
 
 # --- Helper Functions ---
-def build_gpt_prompt(topic: str, details: Optional[str], duration: int, level: str, parsed_text: Optional[str]) -> str:
-    detail_text = f"\nThe student mentioned specific goals:\n\"{details.strip()}\"" if details else ""
-    source_text = f"\n\nUse the following source material as the primary base:\n{parsed_text[:3000]}..." if parsed_text else ""
-
-    return (
+return (
     "You are ARLO, an AI-powered tutor designing a structured study session.\n\n"
     f"The student has {duration} minutes to study the subject: \"{topic}\"."
     f"{detail_text}{source_text}\n\n"
@@ -75,6 +71,7 @@ def build_gpt_prompt(topic: str, details: Optional[str], duration: int, level: s
     "  ]\n"
     "}}"
 )
+
 
 # --- Endpoint ---
 @router.post("/api/plan", response_model=StudyPlanResponse)
