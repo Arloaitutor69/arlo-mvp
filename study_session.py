@@ -5,7 +5,6 @@ import uuid
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import List, Optional, Dict
-from datetime import datetime
 
 openai.api_key = os.getenv("OPENAI_API_KEY")
 
@@ -15,7 +14,7 @@ router = APIRouter()
 class StudyPlanRequest(BaseModel):
     topic: str
     duration: int  # in minutes
-    details: Optional[str] = None
+    details: Optional[str] = None  # user-submitted focus or goals
     difficulty: Optional[str] = "medium"
     target_level: Optional[str] = "high_school"
 
@@ -42,41 +41,41 @@ class StudyPlanResponse(BaseModel):
     techniques: List[str]
     blocks: List[StudyBlock]
 
-# --- Helper: Optimized GPT Prompt ---
+# --- Helper Functions ---
 def build_gpt_prompt(topic: str, details: Optional[str], duration: int, level: str) -> str:
-    detail_text = f"\nThe student also mentioned these specific focus areas or goals:\n\"{details.strip()}\"." if details else ""
+    detail_text = f"\nThe student mentioned specific focus areas or goals:\n\"{details.strip()}\"." if details else ""
     return f"""
-You are ARLO, an AI study coach. The student has {duration} minutes to study the topic: \"{topic}\".{detail_text}
+You are ARLO, an AI-powered study coach using research-backed learning science.
 
-Break the subject into necessary units using textbook-level precision. Return them under `units_to_cover`.
+The student has {duration} minutes to study the subject:\n\"{topic}\".{detail_text}
 
-Then return a detailed JSON study plan assigning ONE technique to EACH unit (from this list only):
+Use only these techniques:
 - arlo_teaching
 - flashcards
 - quiz
 - feynman
 - blurting
 
-Match each unit to ONE technique only and describe the learning activity in one sentence. Allocate roughly equal time per unit.
+---
 
-Set `pomodoro` to the best fitting time format (e.g., 25/5).
-
-Respond with a **complete valid JSON object only** like this:
-
-[[
+Output the following JSON object:
 {{
-  "units_to_cover": ["..."],
-  "pomodoro": "25/5",
-  "techniques": ["..."],
-  "tasks": ["..."],
-  "total_duration": 45
+  "units_to_cover": ["Unit 1", "Unit 2", "..."],
+  "pomodoro": "Best Pomodoro interval like 25/5",
+  "techniques": ["flashcards", "quiz", "feynman"],
+  "blocks": [
+    {{
+      "unit": "Name of the unit",
+      "technique": "one of: flashcards, quiz, feynman, blurting, arlo_teaching",
+      "description": "What the student will do",
+      "duration": 8
+    }}
+  ]
 }}
-]]
 
-NO extra text, markdown, or comments. Fill ALL fields with your best guess if unsure.
+Respond with ONLY valid JSON (no markdown or explanations). Make your best guess for all fields. Start with {{ and end with }}.
 """
 
-# --- Endpoint ---
 @router.post("/api/plan", response_model=StudyPlanResponse)
 def generate_plan(data: StudyPlanRequest):
     try:
@@ -92,42 +91,46 @@ def generate_plan(data: StudyPlanRequest):
         )
 
         raw = completion.choices[0].message.content.strip()
+        print("🤖 GPT RAW:", raw)
+
         if raw.startswith("```"):
             raw = raw.split("```", 1)[-1].strip()
 
         parsed = json.loads(raw)
-
         session_id = f"session_{uuid.uuid4().hex[:6]}"
+
         units = parsed.get("units_to_cover", [])
         techniques = parsed.get("techniques", [])
-        tasks = parsed.get("tasks", [])
+        blocks_json = parsed.get("blocks", [])
         pomodoro = parsed.get("pomodoro", "25/5")
-        total_duration = parsed.get("total_duration", data.duration)
 
         blocks = []
-        minutes_per_block = max(1, total_duration // max(1, len(tasks)))
+        total_time = 0
 
-        for idx, task in enumerate(tasks):
+        for idx, item in enumerate(blocks_json):
+            unit = item.get("unit", "General")
+            tech = item.get("technique", "feynman")
+            desc = item.get("description", "Study the topic")
+            mins = item.get("duration", 8)
             block_id = f"block_{uuid.uuid4().hex[:6]}"
-            technique = techniques[min(idx, len(techniques)-1)]
-            unit = units[min(idx, len(units)-1)] if units else "General"
 
             blocks.append(StudyBlock(
                 id=block_id,
                 unit=unit,
-                technique=technique,
-                phase=technique,
-                tool=technique,
+                technique=tech,
+                phase=tech,
+                tool=tech,
                 lovable_component="text-block",
-                duration=minutes_per_block,
-                description=task,
+                duration=mins,
+                description=desc,
                 position=idx
             ))
+            total_time += mins
 
         return StudyPlanResponse(
             session_id=session_id,
             topic=data.topic,
-            total_duration=total_duration,
+            total_duration=total_time,
             pomodoro=pomodoro,
             units_to_cover=units,
             techniques=techniques,
