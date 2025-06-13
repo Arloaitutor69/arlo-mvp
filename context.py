@@ -83,7 +83,7 @@ def synthesize_context_gpt() -> dict:
     prompt = f"""
 You are ARLO's memory engine. Read the raw study logs below and return ONLY valid JSON.
 Do not include markdown, explanation, or formatting.
-Your response must exactly match this structure:
+Return only a single object — NOT a list. Your response must exactly match this structure:
 
 {{
   "current_topic": string or null,
@@ -122,6 +122,8 @@ Raw Logs:
     raw_content = response.choices[0].message["content"]
     try:
         parsed = json.loads(raw_content)
+        if isinstance(parsed, list):
+            parsed = parsed[-1]  # fallback safety net
         return parsed
     except json.JSONDecodeError:
         raise HTTPException(status_code=500, detail=f"Failed to parse GPT output:\n{raw_content}")
@@ -154,7 +156,7 @@ async def update_context(update: ContextUpdate, request: Request):
         print("⚠️ Logging error:", log_err)
 
     try:
-        get_supabase().table("context_log").insert(entry).execute()  # ✅ No headers, service role bypasses RLS
+        get_supabase().table("context_log").insert(entry).execute()
     except Exception as db_err:
         print("❌ DB Insert Error:", db_err)
         raise HTTPException(status_code=500, detail="Failed to save context")
