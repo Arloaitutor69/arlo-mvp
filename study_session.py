@@ -49,36 +49,32 @@ def build_gpt_prompt(topic: str, details: Optional[str], duration: int, level: s
     detail_text = f"\nThe student mentioned specific goals:\n\"{details.strip()}\"" if details else ""
     source_text = f"\n\nUse the following source material as the primary base:\n{parsed_text[:3000]}..." if parsed_text else ""
 
-    return f"""
-You are ARLO, an AI-powered tutor designing a structured study session.
-
-The student has {duration} minutes to study the subject: \"{topic}\".{detail_text}{source_text}
-
-Instructions:
-- First, break the topic into 3–6 instructional units (as in a mini curriculum)
-- Assign 1 learning technique per unit
-- Choose from: flashcards, quiz, feynman, blurting, arlo_teaching
-- Begin with the most important units if time is tight
-- End with a review or self-reflection block if possible
-- Suggest the best Pomodoro format (e.g. 25/5, 50/10)
-
-Return ONLY this JSON:
-{
-  "units_to_cover": [...],
-  "pomodoro": "25/5",
-  "techniques": [...],
-  "blocks": [
-    {
-      "unit": "...",
-      "technique": "flashcards",
-      "description": "...",
-      "duration": 8
-    }
-  ]
-}
-
-Start with {{ and end with }}. Do not include markdown, explanations, or code fences.
-"""
+    return (
+    "You are ARLO, an AI-powered tutor designing a structured study session.\n\n"
+    f"The student has {duration} minutes to study the subject: \"{topic}\"."
+    f"{detail_text}{source_text}\n\n"
+    "Instructions:\n"
+    "- First, break the topic into 3–6 instructional units (as in a mini curriculum)\n"
+    "- Assign 1 learning technique per unit\n"
+    "- Choose from: flashcards, quiz, feynman, blurting, arlo_teaching\n"
+    "- Begin with the most important units if time is tight\n"
+    "- End with a review or self-reflection block if possible\n"
+    "- Suggest the best Pomodoro format (e.g. 25/5, 50/10)\n\n"
+    "Return ONLY this JSON:\n"
+    "{{\n"
+    "  \"units_to_cover\": [\"...\"],\n"
+    "  \"pomodoro\": \"25/5\",\n"
+    "  \"techniques\": [\"...\"],\n"
+    "  \"blocks\": [\n"
+    "    {{\n"
+    "      \"unit\": \"...\",\n"
+    "      \"technique\": \"flashcards\",\n"
+    "      \"description\": \"...\",\n"
+    "      \"duration\": 8\n"
+    "    }}\n"
+    "  ]\n"
+    "}}"
+)
 
 # --- Endpoint ---
 @router.post("/api/plan", response_model=StudyPlanResponse)
