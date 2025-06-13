@@ -80,7 +80,8 @@ Choose techniques based on content type:
 ---
 
 Respond ONLY with a valid JSON object, no markdown, no explanations.
-Start your reply with `{{` and end with `}}`.
+Make sure to fill ALL fields. If unsure, still generate best guesses.
+Start your reply with `{{` and end with `}}`.No extra commentary.
 """
 
 @router.post("/api/plan", response_model=StudyPlanResponse)
