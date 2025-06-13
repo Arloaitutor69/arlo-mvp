@@ -116,7 +116,7 @@ def generate_plan(data: StudyPlanRequest):
 
             # context update per block with curriculum and planning info
             try:
-                requests.post(f"{CONTEXT_API}/api/context/update", json={
+                payload = {
                     "source": "user:54a623b9-9804-456b-9ae5-4fc9e048859d",
                     "current_topic": f"{unit} — {desc}",
                     "learning_event": {
@@ -128,9 +128,12 @@ def generate_plan(data: StudyPlanRequest):
                         "repetition_count": 0,
                         "review_scheduled": False
                     }
-                })
+                }
+                print("📤 Sending to context:\n", json.dumps(payload, indent=2))
+                resp = requests.post(f"{CONTEXT_API}/api/context/update", json=payload)
+                print("✅ Context update response:", resp.status_code, resp.text)
             except Exception as e:
-                print(f"⚠️ Context update failed for {unit}: {e}")
+                print(f"⚠️ Context update failed for {unit}:\n{e}")
 
             blocks.append(StudyBlock(
                 id=block_id,
