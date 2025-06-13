@@ -7,7 +7,6 @@ from pydantic import BaseModel
 from typing import List, Optional, Dict
 from datetime import datetime
 
-# --- Config ---
 openai.api_key = os.getenv("OPENAI_API_KEY")
 
 router = APIRouter()
@@ -16,7 +15,7 @@ router = APIRouter()
 class StudyPlanRequest(BaseModel):
     topic: str
     duration: int  # in minutes
-    details: Optional[str] = None  # user-submitted focus or goals
+    details: Optional[str] = None
     difficulty: Optional[str] = "medium"
     target_level: Optional[str] = "high_school"
 
@@ -43,43 +42,41 @@ class StudyPlanResponse(BaseModel):
     techniques: List[str]
     blocks: List[StudyBlock]
 
-# --- Helper Functions ---
+# --- Helper: Optimized GPT Prompt ---
 def build_gpt_prompt(topic: str, details: Optional[str], duration: int, level: str) -> str:
-    detail_text = f"\nThe student mentioned specific focus areas or goals:\n\"{details.strip()}\"." if details else ""
+    detail_text = f"\nThe student also mentioned these specific focus areas or goals:\n\"{details.strip()}\"." if details else ""
     return f"""
-You are ARLO, an AI-powered study coach using research-backed learning science.
+You are ARLO, an AI study coach. The student has {duration} minutes to study the topic: \"{topic}\".{detail_text}
 
-The student has {duration} minutes to study the subject:\n\"{topic}\".{detail_text}
+Break the subject into necessary units using textbook-level precision. Return them under `units_to_cover`.
 
----
+Then return a detailed JSON study plan assigning ONE technique to EACH unit (from this list only):
+- arlo_teaching
+- flashcards
+- quiz
+- feynman
+- blurting
 
-**Step 1: Break down the subject into the necessary units, concepts, or modules a student must understand to master this subject. Use your knowledge of curriculum guides, Khan Academy structures, textbooks, and prerequisite scaffolding. Return this list in the field `units_to_cover`. This should be specific and complete. Do NOT skip any required ideas.**
+Match each unit to ONE technique only and describe the learning activity in one sentence. Allocate roughly equal time per unit.
 
-**Step 2: Create a detailed study plan that ensures ALL units are covered.** Use only the most relevant techniques from this list:
+Set `pomodoro` to the best fitting time format (e.g., 25/5).
 
-- Active Recall (quiz questions, blurting)
-- Spaced Repetition / Leitner Flashcards
-- Mind Mapping
-- Feynman Technique (teach-back)
-- Interleaved Practice (only if multiple topics are mentioned)
-- Worked Examples / Socratic problem-solving
-- Visual Sketching or Concept Mapping
-- Pomodoro Time Management (e.g., 25/5 or 50/10)
+Respond with a **complete valid JSON object only** like this:
 
-Choose techniques based on content type:
+[[
+{{
+  "units_to_cover": ["..."],
+  "pomodoro": "25/5",
+  "techniques": ["..."],
+  "tasks": ["..."],
+  "total_duration": 45
+}}
+]]
 
-- **Conceptual**: Feynman, mind maps, active recall
-- **Procedural**: worked examples, Socratic steps, visual intuition
-- **Memorization-heavy**: flashcards, spaced repetition, active recall
-- **Multiple topics**: interleaved practice
-
----
-
-Respond ONLY with a valid JSON object, no markdown, no explanations.
-Make sure to fill ALL fields. If unsure, still generate best guesses.
-Start your reply with `{{` and end with `}}`. No extra commentary.
+NO extra text, markdown, or comments. Fill ALL fields with your best guess if unsure.
 """
 
+# --- Endpoint ---
 @router.post("/api/plan", response_model=StudyPlanResponse)
 def generate_plan(data: StudyPlanRequest):
     try:
@@ -91,50 +88,46 @@ def generate_plan(data: StudyPlanRequest):
                 {"role": "system", "content": "You are a world-class curriculum planner."},
                 {"role": "user", "content": prompt}
             ],
-            temperature=0.6
+            temperature=0.5
         )
 
         raw = completion.choices[0].message.content.strip()
-        print("🤖 GPT RAW:", raw)
-
-        if raw.startswith("```json"):
+        if raw.startswith("```"):
             raw = raw.split("```", 1)[-1].strip()
 
         parsed = json.loads(raw)
-        session_id = f"session_{uuid.uuid4().hex[:6]}"
 
-        # Safe fallbacks
+        session_id = f"session_{uuid.uuid4().hex[:6]}"
         units = parsed.get("units_to_cover", [])
         techniques = parsed.get("techniques", [])
         tasks = parsed.get("tasks", [])
         pomodoro = parsed.get("pomodoro", "25/5")
+        total_duration = parsed.get("total_duration", data.duration)
 
-        # Convert tasks into study blocks
         blocks = []
-        total_time = 0
+        minutes_per_block = max(1, total_duration // max(1, len(tasks)))
 
         for idx, task in enumerate(tasks):
             block_id = f"block_{uuid.uuid4().hex[:6]}"
+            technique = techniques[min(idx, len(techniques)-1)]
             unit = units[min(idx, len(units)-1)] if units else "General"
-            technique = techniques[min(idx, len(techniques)-1)] if techniques else "feynman"
 
             blocks.append(StudyBlock(
                 id=block_id,
                 unit=unit,
                 technique=technique,
-                phase=technique.lower().replace(" ", "_"),
-                tool=technique.lower().replace(" ", "_"),
+                phase=technique,
+                tool=technique,
                 lovable_component="text-block",
-                duration=8,
+                duration=minutes_per_block,
                 description=task,
                 position=idx
             ))
-            total_time += 8
 
         return StudyPlanResponse(
             session_id=session_id,
             topic=data.topic,
-            total_duration=total_time,
+            total_duration=total_duration,
             pomodoro=pomodoro,
             units_to_cover=units,
             techniques=techniques,
