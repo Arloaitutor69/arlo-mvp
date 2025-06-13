@@ -54,7 +54,7 @@ def post_learning_event_to_context(user_id: str, concept: str, feedback: str):
         }
     }
     try:
-        requests.post(f"{CONTEXT_BASE}/api/context/update", json=payload, timeout=10)
+        requests.post(f"{CONTEXT_BASE}/api/context/update", json=payload, timeout=5)
     except Exception as e:
         print(f"❌ Failed to log context: {e}")
 
