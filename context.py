@@ -150,7 +150,10 @@ async def update_context(update: ContextUpdate, request: Request):
 
     entry["user_id"] = user_id
 
-    # ✅ Add these debug prints here, right before your Supabase insert
+    try:
+        source_str = data["source"]
+    except KeyError:
+        source_str = "unknown"
     print("🚨 DEBUG: source_str =", source_str)
     print("🚨 DEBUG: user_id =", user_id)
     print("🚨 DEBUG: full context entry =", entry)
