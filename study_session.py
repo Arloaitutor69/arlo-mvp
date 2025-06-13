@@ -2,11 +2,13 @@ import openai
 import os
 import json
 import uuid
+import requests
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import List, Optional, Dict
 
 openai.api_key = os.getenv("OPENAI_API_KEY")
+CONTEXT_API = os.getenv("CONTEXT_API_BASE", "https://arlo-mvp-2.onrender.com")
 
 router = APIRouter()
 
@@ -17,6 +19,7 @@ class StudyPlanRequest(BaseModel):
     details: Optional[str] = None  # user-submitted focus or goals
     difficulty: Optional[str] = "medium"
     target_level: Optional[str] = "high_school"
+    parsed_text: Optional[str] = None  # optional notes/textbook input
 
 class StudyBlock(BaseModel):
     id: str
@@ -42,44 +45,46 @@ class StudyPlanResponse(BaseModel):
     blocks: List[StudyBlock]
 
 # --- Helper Functions ---
-def build_gpt_prompt(topic: str, details: Optional[str], duration: int, level: str) -> str:
-    detail_text = f"\nThe student mentioned specific focus areas or goals:\n\"{details.strip()}\"." if details else ""
+def build_gpt_prompt(topic: str, details: Optional[str], duration: int, level: str, parsed_text: Optional[str]) -> str:
+    detail_text = f"\nThe student mentioned specific goals:\n\"{details.strip()}\"" if details else ""
+    source_text = f"\n\nUse the following source material as the primary base:\n{parsed_text[:3000]}..." if parsed_text else ""
+
     return f"""
-You are ARLO, an AI-powered study coach using research-backed learning science.
+You are ARLO, an AI-powered tutor designing a structured study session.
 
-The student has {duration} minutes to study the subject:\n\"{topic}\".{detail_text}
+The student has {duration} minutes to study the subject: \"{topic}\".{detail_text}{source_text}
 
-Use only these techniques:
-- arlo_teaching
-- flashcards
-- quiz
-- feynman
-- blurting
+Instructions:
+- First, break the topic into 3–6 instructional units (as in a mini curriculum)
+- Assign 1 learning technique per unit
+- Choose from: flashcards, quiz, feynman, blurting, arlo_teaching
+- Begin with the most important units if time is tight
+- End with a review or self-reflection block if possible
+- Suggest the best Pomodoro format (e.g. 25/5, 50/10)
 
----
-
-Output the following JSON object:
-{{
-  "units_to_cover": ["Unit 1", "Unit 2", "..."],
-  "pomodoro": "Best Pomodoro interval like 25/5",
-  "techniques": ["flashcards", "quiz", "feynman"],
+Return ONLY this JSON:
+{
+  "units_to_cover": [...],
+  "pomodoro": "25/5",
+  "techniques": [...],
   "blocks": [
-    {{
-      "unit": "Name of the unit",
-      "technique": "one of: flashcards, quiz, feynman, blurting, arlo_teaching",
-      "description": "What the student will do",
+    {
+      "unit": "...",
+      "technique": "flashcards",
+      "description": "...",
       "duration": 8
-    }}
+    }
   ]
-}}
+}
 
-Respond with ONLY valid JSON (no markdown or explanations). Make your best guess for all fields. Start with {{ and end with }}.
+Start with {{ and end with }}. Do not include markdown, explanations, or code fences.
 """
 
+# --- Endpoint ---
 @router.post("/api/plan", response_model=StudyPlanResponse)
 def generate_plan(data: StudyPlanRequest):
     try:
-        prompt = build_gpt_prompt(data.topic, data.details, data.duration, data.target_level)
+        prompt = build_gpt_prompt(data.topic, data.details, data.duration, data.target_level, data.parsed_text)
 
         completion = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
@@ -91,9 +96,7 @@ def generate_plan(data: StudyPlanRequest):
         )
 
         raw = completion.choices[0].message.content.strip()
-        print("🤖 GPT RAW:", raw)
-
-        if raw.startswith("```"):
+        if raw.startswith("```"):  # strip markdown fences if GPT adds them
             raw = raw.split("```", 1)[-1].strip()
 
         parsed = json.loads(raw)
@@ -113,6 +116,15 @@ def generate_plan(data: StudyPlanRequest):
             desc = item.get("description", "Study the topic")
             mins = item.get("duration", 8)
             block_id = f"block_{uuid.uuid4().hex[:6]}"
+
+            # context update per block (DO NOT read context, only push)
+            try:
+                requests.post(f"{CONTEXT_API}/api/context/update", json={
+                    "source": "session_planner",
+                    "current_topic": f"{unit} — {desc}"
+                })
+            except Exception as e:
+                print(f"⚠️ Context update failed for {unit}: {e}")
 
             blocks.append(StudyBlock(
                 id=block_id,
