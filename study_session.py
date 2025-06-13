@@ -59,7 +59,8 @@ def build_gpt_prompt(topic: str, details: Optional[str], duration: int, level: s
         "- Choose from: flashcards, quiz, feynman, blurting, arlo_teaching\n"
         "- Begin with the most important units if time is tight\n"
         "- End with a review or self-reflection block if possible\n"
-        "- Suggest the best Pomodoro format (e.g. 25/5, 50/10)\n\n"
+        "- Suggest the best Pomodoro format (e.g. 25/5, 50/10)\n"
+        "- Use only clear, parsable JSON format.\n\n"
         "Return ONLY this JSON:\n"
         "{{\n"
         "  \"units_to_cover\": [\"...\"],\n"
@@ -113,11 +114,20 @@ def generate_plan(data: StudyPlanRequest):
             mins = item.get("duration", 8)
             block_id = f"block_{uuid.uuid4().hex[:6]}"
 
-            # context update per block (DO NOT read context, only push)
+            # context update per block with curriculum and planning info
             try:
                 requests.post(f"{CONTEXT_API}/api/context/update", json={
-                    "source": "session_planner",
-                    "current_topic": f"{unit} — {desc}"
+                    "source": "user:54a623b9-9804-456b-9ae5-4fc9e048859d",
+                    "current_topic": f"{unit} — {desc}",
+                    "learning_event": {
+                        "concept": unit,
+                        "phase": tech,
+                        "confidence": None,
+                        "depth": None,
+                        "source_summary": f"Planned block: {desc}",
+                        "repetition_count": 0,
+                        "review_scheduled": False
+                    }
                 })
             except Exception as e:
                 print(f"⚠️ Context update failed for {unit}: {e}")
