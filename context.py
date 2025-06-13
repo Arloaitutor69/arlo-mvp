@@ -132,39 +132,52 @@ Raw Logs:
 # ------------------------------
 @router.post("/context/update")
 async def update_context(update: ContextUpdate, request: Request):
+    # Convert Pydantic to dict and add timestamp
     entry = update.dict()
     entry["timestamp"] = datetime.utcnow().isoformat()
 
-    # Try to get user from request.state first
+    # Try to get user ID from request.state (e.g., auth middleware)
     user_info = getattr(request.state, "user", None)
-
     if user_info and "sub" in user_info:
         user_id = user_info["sub"]
     else:
-        # Fallback to parsing from `update.source`
+        # Fallback to user ID from source field (e.g., source="user:uuid")
         source_str = update.source or ""
         if source_str.startswith("user:"):
             user_id = source_str.replace("user:", "")
         else:
-            user_id = "00000000-0000-0000-0000-000000000000"
+            user_id = "00000000-0000-0000-0000-000000000000"  # default anonymous
 
     entry["user_id"] = user_id
 
+    # Safe debug logging
     try:
-        source_str = data["source"]
-    except KeyError:
-        source_str = "unknown"
-    print("🚨 DEBUG: source_str =", source_str)
-    print("🚨 DEBUG: user_id =", user_id)
-    print("🚨 DEBUG: full context entry =", entry)
+        print("🚨 DEBUG: source =", update.source)
+        print("🚨 DEBUG: user_id =", user_id)
+        print("🚨 DEBUG: full context entry =", json.dumps(entry, indent=2))
+    except Exception as log_err:
+        print("⚠️ Logging error:", log_err)
 
-    get_supabase().table("context_log").insert(entry).execute()
+    # Save to Supabase
+    try:
+        get_supabase().table("context_log").insert(entry).execute()
+    except Exception as db_err:
+        print("❌ DB Insert Error:", db_err)
+        raise HTTPException(status_code=500, detail="Failed to save context")
 
+    # Run synthesis if needed
     if should_trigger_synthesis(update):
-        synthesized = synthesize_context_gpt()
-        get_supabase().table("context_state").delete().neq("id", 0).execute()  # Clear previous
-        get_supabase().table("context_state").insert({"id": 1, "context": json.dumps(synthesized)}).execute()
-        return {"status": "ok", "synthesized": True}
+        try:
+            synthesized = synthesize_context_gpt()
+            get_supabase().table("context_state").delete().neq("id", 0).execute()  # Clear previous state
+            get_supabase().table("context_state").insert({
+                "id": 1,
+                "context": json.dumps(synthesized)
+            }).execute()
+            return {"status": "ok", "synthesized": True}
+        except Exception as synth_err:
+            print("❌ Synthesis Error:", synth_err)
+            return {"status": "error", "synthesized": False}
 
     return {"status": "ok", "synthesized": False}
 
