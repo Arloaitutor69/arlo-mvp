@@ -160,22 +160,21 @@ async def update_context(update: ContextUpdate, request: Request):
 
     # Save to Supabase
     try:
-    # Grab JWT from Authorization header
-    auth_header = request.headers.get("authorization")
-    if not auth_header or not auth_header.lower().startswith("bearer "):
-        raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
+        # Grab JWT from Authorization header
+        auth_header = request.headers.get("authorization")
+        if not auth_header or not auth_header.lower().startswith("bearer "):
+            raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
 
-    access_token = auth_header[7:]  # Strip "Bearer "
+        access_token = auth_header[7:]  # Strip "Bearer "
 
-    # Insert into Supabase with user context for RLS
-    get_supabase().table("context_log").insert(entry).execute(headers={
-        "Authorization": f"Bearer {access_token}"
-    })
+        # Insert into Supabase with user context for RLS
+        get_supabase().table("context_log").insert(entry).execute(headers={
+            "Authorization": f"Bearer {access_token}"
+        })
 
     except Exception as db_err:
         print("❌ DB Insert Error:", db_err)
         raise HTTPException(status_code=500, detail="Failed to save context")
-
     
     # Run synthesis if needed
     if should_trigger_synthesis(update):
