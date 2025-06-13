@@ -42,8 +42,6 @@ class StudyPlanResponse(BaseModel):
     units_to_cover: List[str]
     techniques: List[str]
     blocks: List[StudyBlock]
-    review_sheet: List[str]
-    optional_priming_video: Optional[str]
 
 # --- Helper Functions ---
 def build_gpt_prompt(topic: str, details: Optional[str], duration: int, level: str) -> str:
@@ -67,12 +65,10 @@ The student has {duration} minutes to study the subject:\n\"{topic}\".{detail_te
 - Worked Examples / Socratic problem-solving
 - Visual Sketching or Concept Mapping
 - Pomodoro Time Management (e.g., 25/5 or 50/10)
-- Daily Review Summary
-- Short YouTube Primers (for abstract/difficult concepts)
 
 Choose techniques based on content type:
 
-- **Conceptual**: Feynman, mind maps, YouTube primers, active recall
+- **Conceptual**: Feynman, mind maps, active recall
 - **Procedural**: worked examples, Socratic steps, visual intuition
 - **Memorization-heavy**: flashcards, spaced repetition, active recall
 - **Multiple topics**: interleaved practice
@@ -81,7 +77,7 @@ Choose techniques based on content type:
 
 Respond ONLY with a valid JSON object, no markdown, no explanations.
 Make sure to fill ALL fields. If unsure, still generate best guesses.
-Start your reply with `{{` and end with `}}`.No extra commentary.
+Start your reply with `{{` and end with `}}`. No extra commentary.
 """
 
 @router.post("/api/plan", response_model=StudyPlanResponse)
@@ -111,9 +107,7 @@ def generate_plan(data: StudyPlanRequest):
         units = parsed.get("units_to_cover", [])
         techniques = parsed.get("techniques", [])
         tasks = parsed.get("tasks", [])
-        review_sheet = parsed.get("review_sheet", [])
         pomodoro = parsed.get("pomodoro", "25/5")
-        priming = parsed.get("optional_priming_video")
 
         # Convert tasks into study blocks
         blocks = []
@@ -133,9 +127,7 @@ def generate_plan(data: StudyPlanRequest):
                 lovable_component="text-block",
                 duration=8,
                 description=task,
-                position=idx,
-                custom=False,
-                user_notes=None
+                position=idx
             ))
             total_time += 8
 
@@ -146,9 +138,7 @@ def generate_plan(data: StudyPlanRequest):
             pomodoro=pomodoro,
             units_to_cover=units,
             techniques=techniques,
-            blocks=blocks,
-            review_sheet=review_sheet,
-            optional_priming_video=priming
+            blocks=blocks
         )
 
     except Exception as e:
