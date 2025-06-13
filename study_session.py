@@ -54,27 +54,24 @@ def build_gpt_prompt(topic: str, details: Optional[str], duration: int, level: s
         f"The student has {duration} minutes to study the subject: \"{topic}\"."
         f"{detail_text}{source_text}\n\n"
         "Instructions:\n"
-        "- First, break the topic into 3–6 instructional units (as in a mini curriculum)\n"
-        "- Assign 1 learning technique per unit\n"
-        "- Choose from: flashcards, quiz, feynman, blurting, arlo_teaching\n"
-        "- Begin with the most important units if time is tight\n"
-        "- End with a review or self-reflection block if possible\n"
-        "- Suggest the best Pomodoro format (e.g. 25/5, 50/10)\n"
-        "- Use only clear, parsable JSON format.\n\n"
-        "Return ONLY this JSON:\n"
-        "{{\n"
+        "- Break the topic into **at least 4** instructional units.\n"
+        "- Assign 1 technique per unit: flashcards, quiz, feynman, blurting, arlo_teaching\n"
+        "- Balance time across blocks. Begin with essentials, end with review if possible.\n"
+        "- Recommend a Pomodoro format (e.g. 25/5 or 50/10)\n"
+        "- Return ONLY this JSON (no markdown):\n\n"
+        "{\n"
         "  \"units_to_cover\": [\"...\"],\n"
         "  \"pomodoro\": \"25/5\",\n"
         "  \"techniques\": [\"...\"],\n"
         "  \"blocks\": [\n"
-        "    {{\n"
+        "    {\n"
         "      \"unit\": \"...\",\n"
-        "      \"technique\": \"flashcards\",\n"
+        "      \"technique\": \"...\",\n"
         "      \"description\": \"...\",\n"
         "      \"duration\": 8\n"
-        "    }}\n"
+        "    }\n"
         "  ]\n"
-        "}}"
+        "}"
     )
 
 # --- Endpoint ---
@@ -93,7 +90,7 @@ def generate_plan(data: StudyPlanRequest):
         )
 
         raw = completion.choices[0].message.content.strip()
-        if raw.startswith("```"):  # strip markdown fences if GPT adds them
+        if raw.startswith("```"):
             raw = raw.split("```", 1)[-1].strip()
 
         parsed = json.loads(raw)
@@ -114,7 +111,6 @@ def generate_plan(data: StudyPlanRequest):
             mins = item.get("duration", 8)
             block_id = f"block_{uuid.uuid4().hex[:6]}"
 
-            # context update per block with curriculum and planning info
             try:
                 payload = {
                     "source": "user:54a623b9-9804-456b-9ae5-4fc9e048859d",
@@ -147,6 +143,16 @@ def generate_plan(data: StudyPlanRequest):
                 position=idx
             ))
             total_time += mins
+
+        # Force context synthesis
+        try:
+            print("🧠 Triggering synthesis after full plan...")
+            requests.post(f"{CONTEXT_API}/api/context/update", json={
+                "source": "user:54a623b9-9804-456b-9ae5-4fc9e048859d",
+                "trigger_synthesis": True
+            })
+        except Exception as e:
+            print("⚠️ Failed to trigger synthesis:", e)
 
         return StudyPlanResponse(
             session_id=session_id,
