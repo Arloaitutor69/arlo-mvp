@@ -1,8 +1,7 @@
 from fastapi import APIRouter, Request, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from typing import List, Optional, Literal
 from datetime import datetime
-import uuid
 import json
 import openai
 import os
@@ -16,8 +15,8 @@ supabase: Optional[Client] = None
 def get_supabase() -> Client:
     global supabase
     if not supabase:
-        url = os.getenv("SUPABASE_URL") or os.getenv("SUPABASE_UR")
-        key = os.getenv("SUPABASE_KEY") or os.getenv("SUPABASE_SERVICE_ROLE")
+        url = os.getenv("SUPABASE_URL")
+        key = os.getenv("SUPABASE_SERVICE_ROLE")  # Service Role only for backend
         if not url or not key:
             raise RuntimeError("SUPABASE_URL or SUPABASE_SERVICE_ROLE not set")
         supabase = create_client(url, key)
@@ -132,55 +131,38 @@ Raw Logs:
 # ------------------------------
 @router.post("/context/update")
 async def update_context(update: ContextUpdate, request: Request):
-    # Convert Pydantic to dict and add timestamp
     entry = update.dict()
     entry["timestamp"] = datetime.utcnow().isoformat()
 
-    # Try to get user ID from request.state (e.g., auth middleware)
     user_info = getattr(request.state, "user", None)
     if user_info and "sub" in user_info:
         user_id = user_info["sub"]
     else:
-        # Fallback to user ID from source field (e.g., source="user:uuid")
         source_str = update.source or ""
         if source_str.startswith("user:"):
             user_id = source_str.replace("user:", "")
         else:
-            user_id = "00000000-0000-0000-0000-000000000000"  # default anonymous
+            user_id = "00000000-0000-0000-0000-000000000000"
 
     entry["user_id"] = user_id
 
-    # Safe debug logging
     try:
-        print("🚨 DEBUG: source =", update.source)
-        print("🚨 DEBUG: user_id =", user_id)
-        print("🚨 DEBUG: full context entry =", json.dumps(entry, indent=2))
+        print("\U0001f6a8 DEBUG: source =", update.source)
+        print("\U0001f6a8 DEBUG: user_id =", user_id)
+        print("\U0001f6a8 DEBUG: full context entry =", json.dumps(entry, indent=2))
     except Exception as log_err:
         print("⚠️ Logging error:", log_err)
 
-    # Save to Supabase
     try:
-        # Grab JWT from Authorization header
-        auth_header = request.headers.get("authorization")
-        if not auth_header or not auth_header.lower().startswith("bearer "):
-            raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
-
-        access_token = auth_header[7:]  # Strip "Bearer "
-
-        # Insert into Supabase with user context for RLS
-        get_supabase().table("context_log").insert(entry).execute(headers={
-            "Authorization": f"Bearer {access_token}"
-        })
-
+        get_supabase().table("context_log").insert(entry).execute()  # ✅ No headers, service role bypasses RLS
     except Exception as db_err:
         print("❌ DB Insert Error:", db_err)
         raise HTTPException(status_code=500, detail="Failed to save context")
-    
-    # Run synthesis if needed
+
     if should_trigger_synthesis(update):
         try:
             synthesized = synthesize_context_gpt()
-            get_supabase().table("context_state").delete().neq("id", 0).execute()  # Clear previous state
+            get_supabase().table("context_state").delete().neq("id", 0).execute()
             get_supabase().table("context_state").insert({
                 "id": 1,
                 "context": json.dumps(synthesized)
@@ -204,10 +186,8 @@ async def get_context_slice():
     try:
         res = get_supabase().table("context_state").select("context").eq("id", 1).single().execute()
         ctx_raw = res.data.get("context") if res.data else None
-
         if not ctx_raw:
             raise ValueError("No context data found")
-
         ctx = json.loads(ctx_raw)
     except Exception as e:
         print("⚠️ Context fallback triggered:", e)
