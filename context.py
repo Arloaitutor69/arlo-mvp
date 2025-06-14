@@ -137,7 +137,7 @@ Raw Logs:
 # ------------------------------
 @router.post("/context/update")
 async def update_context(update: ContextUpdate, request: Request):
-    entry = update.dict()
+    entry = update.dict(exclude={"trigger_synthesis"})
     entry["timestamp"] = datetime.utcnow().isoformat()
 
     user_info = getattr(request.state, "user", None)
