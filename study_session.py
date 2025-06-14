@@ -111,7 +111,6 @@ def generate_plan(data: StudyPlanRequest):
             mins = item.get("duration", 8)
             block_id = f"block_{uuid.uuid4().hex[:6]}"
 
-            # context update per block
             try:
                 payload = {
                     "source": "user:54a623b9-9804-456b-9ae5-4fc9e048859d",
@@ -147,14 +146,26 @@ def generate_plan(data: StudyPlanRequest):
             ))
             total_time += mins
 
-        # Final synthesis trigger only if context was updated
+        # Final synthesis trigger bundled with a meaningful event
         if any_block_logged:
             try:
-                print("🧠 Triggering synthesis after full plan...")
-                requests.post(f"{CONTEXT_API}/api/context/update", json={
+                print("🧠 Final plan context + synthesis trigger...")
+                final_payload = {
                     "source": "user:54a623b9-9804-456b-9ae5-4fc9e048859d",
+                    "current_topic": f"Full study plan: {data.topic}",
+                    "learning_event": {
+                        "concept": data.topic,
+                        "phase": "planning",
+                        "confidence": None,
+                        "depth": None,
+                        "source_summary": f"Structured plan generated with {len(blocks)} study blocks.",
+                        "repetition_count": 0,
+                        "review_scheduled": False
+                    },
                     "trigger_synthesis": True
-                })
+                }
+                synth = requests.post(f"{CONTEXT_API}/api/context/update", json=final_payload)
+                print("🧠 Synthesis response:", synth.status_code, synth.text)
             except Exception as e:
                 print("⚠️ Failed to trigger synthesis:", e)
 
