@@ -54,19 +54,18 @@ def build_gpt_prompt(topic: str, details: Optional[str], duration: int, level: s
         f"The student has {duration} minutes to study the subject: \"{topic}\"."
         f"{detail_text}{source_text}\n\n"
         "Instructions:\n"
-        "- Break the topic into **at least 4** instructional units.\n"
+        "- Break the topic into at least 4 instructional units (like a mini curriculum).\n"
         "- Assign 1 technique per unit: flashcards, quiz, feynman, blurting, arlo_teaching\n"
-        "- Balance time across blocks. Begin with essentials, end with review if possible.\n"
-        "- Recommend a Pomodoro format (e.g. 25/5 or 50/10)\n"
-        "- Return ONLY this JSON (no markdown):\n\n"
+        "- Balance the time. Begin with essentials, end with review/reflection.\n"
+        "- Return ONLY JSON like this:\n\n"
         "{\n"
-        "  \"units_to_cover\": [\"...\"],\n"
+        "  \"units_to_cover\": [\"Unit A\", \"Unit B\"],\n"
         "  \"pomodoro\": \"25/5\",\n"
-        "  \"techniques\": [\"...\"],\n"
+        "  \"techniques\": [\"flashcards\", \"quiz\"],\n"
         "  \"blocks\": [\n"
         "    {\n"
-        "      \"unit\": \"...\",\n"
-        "      \"technique\": \"...\",\n"
+        "      \"unit\": \"Unit A\",\n"
+        "      \"technique\": \"flashcards\",\n"
         "      \"description\": \"...\",\n"
         "      \"duration\": 8\n"
         "    }\n"
@@ -103,6 +102,7 @@ def generate_plan(data: StudyPlanRequest):
 
         blocks = []
         total_time = 0
+        any_block_logged = False
 
         for idx, item in enumerate(blocks_json):
             unit = item.get("unit", "General")
@@ -111,6 +111,7 @@ def generate_plan(data: StudyPlanRequest):
             mins = item.get("duration", 8)
             block_id = f"block_{uuid.uuid4().hex[:6]}"
 
+            # context update per block
             try:
                 payload = {
                     "source": "user:54a623b9-9804-456b-9ae5-4fc9e048859d",
@@ -128,6 +129,8 @@ def generate_plan(data: StudyPlanRequest):
                 print("📤 Sending to context:\n", json.dumps(payload, indent=2))
                 resp = requests.post(f"{CONTEXT_API}/api/context/update", json=payload)
                 print("✅ Context update response:", resp.status_code, resp.text)
+                if resp.status_code == 200:
+                    any_block_logged = True
             except Exception as e:
                 print(f"⚠️ Context update failed for {unit}:\n{e}")
 
@@ -144,15 +147,16 @@ def generate_plan(data: StudyPlanRequest):
             ))
             total_time += mins
 
-        # Force context synthesis
-        try:
-            print("🧠 Triggering synthesis after full plan...")
-            requests.post(f"{CONTEXT_API}/api/context/update", json={
-                "source": "user:54a623b9-9804-456b-9ae5-4fc9e048859d",
-                "trigger_synthesis": True
-            })
-        except Exception as e:
-            print("⚠️ Failed to trigger synthesis:", e)
+        # Final synthesis trigger only if context was updated
+        if any_block_logged:
+            try:
+                print("🧠 Triggering synthesis after full plan...")
+                requests.post(f"{CONTEXT_API}/api/context/update", json={
+                    "source": "user:54a623b9-9804-456b-9ae5-4fc9e048859d",
+                    "trigger_synthesis": True
+                })
+            except Exception as e:
+                print("⚠️ Failed to trigger synthesis:", e)
 
         return StudyPlanResponse(
             session_id=session_id,
