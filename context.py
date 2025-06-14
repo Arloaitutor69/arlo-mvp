@@ -49,6 +49,7 @@ class ContextUpdate(BaseModel):
     learning_event: Optional[LearningEvent] = None
     source: str
     feedback_flag: Optional[bool] = False
+    trigger_synthesis: Optional[bool] = False  # <-- ADDED
 
 # ------------------------------
 # Helper Functions
@@ -66,10 +67,13 @@ def score_source(source: str) -> int:
     }
     return priority.get(source, 50)
 
-def should_trigger_synthesis(new_entry: ContextUpdate) -> bool:
+def should_trigger_synthesis(update: ContextUpdate) -> bool:
+    if update.trigger_synthesis:  # <-- NEW OVERRIDE LOGIC
+        return True
+
     res = get_supabase().table("context_log").select("source").order("id", desc=True).limit(5).execute()
     recent_entries = res.data if res.data else []
-    if new_entry.feedback_flag:
+    if update.feedback_flag:
         return True
     if len(recent_entries) >= 3:
         sources = {entry["source"] for entry in recent_entries}
