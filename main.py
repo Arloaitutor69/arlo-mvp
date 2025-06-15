@@ -1,102 +1,104 @@
-from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
-from typing import Optional
-import openai
-import os
-import json
-import requests
-import logging
+from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
+from fastapi.middleware import Middleware
 from dotenv import load_dotenv
+import os
+import jwt
+import sys
+import traceback
 
-# Load environment variables
+
+
+# Load environment variables from .env
 load_dotenv()
 
-# Set up logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# --- Middleware for extracting user info from JWT ---
+class AuthMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        auth_header = request.headers.get("Authorization")
+        if auth_header and auth_header.startswith("Bearer "):
+            token = auth_header.split(" ")[1]
+            try:
+                decoded = jwt.decode(token, options={"verify_signature": False})
+                request.state.user = decoded
+            except Exception as e:
+                print("❌ JWT decode error:", e)
+                request.state.user = {}
+        else:
+            request.state.user = {}
+        return await call_next(request)
 
-# OpenAI and Context API configuration
-openai.api_key = os.getenv("OPENAI_API_KEY")
-CONTEXT_BASE = os.getenv("CONTEXT_API_BASE", "https://arlo-mvp-2.onrender.com")
 
-router = APIRouter()
+# Create FastAPI app with middleware
+app = FastAPI(middleware=[Middleware(AuthMiddleware)])
 
-# -----------------------------
-# Pydantic models
-# -----------------------------
-class FeynmanRequest(BaseModel):
-    concept: str
-    user_explanation: str
-    personalized_context: Optional[str] = None
-    user_id: Optional[str] = None
 
-class FeynmanResponse(BaseModel):
-    message: str
-    follow_up_question: Optional[str]
-    action_suggestion: Optional[str] = "stay_in_phase"
-
-# -----------------------------
-# Helper to get context
-# -----------------------------
-def get_context_slice():
+@app.middleware("http")
+async def log_exceptions(request, call_next):
     try:
-        logger.info("Fetching context slice from: %s", CONTEXT_BASE)
-        res = requests.get(f"{CONTEXT_BASE}/api/context/slice", timeout=10)
-        res.raise_for_status()
-        return res.json()
+        return await call_next(request)
     except Exception as e:
-        logger.error("Failed to fetch context slice: %s", str(e))
-        return {}
+        traceback.print_exc()
+        sys.stderr.write(f"🔥 UNCAUGHT EXCEPTION: {e}\n")
+        raise
 
-# -----------------------------
-# Feynman endpoint
-# -----------------------------
-@router.post("/feynman", response_model=FeynmanResponse)
-def run_feynman_phase(payload: FeynmanRequest):
-    logger.info("Received Feynman request for concept: %s", payload.concept)
 
-    context = get_context_slice()
-    prompt = f"""
-You are an AI tutor helping a student master the concept of {payload.concept}.
-They just explained it like this:
-"""
-{payload.user_explanation}
-"""
-Your task is to provide kind, constructive feedback. Use their context to guide you:
-Context: {payload.personalized_context or context}
-1. Identify any major gaps or inaccuracies in their explanation.
-2. Provide a revised explanation or clarification if needed.
-3. Ask a follow-up question to probe deeper understanding.
-"""
+# === CORS Setup ===
+from fastapi.middleware.cors import CORSMiddleware
 
-    logger.info("Constructed prompt:
-%s", prompt)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        # ✅ Corrected Lovable Preview Domain
+        "https://c4e79f71-1738-4330-9bbd-c1a1b1fea023.lovableproject.com",
 
-    try:
-        response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": "system", "content": "You are a helpful AI tutor."},
-                {"role": "user", "content": prompt},
-            ],
-            temperature=0.7,
-            max_tokens=500
-        )
+        # ✅ Editor interface
+        "https://lovable.dev",
+        "https://lovable.dev/projects/c4e79f71-1738-4330-9bbd-c1a1b1fea023",
 
-        raw_reply = response["choices"][0]["message"]["content"]
-        logger.info("OpenAI response: %s", raw_reply)
+        # ✅ Known public app domains (current and prior naming)
+        "https://arlo-study-craft.lovable.app",
+        "https://carlo-study-flow.lovable.app",
 
-        # Simple structured parsing
-        split_parts = raw_reply.split("\n")
-        message = "\n".join(split_parts[:3]).strip()
-        follow_up = next((line for line in split_parts if "?" in line), None)
+        # ✅ Local development
+        "http://localhost:10000",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],  # Allows GET, POST, OPTIONS, etc.
+    allow_headers=["*"],  # Allows Content-Type, Accept, etc.
+)
 
-        return FeynmanResponse(
-            message=message,
-            follow_up_question=follow_up,
-            action_suggestion="stay_in_phase"
-        )
 
-    except Exception as e:
-        logger.exception("Feynman GPT call failed: %s", str(e))
-        raise HTTPException(status_code=500, detail="Internal AI error. Check logs.")
+
+# --- Modular routers ---
+from flashcard_generator import router as flashcard_router
+from quiz import router as quiz_router
+from study_session import router as study_session_router
+from chatbot import router as chatbot_router
+from review_sheet import router as review_router
+from backend.feynman_feedback import router as feynman_router 
+from feynman_feedback import router as feynman_router 
+from upload_pdf import router as upload_pdf_router
+from blurting import router as blurting_router
+from context import router as context_router
+
+# --- Include all routes ---
+app.include_router(flashcard_router)
+app.include_router(quiz_router, prefix="/api/quiz")
+app.include_router(study_session_router)
+app.include_router(chatbot_router)
+app.include_router(review_router)
+app.include_router(feynman_router)
+app.include_router(upload_pdf_router, prefix="/api")
+app.include_router(blurting_router, prefix="/api")
+app.include_router(context_router, prefix="/api")
+
+# --- Root and health check ---
+@app.get("/")
+def root():
+    return {"message": "ARLO backend is alive"}
+
+@app.get("/ping")
+def health_check():
+    return {"status": "ok"}
