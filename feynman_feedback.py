@@ -1,20 +1,29 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import Optional
 import openai
-import json
 import os
+import json
 import requests
-import time
+import logging
 from dotenv import load_dotenv
 
+# Load environment variables
 load_dotenv()
+
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# OpenAI and Context API configuration
 openai.api_key = os.getenv("OPENAI_API_KEY")
 CONTEXT_BASE = os.getenv("CONTEXT_API_BASE", "https://arlo-mvp-2.onrender.com")
 
 router = APIRouter()
 
-# Models
+# -----------------------------
+# Pydantic models
+# -----------------------------
 class FeynmanRequest(BaseModel):
     concept: str
     user_explanation: str
@@ -26,91 +35,65 @@ class FeynmanResponse(BaseModel):
     follow_up_question: Optional[str]
     action_suggestion: Optional[str] = "stay_in_phase"
 
-# Context helpers
+# -----------------------------
+# Helper to get context
+# -----------------------------
 def get_context_slice():
     try:
-        res = requests.get(f"{CONTEXT_BASE}/api/context/slice", timeout=20)
+        logger.info("Fetching context slice from: %s", CONTEXT_BASE)
+        res = requests.get(f"{CONTEXT_BASE}/api/context/slice", timeout=10)
         res.raise_for_status()
         return res.json()
     except Exception as e:
-        print("❌ Failed to fetch context:", e)
-        return None
+        logger.error("Failed to fetch context slice: %s", str(e))
+        return {}
 
-def post_learning_event_to_context(user_id: str, concept: str, feedback: str):
-    user_id = user_id or "00000000-0000-0000-0000-000000000000"  # fallback for dev
+# -----------------------------
+# Feynman endpoint
+# -----------------------------
+@router.post("/feynman", response_model=FeynmanResponse)
+def run_feynman_phase(payload: FeynmanRequest):
+    logger.info("Received Feynman request for concept: %s", payload.concept)
 
-    payload = {
-        "source": f"user:{user_id}",
-        "current_topic": concept,
-        "weak_areas": [],
-        "review_queue": [],
-        "learning_event": {
-            "concept": concept,
-            "phase": "feynman",
-            "confidence": 0.5,
-            "depth": "intermediate",
-            "source_summary": feedback[:250],
-            "repetition_count": 1,
-            "review_scheduled": True
-        }
-    }
+    context = get_context_slice()
+    prompt = (
+        f"You are an AI tutor helping a student master the concept of {payload.concept}.\n"
+        f"They just explained it like this:\n"
+        f"\"\"\"\n{payload.user_explanation}\n\"\"\"\n"
+        f"Your task is to provide kind, constructive feedback. Use their context to guide you:\n"
+        f"Context: {payload.personalized_context or context}\n"
+        "1. Identify any major gaps or inaccuracies in their explanation.\n"
+        "2. Provide a revised explanation or clarification if needed.\n"
+        "3. Ask a follow-up question to probe deeper understanding."
+    )
 
-    for attempt in range(3):
-        try:
-            res = requests.post(f"{CONTEXT_BASE}/api/context/update", json=payload, timeout=20)
-            if res.status_code == 200:
-                print("✅ Context logged successfully")
-                return
-            else:
-                print(f"⚠️ Context log failed: {res.status_code}")
-        except Exception as e:
-            print(f"❌ Attempt {attempt + 1} failed: {e}")
-            time.sleep(2)
+    logger.info("Constructed prompt:\n%s", prompt)
 
-# Endpoint
-@router.post("/api/feynman", response_model=FeynmanResponse)
-async def run_feynman_phase(data: FeynmanRequest):
     try:
-        context_data = get_context_slice()
-        if not data.personalized_context and context_data:
-            data.personalized_context = json.dumps(context_data)
-
-        prompt = f"""
-You're ARLO, an excited AI tutor helping a student master topics using the Feynman technique.
-
-Concept: {data.concept}
-Student's Explanation: {data.user_explanation}
-{f'Extra Context: {data.personalized_context}' if data.personalized_context else ''}
-
-Instructions:
-1. If correct but wordy or unclear, ask clarifying questions or say \"Explain it like I'm 10.\"
-2. If mostly right, fill in missing info and guide them.
-3. If confused, explain from scratch.
-
-Respond in this JSON format:
-{{
-  "message": "...",
-  "follow_up_question": "...",
-  "action_suggestion": "stay_in_phase"
-}}
-"""
-
         response = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
-            messages=[{"role": "user", "content": prompt}],
+            messages=[
+                {"role": "system", "content": "You are a helpful AI tutor."},
+                {"role": "user", "content": prompt},
+            ],
             temperature=0.7,
+            max_tokens=500
         )
 
-        parsed = json.loads(response.choices[0].message["content"])
+        raw_reply = response["choices"][0]["message"]["content"]
+        logger.info("OpenAI response: %s", raw_reply)
 
-        if data.user_id:
-            post_learning_event_to_context(data.user_id, data.concept, parsed["message"])
+        # Simple structured parsing
+        split_parts = raw_reply.split("\n")
+        message = "\n".join(split_parts[:3]).strip()
+        follow_up = next((line for line in split_parts if "?" in line), None)
 
-        return parsed
+        return FeynmanResponse(
+            message=message,
+            follow_up_question=follow_up,
+            action_suggestion="stay_in_phase"
+        )
 
     except Exception as e:
-        return {
-            "message": f"Oops! {str(e)}",
-            "follow_up_question": "Can you explain that again?",
-            "action_suggestion": "stay_in_phase"
-        }
+        logger.exception("Feynman GPT call failed: %s", str(e))
+        raise HTTPException(status_code=500, detail="Internal AI error. Check logs.")
