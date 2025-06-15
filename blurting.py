@@ -44,20 +44,23 @@ def post_learning_event_to_context(user_id: str, topic: str, missed_concepts: Li
         "source": f"user:{user_id}",
         "user_id": user_id,
         "current_topic": topic,
-        "weak_areas": missed_concepts,
-        "review_queue": missed_concepts,
+        "weak_areas": missed_concepts[:3],
+        "review_queue": missed_concepts[:3],
         "learning_event": {
             "concept": topic,
             "phase": "blurting",
             "confidence": 2 if missed_concepts else 4,
             "depth": "shallow" if missed_concepts else "medium",
-            "source_summary": feedback[:250],
+            "source_summary": feedback[:150],
             "repetition_count": 1,
             "review_scheduled": True
         }
     }
     try:
-        res = requests.post(f"{CONTEXT_BASE}/api/context/update", json=payload, timeout=30)
+        start = time.time()
+        res = requests.post(f"{CONTEXT_BASE}/api/context/update", json=payload, timeout=45)
+        print("📦 Supabase context post response:", res.status_code, res.text)
+        print("⏱️ Supabase log took", time.time() - start)
         res.raise_for_status()
         print("✅ Logged blurting to context.")
     except Exception as e:
