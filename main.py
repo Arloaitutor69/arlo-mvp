@@ -48,14 +48,17 @@ async def log_exceptions(request, call_next):
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "https://arlo-study-craft.lovable.app",   # Production Lovable app
-        "https://id-preview--405e367a-b787-41ce-904a-d1882e6a9b65.lovable.app",  # Lovable Preview (Editor mode)
-        "http://localhost:10000",                  # Local dev (optional)
+        "https://arlo-study-craft.lovable.app",  # Primary Lovable live domain
+        "https://id-preview--405e367a-b787-41ce-904a-d1882e6a9b65.lovable.app",  # Preview editor URL
+        "https://lovable.dev",  # Lovable project interface
+        "https://lovable.dev/projects/c4e79f71-1738-4330-9bbd-c1a1b1fea023",  # Direct project link
+        "http://localhost:10000",  # Local testing (optional)
     ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 
 # --- Modular routers ---
 from flashcard_generator import router as flashcard_router
