@@ -187,6 +187,37 @@ async def update_context(update: ContextUpdate, request: Request):
 
     return {"status": "ok", "synthesized": False}
 
+@router.post("/api/context/reset")
+def reset_context_state(request: ContextResetRequest):
+    payload = {
+        "user_id": request.user_id,
+        "source": f"user:{request.user_id}",
+        "current_topic": None,
+        "user_goals": [],
+        "preferred_learning_styles": [],
+        "weak_areas": [],
+        "emphasized_facts": [],
+        "review_queue": [],
+        "learning_event": None,
+        "trigger_synthesis": True
+    }
+
+    try:
+        res = requests.post(
+            f"{SUPABASE_URL}/rest/v1/context_log",
+            json=payload,
+            headers={
+                "apikey": SUPABASE_SERVICE_ROLE,
+                "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE}",
+                "Content-Type": "application/json"
+            },
+            timeout=10
+        )
+        res.raise_for_status()
+        return {"status": "context cleared"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Reset failed: {e}")
+
 @router.get("/context/logs/recent")
 def get_recent_logs(user_id: str):
     return query_context_log_table(user_id, limit=5)
