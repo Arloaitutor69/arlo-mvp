@@ -5,10 +5,16 @@ import openai
 import os
 import json
 import requests
+import time
 
 router = APIRouter()
 openai.api_key = os.getenv("OPENAI_API_KEY")
-CONTEXT_BASE = os.getenv("CONTEXT_API_BASE", "https://arlo-mvp-2.onrender.com")
+
+# Set local or prod context API base
+if os.getenv("ENV") == "dev":
+    CONTEXT_BASE = "http://localhost:10000"
+else:
+    CONTEXT_BASE = os.getenv("CONTEXT_API_BASE", "https://arlo-mvp-2.onrender.com")
 
 # Models
 class BlurtingRequest(BaseModel):
@@ -26,7 +32,7 @@ class BlurtingResponse(BaseModel):
 # Context functions
 def get_context_slice():
     try:
-        res = requests.get(f"{CONTEXT_BASE}/api/context/slice", timeout=10)
+        res = requests.get(f"{CONTEXT_BASE}/api/context/slice", timeout=30)
         res.raise_for_status()
         return res.json()
     except Exception as e:
@@ -51,7 +57,7 @@ def post_learning_event_to_context(user_id: str, topic: str, missed_concepts: Li
         }
     }
     try:
-        res = requests.post(f"{CONTEXT_BASE}/api/context/update", json=payload, timeout=10)
+        res = requests.post(f"{CONTEXT_BASE}/api/context/update", json=payload, timeout=30)
         res.raise_for_status()
         print("✅ Logged blurting to context.")
     except Exception as e:
@@ -65,7 +71,7 @@ def generate_blurting_prompt(topic: str, content_summary: Optional[str], blurted
         f"You're an educational coach helping a student review their memory of the topic: \"{topic}\"."
         f"{summary_block}"
         f"{context_block}\n\n"
-        f"The student wrote this from memory:\n\"\"\"\n{blurted_response}\n\"\"\"\n\n"
+        f"The student wrote (trimmed if long):\n\"\"\"\n{blurted_response[:500]}\n\"\"\"\n\n"
         "Evaluate their explanation. Return a JSON object with:\n"
         "- \"feedback\": a paragraph highlighting what they did well and gently pointing out what was missing.\n"
         "- \"missed_concepts\": a list of key ideas or facts they forgot or explained poorly.\n"
@@ -77,9 +83,9 @@ def generate_blurting_prompt(topic: str, content_summary: Optional[str], blurted
 @router.post("/blurting", response_model=BlurtingResponse)
 async def evaluate_blurting(request: BlurtingRequest):
     try:
-        context_data = get_context_slice()
-        if not request.context_prompt and context_data:
-            request.context_prompt = json.dumps(context_data.get("weak_areas", []))
+        if not request.context_prompt:
+            context_data = get_context_slice()
+            request.context_prompt = json.dumps(context_data.get("weak_areas", [])) if context_data else None
 
         prompt = generate_blurting_prompt(
             request.topic,
@@ -88,11 +94,16 @@ async def evaluate_blurting(request: BlurtingRequest):
             request.context_prompt
         )
 
+        start = time.time()
         response = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
             messages=[{"role": "user", "content": prompt}],
             temperature=0.7,
+            max_tokens=300,
+            request_timeout=20
         )
+        end = time.time()
+        print(f"⏱️ GPT call took {end - start:.2f} seconds")
 
         content = response.choices[0].message.content.strip()
         parsed = json.loads(content)
