@@ -45,19 +45,30 @@ async def log_exceptions(request, call_next):
 
 
 # === CORS Setup ===
+from fastapi.middleware.cors import CORSMiddleware
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "https://arlo-study-craft.lovable.app",  # Primary Lovable live domain
-        "https://id-preview--405e367a-b787-41ce-904a-d1882e6a9b65.lovable.app",  # Preview editor URL
-        "https://lovable.dev",  # Lovable project interface
-        "https://lovable.dev/projects/c4e79f71-1738-4330-9bbd-c1a1b1fea023",  # Direct project link
-        "http://localhost:10000",  # Local testing (optional)
+        # ✅ Corrected Lovable Preview Domain
+        "https://c4e79f71-1738-4330-9bbd-c1a1b1fea023.lovableproject.com",
+
+        # ✅ Editor interface
+        "https://lovable.dev",
+        "https://lovable.dev/projects/c4e79f71-1738-4330-9bbd-c1a1b1fea023",
+
+        # ✅ Known public app domains (current and prior naming)
+        "https://arlo-study-craft.lovable.app",
+        "https://carlo-study-flow.lovable.app",
+
+        # ✅ Local development
+        "http://localhost:10000",
     ],
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["*"],  # Allows GET, POST, OPTIONS, etc.
+    allow_headers=["*"],  # Allows Content-Type, Accept, etc.
 )
+
 
 
 # --- Modular routers ---
