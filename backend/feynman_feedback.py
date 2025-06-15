@@ -5,6 +5,7 @@ import openai
 import json
 import os
 import requests
+import time
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -28,7 +29,7 @@ class FeynmanResponse(BaseModel):
 # Context helpers
 def get_context_slice():
     try:
-        res = requests.get(f"{CONTEXT_BASE}/api/context/slice", timeout=10)
+        res = requests.get(f"{CONTEXT_BASE}/api/context/slice", timeout=20)
         res.raise_for_status()
         return res.json()
     except Exception as e:
@@ -53,10 +54,18 @@ def post_learning_event_to_context(user_id: str, concept: str, feedback: str):
             "review_scheduled": True
         }
     }
-    try:
-        requests.post(f"{CONTEXT_BASE}/api/context/update", json=payload, timeout=5)
-    except Exception as e:
-        print(f"❌ Failed to log context: {e}")
+
+    for attempt in range(3):
+        try:
+            res = requests.post(f"{CONTEXT_BASE}/api/context/update", json=payload, timeout=20)
+            if res.status_code == 200:
+                print("✅ Context logged successfully")
+                return
+            else:
+                print(f"⚠️ Context log failed: {res.status_code}")
+        except Exception as e:
+            print(f"❌ Attempt {attempt + 1} failed: {e}")
+            time.sleep(2)
 
 # Endpoint
 @router.post("/api/feynman", response_model=FeynmanResponse)
@@ -74,7 +83,7 @@ Student's Explanation: {data.user_explanation}
 {f'Extra Context: {data.personalized_context}' if data.personalized_context else ''}
 
 Instructions:
-1. If correct but wordy or unclear, ask clarifying questions or say "Explain it like I'm 10."
+1. If correct but wordy or unclear, ask clarifying questions or say \"Explain it like I'm 10.\"
 2. If mostly right, fill in missing info and guide them.
 3. If confused, explain from scratch.
 
