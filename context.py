@@ -81,7 +81,7 @@ def should_trigger_synthesis(update: ContextUpdate) -> bool:
     return False
 
 def synthesize_context_gpt() -> dict:
-    logs = get_supabase().table("context_log").select("*").order("id").limit(15).execute().data
+    logs = get_supabase().table("context_log").select("*").order("id", desc=True).limit(10).execute().data[::-1]
 
     prompt = f"""
 You are ARLO's memory engine. Read the raw study logs below and return ONLY valid JSON.
