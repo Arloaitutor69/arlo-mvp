@@ -51,6 +51,9 @@ class ContextUpdate(BaseModel):
     feedback_flag: Optional[bool] = False
     trigger_synthesis: Optional[bool] = False
 
+class ContextResetRequest(BaseModel):
+    user_id: str
+
 # ------------------------------
 # Helper Functions
 # ------------------------------
