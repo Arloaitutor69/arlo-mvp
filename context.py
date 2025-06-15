@@ -187,13 +187,6 @@ async def update_context(update: ContextUpdate, request: Request):
 
     return {"status": "ok", "synthesized": False}
 
-@router.get("/context/current")
-async def get_full_context():
-    res = get_supabase().table("context_state").select("context").eq("id", 1).single().execute()
-    if not res.data:
-        raise HTTPException(status_code=404, detail="Context not yet synthesized.")
-    return json.loads(res.data["context"])
-
 @router.get("/context/logs/recent")
 def get_recent_logs(user_id: str):
     return query_context_log_table(user_id, limit=5)
