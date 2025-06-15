@@ -77,7 +77,7 @@ from quiz import router as quiz_router
 from study_session import router as study_session_router
 from chatbot import router as chatbot_router
 from review_sheet import router as review_router
-from backend.feynman_feedback import router as feynman_router 
+from feynman_feedback import router as feynman_router 
 from upload_pdf import router as upload_pdf_router
 from blurting import router as blurting_router
 from context import router as context_router
