@@ -83,12 +83,12 @@ from blurting import router as blurting_router
 from context import router as context_router
 
 # --- Include all routes ---
-app.include_router(flashcard_router)
+app.include_router(flashcard_router, prefix="/api")
 app.include_router(quiz_router, prefix="/api/quiz")
-app.include_router(study_session_router)
-app.include_router(chatbot_router)
-app.include_router(review_router)
-app.include_router(feynman_router)
+app.include_router(study_session_router, prefix="/api")
+app.include_router(chatbot_router, prefix="/api")
+app.include_router(review_router, prefix="/api")
+app.include_router(feynman_router, prefix="/api")
 app.include_router(upload_pdf_router, prefix="/api")
 app.include_router(blurting_router, prefix="/api")
 app.include_router(context_router, prefix="/api")
