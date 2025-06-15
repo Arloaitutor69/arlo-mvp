@@ -36,6 +36,7 @@ def get_context_slice():
 def post_learning_event_to_context(user_id: str, topic: str, missed_concepts: List[str], feedback: str):
     payload = {
         "source": f"user:{user_id}",
+        "user_id": user_id,
         "current_topic": topic,
         "weak_areas": missed_concepts,
         "review_queue": missed_concepts,
@@ -50,7 +51,9 @@ def post_learning_event_to_context(user_id: str, topic: str, missed_concepts: Li
         }
     }
     try:
-        requests.post(f"{CONTEXT_BASE}/api/context/update", json=payload, timeout=10)
+        res = requests.post(f"{CONTEXT_BASE}/api/context/update", json=payload, timeout=10)
+        res.raise_for_status()
+        print("✅ Logged blurting to context.")
     except Exception as e:
         print(f"❌ Failed to log context: {e}")
 
