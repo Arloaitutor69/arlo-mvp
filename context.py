@@ -16,7 +16,7 @@ def get_supabase() -> Client:
     global supabase
     if not supabase:
         url = os.getenv("SUPABASE_URL")
-        key = os.getenv("SUPABASE_SERVICE_ROLE")  # Service Role only for backend
+        key = os.getenv("SUPABASE_SERVICE_ROLE")
         if not url or not key:
             raise RuntimeError("SUPABASE_URL or SUPABASE_SERVICE_ROLE not set")
         supabase = create_client(url, key)
@@ -49,7 +49,7 @@ class ContextUpdate(BaseModel):
     learning_event: Optional[LearningEvent] = None
     source: str
     feedback_flag: Optional[bool] = False
-    trigger_synthesis: Optional[bool] = False  # <-- ADDED
+    trigger_synthesis: Optional[bool] = False
 
 # ------------------------------
 # Helper Functions
@@ -68,9 +68,8 @@ def score_source(source: str) -> int:
     return priority.get(source, 50)
 
 def should_trigger_synthesis(update: ContextUpdate) -> bool:
-    if update.trigger_synthesis:  # <-- NEW OVERRIDE LOGIC
+    if update.trigger_synthesis:
         return True
-
     res = get_supabase().table("context_log").select("source").order("id", desc=True).limit(5).execute()
     recent_entries = res.data if res.data else []
     if update.feedback_flag:
@@ -82,7 +81,7 @@ def should_trigger_synthesis(update: ContextUpdate) -> bool:
     return False
 
 def synthesize_context_gpt() -> dict:
-    logs = get_supabase().table("context_log").select("*").order("id").execute().data
+    logs = get_supabase().table("context_log").select("*").order("id").limit(15).execute().data
 
     prompt = f"""
 You are ARLO's memory engine. Read the raw study logs below and return ONLY valid JSON.
@@ -114,7 +113,7 @@ Raw Logs:
 """
 
     response = openai.ChatCompletion.create(
-        model="gpt-3.5-turbo",
+        model="gpt-3.5-turbo-0125",
         messages=[
             {"role": "system", "content": "You are a context synthesis engine for an educational AI."},
             {"role": "user", "content": prompt}
@@ -127,7 +126,7 @@ Raw Logs:
     try:
         parsed = json.loads(raw_content)
         if isinstance(parsed, list):
-            parsed = parsed[-1]  # fallback safety net
+            parsed = parsed[-1]
         return parsed
     except json.JSONDecodeError:
         raise HTTPException(status_code=500, detail=f"Failed to parse GPT output:\n{raw_content}")
@@ -173,6 +172,14 @@ async def update_context(update: ContextUpdate, request: Request):
                 "id": 1,
                 "context": json.dumps(synthesized)
             }).execute()
+
+            # Optional cleanup: purge old logs beyond the last 5
+            all_logs = get_supabase().table("context_log").select("id").order("id", desc=True).execute().data
+            ids_to_keep = {entry["id"] for entry in all_logs[:5]}
+            for entry in all_logs[5:]:
+                if entry["id"] not in ids_to_keep:
+                    get_supabase().table("context_log").delete().eq("id", entry["id"]).execute()
+
             return {"status": "ok", "synthesized": True}
         except Exception as synth_err:
             print("❌ Synthesis Error:", synth_err)
