@@ -46,7 +46,7 @@ def post_context_update(payload: dict):
     except Exception as e:
         print("❌ Context update failed:", e)
 
-@router.post("/api/flashcards")
+@router.post("/flashcards")
 def generate_flashcards(data: FlashcardRequest):
     context = fetch_context_slice()
 
