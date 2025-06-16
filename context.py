@@ -102,7 +102,7 @@ Return only a single object — NOT a list. Your response must exactly match thi
     {{
       "concept": string,
       "phase": string,
-      "confidence": float,
+      "confidence": float (e.g. 0.5),
       "depth": "shallow" | "intermediate" | "deep",
       "source_summary": string,
       "repetition_count": int,
@@ -111,9 +111,12 @@ Return only a single object — NOT a list. Your response must exactly match thi
   ]
 }}
 
-IMPORTANT: Return valid JSON only. Do NOT cut off the response.
-Avoid trailing commas. Double-quote all keys and string values.
-Ensure all brackets and quotes are closed.
+IMPORTANT:
+- Return valid JSON only — no trailing commas, no markdown.
+- Do NOT use null. Use default values:
+  - confidence: 0.5
+  - depth: "intermediate"
+- Ensure all brackets and quotes are closed.
 
 Raw Logs:
 {json.dumps(logs, indent=2)}
@@ -127,22 +130,32 @@ Raw Logs:
                 {"role": "user", "content": prompt}
             ],
             temperature=0.3,
-            max_tokens=750  # trimmed to reduce cutoff risk
+            max_tokens=800
         )
 
         raw_content = response.choices[0].message["content"].strip()
 
-        # Attempt auto-trim for unfinished JSON
-        if not raw_content.endswith("}"):
-            raw_content = raw_content.rsplit("}", 1)[0] + "}"
+        # Clean trailing markdown and cutoffs
+        if raw_content.startswith("```"):
+            raw_content = "\n".join(raw_content.splitlines()[1:-1])
 
-        parsed = json.loads(raw_content)
+        # Attempt to fix unclosed JSON or trailing commas
+        import re
+        def sanitize_json(raw):
+            raw = raw.strip()
+            raw = re.sub(r",\s*([}\]])", r"\\1", raw)  # remove trailing commas
+            if not raw.endswith("}"):
+                raw = raw.rsplit("}", 1)[0] + "}"
+            return raw
+
+        raw_cleaned = sanitize_json(raw_content)
+        parsed = json.loads(raw_cleaned)
         if isinstance(parsed, list):
             parsed = parsed[-1]
         return parsed
 
-    except json.JSONDecodeError as e:
-        print("❌ Failed to parse GPT output:\n", raw_content)
+    except Exception as e:
+        print("❌ GPT synthesis failed. Raw:", raw_content)
         raise HTTPException(status_code=500, detail=f"Failed to parse GPT output: {e}")
 # ------------------------------
 # Routes
