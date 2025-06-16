@@ -84,8 +84,24 @@ def should_trigger_synthesis(update: ContextUpdate) -> bool:
     return False
 
 def synthesize_context_gpt() -> dict:
-    logs = get_supabase().table("context_log").select("concept,phase,confidence,depth,source_summary,repetition_count,review_scheduled").order("id", desc=True).limit(7).execute().data[::-1]
+    # Fetch raw logs, but only pull learning_event and contextual metadata
+    logs_raw = get_supabase().table("context_log").select("learning_event, current_topic, source").order("id", desc=True).limit(10).execute().data[::-1]
 
+    # Flatten learning_event fields into expected synthesis format
+    flattened_logs = []
+    for entry in logs_raw:
+        le = entry.get("learning_event") or {}
+        flattened_logs.append({
+            "concept": le.get("concept", ""),
+            "phase": le.get("phase", ""),
+            "confidence": le.get("confidence", 0.5),
+            "depth": le.get("depth", "intermediate"),
+            "source_summary": le.get("source_summary", ""),
+            "repetition_count": le.get("repetition_count", 0),
+            "review_scheduled": le.get("review_scheduled", False)
+        })
+
+    # Prompt for GPT synthesis
     prompt = f"""
 You are ARLO's memory engine. Read the raw study logs below and return ONLY valid JSON.
 Do not include markdown, explanation, or formatting.
@@ -119,7 +135,7 @@ IMPORTANT:
 - Ensure all brackets and quotes are closed.
 
 Raw Logs:
-{json.dumps(logs, indent=2)}
+{json.dumps(flattened_logs, indent=2)}
 """
 
     try:
@@ -135,34 +151,20 @@ Raw Logs:
 
         raw_content = response.choices[0].message["content"].strip()
 
-        # Strip markdown wrapper if present
+        # Strip markdown and sanitize if needed
         if raw_content.startswith("```"):
             raw_content = "\n".join(raw_content.splitlines()[1:-1])
 
-        # Sanitize common JSON issues
         import re
         def sanitize_json(raw):
             raw = raw.strip()
             raw = re.sub(r",\s*([}\]])", r"\\1", raw)  # remove trailing commas
-            # Attempt to fix unclosed objects
-            if raw.count("{") > raw.count("}"):
-                raw += "}" * (raw.count("{") - raw.count("}"))
-            if raw.count("[") > raw.count("]"):
-                raw += "]" * (raw.count("[") - raw.count("]"))
             return raw
 
         raw_cleaned = sanitize_json(raw_content)
-
         parsed = json.loads(raw_cleaned)
-
         if isinstance(parsed, list):
             parsed = parsed[-1]
-
-        # Safety net: fill in default values if any are missing
-        for item in parsed.get("learning_history", []):
-            item["confidence"] = item.get("confidence", 0.5)
-            item["depth"] = item.get("depth", "intermediate")
-
         return parsed
 
     except Exception as e:
