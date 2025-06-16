@@ -190,7 +190,7 @@ async def update_context(update: ContextUpdate, request: Request):
 
     return {"status": "ok", "synthesized": False}
 
-@router.post("/api/context/reset")
+@router.post("/context/reset")
 def reset_context_state(request: ContextResetRequest):
     payload = {
         "user_id": request.user_id,
