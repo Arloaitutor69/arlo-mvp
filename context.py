@@ -7,6 +7,7 @@ import openai
 import os
 from supabase import create_client, Client
 import re
+import requests
 
 # ------------------------------
 # Supabase lazy initialization
