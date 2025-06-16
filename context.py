@@ -86,23 +86,33 @@ def should_trigger_synthesis(update: ContextUpdate) -> bool:
 
 import re
 
+import json
+
 def extract_and_parse_json(text: str) -> dict:
     """
-    Extracts the first valid JSON object from GPT response and parses it safely.
-    Returns {"status": "error", "synthesized": False} on failure.
+    Extracts the first valid JSON object from a text blob and parses it safely.
+    Assumes object starts with the first '{' and ends with the matching '}'.
     """
     try:
-        # Use regex to find the first complete JSON object
-        match = re.search(r'\{(?:[^{}]|(?R))*\}', text, re.DOTALL)
-        if not match:
-            raise ValueError("No valid JSON object found in GPT output")
+        start = text.index('{')
+        brace_count = 0
+        for i in range(start, len(text)):
+            if text[i] == '{':
+                brace_count += 1
+            elif text[i] == '}':
+                brace_count -= 1
+                if brace_count == 0:
+                    end = i + 1
+                    break
+        else:
+            raise ValueError("Mismatched braces in GPT output")
 
-        json_str = match.group()
+        json_str = text[start:end]
 
-        # Remove common GPT errors (like trailing commas)
-        json_str = re.sub(r",\s*([}\]])", r"\1", json_str)
+        # Sanitize common GPT errors: remove trailing commas
+        import re
+        json_str = re.sub(r',(\s*[}\]])', r'\1', json_str)
 
-        # Final parse
         return json.loads(json_str)
 
     except Exception as e:
