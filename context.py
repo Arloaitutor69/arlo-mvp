@@ -111,29 +111,39 @@ Return only a single object — NOT a list. Your response must exactly match thi
   ]
 }}
 
+IMPORTANT: Return valid JSON only. Do NOT cut off the response.
+Avoid trailing commas. Double-quote all keys and string values.
+Ensure all brackets and quotes are closed.
+
 Raw Logs:
 {json.dumps(logs, indent=2)}
 """
 
-    response = openai.ChatCompletion.create(
-        model="gpt-3.5-turbo-0125",
-        messages=[
-            {"role": "system", "content": "You are a context synthesis engine for an educational AI."},
-            {"role": "user", "content": prompt}
-        ],
-        temperature=0.3,
-        max_tokens=800
-    )
-
-    raw_content = response.choices[0].message["content"]
     try:
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo-0125",
+            messages=[
+                {"role": "system", "content": "You are a context synthesis engine for an educational AI."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.3,
+            max_tokens=750  # trimmed to reduce cutoff risk
+        )
+
+        raw_content = response.choices[0].message["content"].strip()
+
+        # Attempt auto-trim for unfinished JSON
+        if not raw_content.endswith("}"):
+            raw_content = raw_content.rsplit("}", 1)[0] + "}"
+
         parsed = json.loads(raw_content)
         if isinstance(parsed, list):
             parsed = parsed[-1]
         return parsed
-    except json.JSONDecodeError:
-        raise HTTPException(status_code=500, detail=f"Failed to parse GPT output:\n{raw_content}")
 
+    except json.JSONDecodeError as e:
+        print("❌ Failed to parse GPT output:\n", raw_content)
+        raise HTTPException(status_code=500, detail=f"Failed to parse GPT output: {e}")
 # ------------------------------
 # Routes
 # ------------------------------
