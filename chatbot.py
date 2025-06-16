@@ -156,7 +156,7 @@ def call_gpt(prompt: str) -> str:
         logger.error(f"Error calling GPT: {e}")
         return "Sorry, I had trouble generating a response."
 
-@router.post("/api/chatbot", response_model=ChatbotResponse)
+@router.post("/chatbot", response_model=ChatbotResponse)
 def chatbot_handler(data: ChatbotInput):
     logger.info("Chatbot request received")
     context = get_context_slice()
@@ -175,7 +175,7 @@ def chatbot_handler(data: ChatbotInput):
         context_update_required=False
     )
 
-@router.post("/api/chatbot/save")
+@router.post("/chatbot/save")
 def save_chat_context(payload: Dict[str, Any]):
     """
     Allows manual saving of chatbot insights to the context manager.
