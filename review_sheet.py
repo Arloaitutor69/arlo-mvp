@@ -81,7 +81,7 @@ Respond in pure JSON format as:
 # ---------------------------
 # Endpoint
 # ---------------------------
-@router.post("/api/review-sheet", response_model=ReviewSheet)
+@router.post("/review-sheet", response_model=ReviewSheet)
 def generate_review_sheet():
     context = fetch_context_slice()
     prompt = build_review_prompt(context)
