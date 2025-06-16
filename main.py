@@ -8,8 +8,6 @@ import jwt
 import sys
 import traceback
 
-
-
 # Load environment variables from .env
 load_dotenv()
 
@@ -29,10 +27,8 @@ class AuthMiddleware(BaseHTTPMiddleware):
             request.state.user = {}
         return await call_next(request)
 
-
 # Create FastAPI app with middleware
 app = FastAPI(middleware=[Middleware(AuthMiddleware)])
-
 
 @app.middleware("http")
 async def log_exceptions(request, call_next):
@@ -43,33 +39,31 @@ async def log_exceptions(request, call_next):
         sys.stderr.write(f"🔥 UNCAUGHT EXCEPTION: {e}\n")
         raise
 
-
 # === CORS Setup ===
-from fastapi.middleware.cors import CORSMiddleware
-
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        # ✅ Corrected Lovable Preview Domain
+        # ✅ Already present
         "https://c4e79f71-1738-4330-9bbd-c1a1b1fea023.lovableproject.com",
-
-        # ✅ Editor interface
         "https://lovable.dev",
         "https://lovable.dev/projects/c4e79f71-1738-4330-9bbd-c1a1b1fea023",
-
-        # ✅ Known public app domains (current and prior naming)
         "https://arlo-study-craft.lovable.app",
         "https://carlo-study-flow.lovable.app",
-
-        # ✅ Local development
         "http://localhost:10000",
+
+        # ✅ New additions for broader compatibility
+        "https://id-preview--c4e79f71-1738-4330-9bbd-c1a1b1fea023.lovable.app",
+        "https://lovable.app",
+        "https://*.lovable.app",  # may be ignored by some browsers — explicit subdomains better
+        "http://localhost:3000",
+        "http://127.0.0.1:8080",
+        "https://*.vercel.app",
+        "https://*.netlify.app"
     ],
     allow_credentials=True,
-    allow_methods=["*"],  # Allows GET, POST, OPTIONS, etc.
-    allow_headers=["*"],  # Allows Content-Type, Accept, etc.
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
-
-
 
 # --- Modular routers ---
 from flashcard_generator import router as flashcard_router
