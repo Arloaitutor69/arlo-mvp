@@ -84,7 +84,7 @@ def build_gpt_prompt(topic: str, details: Optional[str], duration: int, level: s
     )
 
 # --- Endpoint ---
-@router.post("/api/plan", response_model=StudyPlanResponse)
+@router.post("/plan", response_model=StudyPlanResponse)
 def generate_plan(data: StudyPlanRequest):
     try:
         prompt = build_gpt_prompt(data.topic, data.details, data.duration, data.target_level, data.parsed_text)
