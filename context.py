@@ -135,23 +135,34 @@ Raw Logs:
 
         raw_content = response.choices[0].message["content"].strip()
 
-        # Clean trailing markdown and cutoffs
+        # Strip markdown wrapper if present
         if raw_content.startswith("```"):
             raw_content = "\n".join(raw_content.splitlines()[1:-1])
 
-        # Attempt to fix unclosed JSON or trailing commas
+        # Sanitize common JSON issues
         import re
         def sanitize_json(raw):
             raw = raw.strip()
             raw = re.sub(r",\s*([}\]])", r"\\1", raw)  # remove trailing commas
-            if not raw.endswith("}"):
-                raw = raw.rsplit("}", 1)[0] + "}"
+            # Attempt to fix unclosed objects
+            if raw.count("{") > raw.count("}"):
+                raw += "}" * (raw.count("{") - raw.count("}"))
+            if raw.count("[") > raw.count("]"):
+                raw += "]" * (raw.count("[") - raw.count("]"))
             return raw
 
         raw_cleaned = sanitize_json(raw_content)
+
         parsed = json.loads(raw_cleaned)
+
         if isinstance(parsed, list):
             parsed = parsed[-1]
+
+        # Safety net: fill in default values if any are missing
+        for item in parsed.get("learning_history", []):
+            item["confidence"] = item.get("confidence", 0.5)
+            item["depth"] = item.get("depth", "intermediate")
+
         return parsed
 
     except Exception as e:
