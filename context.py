@@ -195,9 +195,9 @@ async def update_context(update: ContextUpdate, request: Request):
     user_info = getattr(request.state, "user", None)
     
     if user_info and "sub" in user_info:
-    user_id = user_info["sub"]
+        user_id = user_info["sub"]
     elif update.source and update.source.startswith("user:"):
-    user_id = update.source.replace("user:", "")
+        user_id = update.source.replace("user:", "")
     else:
         raise HTTPException(
             status_code=400,
