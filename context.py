@@ -193,14 +193,16 @@ async def update_context(update: ContextUpdate, request: Request):
     entry["timestamp"] = datetime.utcnow().isoformat()
 
     user_info = getattr(request.state, "user", None)
+    
     if user_info and "sub" in user_info:
-        user_id = user_info["sub"]
+    user_id = user_info["sub"]
+    elif update.source and update.source.startswith("user:"):
+    user_id = update.source.replace("user:", "")
     else:
-        source_str = update.source or ""
-        if source_str.startswith("user:"):
-            user_id = source_str.replace("user:", "")
-        else:
-            user_id = "00000000-0000-0000-0000-000000000000"
+        raise HTTPException(
+            status_code=400,
+            detail="Missing or invalid user ID. Ensure frontend passes a valid auth token or user:UUID in 'source'."
+        )
 
     entry["user_id"] = user_id
 
