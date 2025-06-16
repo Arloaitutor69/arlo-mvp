@@ -6,6 +6,7 @@ import json
 import openai
 import os
 from supabase import create_client, Client
+import re
 
 # ------------------------------
 # Supabase lazy initialization
@@ -83,11 +84,36 @@ def should_trigger_synthesis(update: ContextUpdate) -> bool:
             return True
     return False
 
+import re
+
+def extract_and_parse_json(text: str) -> dict:
+    """
+    Extracts the first valid JSON object from GPT response and parses it safely.
+    Returns {"status": "error", "synthesized": False} on failure.
+    """
+    try:
+        # Use regex to find the first complete JSON object
+        match = re.search(r'\{(?:[^{}]|(?R))*\}', text, re.DOTALL)
+        if not match:
+            raise ValueError("No valid JSON object found in GPT output")
+
+        json_str = match.group()
+
+        # Remove common GPT errors (like trailing commas)
+        json_str = re.sub(r",\s*([}\]])", r"\1", json_str)
+
+        # Final parse
+        return json.loads(json_str)
+
+    except Exception as e:
+        print("❌ Robust JSON parse failed:", e)
+        print("🔴 Raw GPT output:\n", text)
+        return {"status": "error", "synthesized": False}
+
+
 def synthesize_context_gpt() -> dict:
-    # Fetch raw logs, but only pull learning_event and contextual metadata
     logs_raw = get_supabase().table("context_log").select("learning_event, current_topic, source").order("id", desc=True).limit(10).execute().data[::-1]
 
-    # Flatten learning_event fields into expected synthesis format
     flattened_logs = []
     for entry in logs_raw:
         le = entry.get("learning_event") or {}
@@ -101,11 +127,9 @@ def synthesize_context_gpt() -> dict:
             "review_scheduled": le.get("review_scheduled", False)
         })
 
-    # Prompt for GPT synthesis
     prompt = f"""
 You are ARLO's memory engine. Read the raw study logs below and return ONLY valid JSON.
-Do not include markdown, explanation, or formatting.
-Return only a single object — NOT a list. Your response must exactly match this structure:
+Return a single object matching this structure:
 
 {{
   "current_topic": string or null,
@@ -118,7 +142,7 @@ Return only a single object — NOT a list. Your response must exactly match thi
     {{
       "concept": string,
       "phase": string,
-      "confidence": float (e.g. 0.5),
+      "confidence": float,
       "depth": "shallow" | "intermediate" | "deep",
       "source_summary": string,
       "repetition_count": int,
@@ -127,12 +151,7 @@ Return only a single object — NOT a list. Your response must exactly match thi
   ]
 }}
 
-IMPORTANT:
-- Return valid JSON only — no trailing commas, no markdown.
-- Do NOT use null. Use default values:
-  - confidence: 0.5
-  - depth: "intermediate"
-- Ensure all brackets and quotes are closed.
+DO NOT include markdown. No commentary. No explanation. No lists. Only a single valid JSON object. No null values — replace with defaults.
 
 Raw Logs:
 {json.dumps(flattened_logs, indent=2)}
@@ -146,29 +165,14 @@ Raw Logs:
                 {"role": "user", "content": prompt}
             ],
             temperature=0.3,
-            max_tokens=1000
+            max_tokens=1200
         )
 
         raw_content = response.choices[0].message["content"].strip()
-
-        # Strip markdown and sanitize if needed
-        if raw_content.startswith("```"):
-            raw_content = "\n".join(raw_content.splitlines()[1:-1])
-
-        import re
-        def sanitize_json(raw):
-            raw = raw.strip()
-            raw = re.sub(r",\s*([}\]])", r"\\1", raw)  # remove trailing commas
-            return raw
-
-        raw_cleaned = sanitize_json(raw_content)
-        parsed = json.loads(raw_cleaned)
-        if isinstance(parsed, list):
-            parsed = parsed[-1]
-        return parsed
+        return extract_and_parse_json(raw_content)
 
     except Exception as e:
-        print("❌ GPT synthesis failed. Raw:", raw_content)
+        print("❌ GPT synthesis failed:", e)
         raise HTTPException(status_code=500, detail=f"Failed to parse GPT output: {e}")
 # ------------------------------
 # Routes
