@@ -24,6 +24,7 @@ def get_supabase() -> Client:
         supabase = create_client(url, key)
     return supabase
 
+
 # ------------------------------
 # Router
 # ------------------------------
@@ -259,20 +260,28 @@ def reset_context_state(request: ContextResetRequest):
     }
 
     try:
+        supabase_url = os.getenv("SUPABASE_URL")
+        supabase_key = os.getenv("SUPABASE_SERVICE_ROLE")
+
+        if not supabase_url or not supabase_key:
+            raise HTTPException(status_code=500, detail="Missing Supabase env variables")
+
         res = requests.post(
-            f"{SUPABASE_URL}/rest/v1/context_log",
+            f"{supabase_url}/rest/v1/context_log",
             json=payload,
             headers={
-                "apikey": SUPABASE_SERVICE_ROLE,
-                "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE}",
+                "apikey": supabase_key,
+                "Authorization": f"Bearer {supabase_key}",
                 "Content-Type": "application/json"
             },
             timeout=10
         )
         res.raise_for_status()
         return {"status": "context cleared"}
+    
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Reset failed: {e}")
+
 
 @router.get("/context/logs/recent")
 def get_recent_logs(user_id: str):
