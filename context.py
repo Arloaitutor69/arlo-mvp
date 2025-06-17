@@ -86,9 +86,6 @@ def should_trigger_synthesis(update: ContextUpdate) -> bool:
             return True
     return False
 
-import re
-
-import json
 
 def extract_and_parse_json(text: str) -> dict:
     """
@@ -112,7 +109,6 @@ def extract_and_parse_json(text: str) -> dict:
         json_str = text[start:end]
 
         # Sanitize common GPT errors: remove trailing commas
-        import re
         json_str = re.sub(r',(\s*[}\]])', r'\1', json_str)
 
         return json.loads(json_str)
@@ -245,12 +241,6 @@ async def update_context(update: ContextUpdate, request: Request):
     return {"status": "ok", "synthesized": False}
 
 @router.post("/context/reset")
-from fastapi import HTTPException
-import os
-import requests
-import json
-from . import ContextResetRequest  # if you're importing the model from another file
-
 def reset_context_state(request: ContextResetRequest):
     # Define the blank reset payload
     payload = {
