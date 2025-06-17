@@ -244,17 +244,26 @@ async def update_context(update: ContextUpdate, request: Request):
 def reset_context_state(request: ContextResetRequest):
     # Define the blank reset payload
     payload = {
-        "user_id": request.user_id,
-        "source": f"user:{request.user_id}",
-        "current_topic": None,
-        "user_goals": [],
-        "preferred_learning_styles": [],
-        "weak_areas": [],
-        "emphasized_facts": [],
-        "review_queue": [],
-        "learning_event": None,
-        "trigger_synthesis": True
-    }
+    "user_id": request.user_id,
+    "source": f"user:{request.user_id}",
+    "current_topic": None,
+    "user_goals": [],
+    "preferred_learning_styles": [],
+    "weak_areas": [],
+    "emphasized_facts": [],
+    "review_queue": [],
+    "learning_event": {
+        "concept": "reset",
+        "phase": "reset",
+        "confidence": 0.0,
+        "depth": "shallow",
+        "source_summary": "Context reset event",
+        "repetition_count": 0,
+        "review_scheduled": False
+    },
+    "trigger_synthesis": True
+}
+
 
     try:
         # Load environment variables
