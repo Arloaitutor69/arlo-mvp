@@ -242,51 +242,53 @@ async def update_context(update: ContextUpdate, request: Request):
 
 @router.post("/context/reset")
 def reset_context_state(request: ContextResetRequest):
-    # Define the blank reset payload
-    payload = {
-    "user_id": request.user_id,
-    "source": f"user:{request.user_id}",
-    "current_topic": None,
-    "user_goals": [],
-    "preferred_learning_styles": [],
-    "weak_areas": [],
-    "emphasized_facts": [],
-    "review_queue": [],
-    "learning_event": {
-        "concept": "reset",
-        "phase": "reset",
-        "confidence": 0.0,
-        "depth": "shallow",
-        "source_summary": "Context reset event",
-        "repetition_count": 0,
-        "review_scheduled": False
-    },
-    "trigger_synthesis": True
-}
-
+    user_id = request.user_id
 
     try:
-        # Load environment variables
+        # Load Supabase credentials
         supabase_url = os.getenv("SUPABASE_URL")
         supabase_key = os.getenv("SUPABASE_SERVICE_ROLE")
 
         if not supabase_url or not supabase_key:
             raise HTTPException(status_code=500, detail="Missing Supabase env variables")
 
-        # Call Supabase REST API to insert the reset context log
-        res = requests.post(
-            f"{supabase_url}/rest/v1/context_log",
-            json=payload,
-            headers={
-                "apikey": supabase_key,
-                "Authorization": f"Bearer {supabase_key}",
-                "Content-Type": "application/json"
-            },
-            timeout=10
-        )
-        res.raise_for_status()
+        headers = {
+            "apikey": supabase_key,
+            "Authorization": f"Bearer {supabase_key}",
+            "Content-Type": "application/json"
+        }
 
-        return {"status": "context cleared"}
+        # 1️⃣ Delete all context_log rows for the user
+        delete_logs_url = f"{supabase_url}/rest/v1/context_log?user_id=eq.{user_id}"
+        delete_res = requests.delete(delete_logs_url, headers=headers)
+        delete_res.raise_for_status()
+
+        # 2️⃣ Reset the context_state row to clean values
+        reset_context = {
+            "id": 1,
+            "context": json.dumps({
+                "current_topic": None,
+                "user_goals": [],
+                "preferred_learning_styles": [],
+                "weak_areas": [],
+                "emphasized_facts": [],
+                "review_queue": [],
+                "learning_history": []
+            })
+        }
+
+        # Delete existing context_state
+        requests.delete(f"{supabase_url}/rest/v1/context_state?id=eq.1", headers=headers)
+
+        # Insert fresh reset context
+        reset_res = requests.post(
+            f"{supabase_url}/rest/v1/context_state",
+            json=reset_context,
+            headers=headers
+        )
+        reset_res.raise_for_status()
+
+        return {"status": "context fully wiped"}
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Reset failed: {e}")
