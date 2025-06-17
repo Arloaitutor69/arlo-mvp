@@ -245,7 +245,14 @@ async def update_context(update: ContextUpdate, request: Request):
     return {"status": "ok", "synthesized": False}
 
 @router.post("/context/reset")
+from fastapi import HTTPException
+import os
+import requests
+import json
+from . import ContextResetRequest  # if you're importing the model from another file
+
 def reset_context_state(request: ContextResetRequest):
+    # Define the blank reset payload
     payload = {
         "user_id": request.user_id,
         "source": f"user:{request.user_id}",
@@ -260,12 +267,14 @@ def reset_context_state(request: ContextResetRequest):
     }
 
     try:
+        # Load environment variables
         supabase_url = os.getenv("SUPABASE_URL")
         supabase_key = os.getenv("SUPABASE_SERVICE_ROLE")
 
         if not supabase_url or not supabase_key:
             raise HTTPException(status_code=500, detail="Missing Supabase env variables")
 
+        # Call Supabase REST API to insert the reset context log
         res = requests.post(
             f"{supabase_url}/rest/v1/context_log",
             json=payload,
@@ -277,8 +286,9 @@ def reset_context_state(request: ContextResetRequest):
             timeout=10
         )
         res.raise_for_status()
+
         return {"status": "context cleared"}
-    
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Reset failed: {e}")
 
