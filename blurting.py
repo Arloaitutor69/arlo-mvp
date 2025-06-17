@@ -6,6 +6,7 @@ import os
 import json
 import requests
 import time
+from threading import Thread
 
 router = APIRouter()
 openai.api_key = os.getenv("OPENAI_API_KEY")
@@ -29,7 +30,7 @@ class BlurtingResponse(BaseModel):
     missed_concepts: List[str]
     context_alignment: str
 
-# Context functions
+# Context functions (safe threaded)
 def get_context_slice():
     try:
         res = requests.get(f"{CONTEXT_BASE}/api/context/slice", timeout=30)
@@ -38,6 +39,9 @@ def get_context_slice():
     except Exception as e:
         print("❌ Failed to fetch context:", e)
         return None
+
+def safe_context_fetch(result_holder: dict):
+    result_holder['data'] = get_context_slice()
 
 def post_learning_event_to_context(user_id: str, topic: str, missed_concepts: List[str], feedback: str):
     payload = {
@@ -66,6 +70,12 @@ def post_learning_event_to_context(user_id: str, topic: str, missed_concepts: Li
     except Exception as e:
         print(f"❌ Failed to log context: {e}")
 
+def safe_context_log(user_id, topic, missed, feedback):
+    try:
+        post_learning_event_to_context(user_id, topic, missed, feedback)
+    except Exception as e:
+        print(f"⚠️ Background context log failed: {e}")
+
 # Prompt builder
 def generate_blurting_prompt(topic: str, content_summary: Optional[str], blurted_response: str, context_prompt: Optional[str]) -> str:
     summary_block = f"\nSummary of key concepts:\n{content_summary}" if content_summary else ""
@@ -87,7 +97,11 @@ def generate_blurting_prompt(topic: str, content_summary: Optional[str], blurted
 async def evaluate_blurting(request: BlurtingRequest):
     try:
         if not request.context_prompt:
-            context_data = get_context_slice()
+            context_holder = {}
+            fetch_thread = Thread(target=safe_context_fetch, args=(context_holder,))
+            fetch_thread.start()
+            fetch_thread.join(timeout=3)
+            context_data = context_holder.get('data')
             request.context_prompt = json.dumps(context_data.get("weak_areas", [])) if context_data else None
 
         prompt = generate_blurting_prompt(
@@ -109,15 +123,16 @@ async def evaluate_blurting(request: BlurtingRequest):
         print(f"⏱️ GPT call took {end - start:.2f} seconds")
 
         content = response.choices[0].message.content.strip()
+        print("🧠 GPT raw content:", content)
         parsed = json.loads(content)
 
         if request.user_id:
-            post_learning_event_to_context(
+            Thread(target=safe_context_log, args=(
                 request.user_id,
                 request.topic,
                 parsed["missed_concepts"],
                 parsed["feedback"]
-            )
+            )).start()
 
         return BlurtingResponse(**parsed)
 
