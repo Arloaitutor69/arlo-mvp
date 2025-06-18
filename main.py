@@ -59,6 +59,7 @@ app.add_middleware(
         "http://127.0.0.1:8080",
         "https://*.vercel.app",
         "https://*.netlify.app"
+        "https://arlo-ai-tutor.lovable.app"
     ],
     allow_credentials=True,
     allow_methods=["*"],
