@@ -45,6 +45,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "https://arlo-ai-tutor.lovable.app",
+        "https://c4e79f71-1738-4330-9bbd-c1a1b1fea023.lovableproject.com",
         "https://lovable.dev/projects/c4e79f71-1738-4330-9bbd-c1a1b1fea023",
         "https://lovable.app",
         "http://localhost:10000"
