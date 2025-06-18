@@ -44,12 +44,15 @@ async def log_exceptions(request, call_next):
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "https://arlo-ai-tutor.lovable.app",
+        # ✅ Lovable actual preview URL
+        "https://id-preview--c4e79f71-1738-4330-9bbd-c1a1b1fea023.lovable.app",
+
+        # ✅ Lovable published domain
         "https://c4e79f71-1738-4330-9bbd-c1a1b1fea023.lovableproject.com",
-        "https://lovable.dev/projects/c4e79f71-1738-4330-9bbd-c1a1b1fea023",
+
+        "https://arlo-ai-tutor.lovable.app",
         "https://lovable.app",
         "http://localhost:10000",
-        "https://c4e79f71-1738-4330-9bbd-c1a1b1fea023.lovableproject.com",
         "https://lovable.dev",
     ],
     allow_credentials=True,
