@@ -53,41 +53,36 @@ def generate_flashcards(data: FlashcardRequest):
     personalization = ""
     if context:
         personalization = f"""
-Current session topic: {context.get('current_topic', data.topic)}
-Emphasize these facts: {', '.join(context.get('emphasized_facts', [])) or 'N/A'}
-Prioritize these weak areas: {', '.join(context.get('weak_areas', [])) or 'N/A'}
-Tailor to user goals: {', '.join(context.get('user_goals', [])) or 'N/A'}
-Optionally include 1–2 review cards on: {', '.join(context.get('review_queue', [])) or 'none'}
+Session topic: {context.get('current_topic', data.topic)}
+Emphasize: {', '.join(context.get('emphasized_facts', [])) or 'N/A'}
+Weak areas: {', '.join(context.get('weak_areas', [])) or 'N/A'}
+Goals: {', '.join(context.get('user_goals', [])) or 'N/A'}
+Review queue: {', '.join(context.get('review_queue', [])) or 'N/A'}
 """
 
+    # --- Optimized, concise prompt using GPT-4 ---
     prompt = f"""
-You are a flashcard tutor generating study cards.
+You are a flashcard-generating tutor.
 
-Topic: "{data.topic}"
-Notes: "{data.content or 'Use general knowledge if no notes provided.'}"
+Topic: {data.topic}
+Notes: {data.content or 'Use general knowledge.'}
 
-Difficulty: {data.difficulty}
-Format: {data.format}
+Create exactly {data.count} flashcards as a JSON array with objects like:
+  {{ "question": "...", "answer": "..." }}
 
-{personalization}
+Requirements:
+- Format: {data.format} (only Q&A supported for now)
+- Difficulty: {data.difficulty}
+- Include variety: facts, definitions, exceptions, how-to steps
+- Prioritize clarity, helpfulness, and spaced retention
+- Adapt based on: {personalization.strip()}
 
-Use only one of these formats:
-- "Q&A" → Basic question/answer
-- "fill-in-the-blank" → Sentence with a missing term
-- "multiple-choice" → (Not supported yet — just return Q&A for now)
-
-Return ONLY a valid JSON array of objects like:
-[
-  {{ "question": "What is ...?", "answer": "..." }},
-  ...
-]
-
-Do not include explanations, headers, or any other text — just the JSON.
+Return only the JSON array — no other text.
 """
 
     try:
         response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
+            model="gpt-4",
             messages=[{"role": "user", "content": prompt}],
             temperature=0.7
         )
@@ -118,7 +113,7 @@ Do not include explanations, headers, or any other text — just the JSON.
         ))
         questions_summary.append(q)
 
-    # ✅ Post a concise context log summarizing the flashcards
+    # ✅ Log session context for review and tracking
     post_context_update({
         "source": "flashcards",
         "current_topic": data.topic,
