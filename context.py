@@ -187,23 +187,27 @@ Raw Logs:
 # ------------------------------
 @router.post("/context/update")
 async def update_context(update: ContextUpdate, request: Request):
-    entry = update.dict(exclude={"trigger_synthesis"})
+    entry = update.dict(exclude={"trigger_synthesis", "user_id"})  # exclude from log row
     entry["timestamp"] = datetime.utcnow().isoformat()
 
+    # --- Robust user ID extraction ---
     user_info = getattr(request.state, "user", None)
-    
+
     if user_info and "sub" in user_info:
         user_id = user_info["sub"]
+    elif update.user_id:
+        user_id = update.user_id
     elif update.source and update.source.startswith("user:"):
         user_id = update.source.replace("user:", "")
     else:
         raise HTTPException(
             status_code=400,
-            detail="Missing or invalid user ID. Ensure frontend passes a valid auth token or user:UUID in 'source'."
+            detail="Missing or invalid user ID. Include 'user_id' or use 'source=\"user:<uuid>\"'."
         )
 
     entry["user_id"] = user_id
 
+    # --- Debugging log ---
     try:
         print("\U0001f6a8 DEBUG: source =", update.source)
         print("\U0001f6a8 DEBUG: user_id =", user_id)
@@ -211,23 +215,27 @@ async def update_context(update: ContextUpdate, request: Request):
     except Exception as log_err:
         print("⚠️ Logging error:", log_err)
 
+    # --- Insert raw context log ---
     try:
         get_supabase().table("context_log").insert(entry).execute()
     except Exception as db_err:
         print("❌ DB Insert Error:", db_err)
         raise HTTPException(status_code=500, detail="Failed to save context")
 
+    # --- Optional synthesis ---
     if should_trigger_synthesis(update):
         try:
-            synthesized = synthesize_context_gpt()
+            synthesized = synthesize_context_gpt(user_id=user_id)  # pass user_id here
+
+            # Replace global context state
             get_supabase().table("context_state").delete().neq("id", 0).execute()
             get_supabase().table("context_state").insert({
                 "id": 1,
                 "context": json.dumps(synthesized)
             }).execute()
 
-            # Optional cleanup: purge old logs beyond the last 5
-            all_logs = get_supabase().table("context_log").select("id").order("id", desc=True).execute().data
+            # Optional cleanup: purge old logs
+            all_logs = get_supabase().table("context_log").select("id").eq("user_id", user_id).order("id", desc=True).execute().data
             ids_to_keep = {entry["id"] for entry in all_logs[:5]}
             for entry in all_logs[5:]:
                 if entry["id"] not in ids_to_keep:
