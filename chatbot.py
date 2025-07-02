@@ -96,6 +96,7 @@ def get_context_cached(user_id: str) -> Dict[str, Any]:
 
 
 def build_prompt(data: ChatbotInput, context: Dict[str, Any]) -> str:
+    # Build short context summary
     ctx = []
     if context.get("current_topic"):
         ctx.append(f"Current topic: {context['current_topic']}")
@@ -108,88 +109,26 @@ def build_prompt(data: ChatbotInput, context: Dict[str, Any]) -> str:
     if context.get("preferred_learning_styles"):
         ctx.append(f"Style: {context['preferred_learning_styles'][0]}")
 
+    # Use most recent messages for continuity
     recent_messages = "\n".join([
         f"{msg['role']}: {msg['content']}" for msg in data.message_history[-3:]
     ])
 
-    ctx_text = "\n".join(ctx)
-    base = f"""
-You are Arlo, an expert AI tutor.
-Skip greetings and filler. Focus on instruction.
-{ctx_text}
-
-Recent conversation:
-{recent_messages}
-"""
-
+    # Combine everything into one prompt
     user_input = data.user_input.strip()
-    phase = data.current_phase.phase
-    payload = data.current_phase.payload or PhasePayload()
-    description = data.current_phase.description or ""
+    ctx_text = "\n".join(ctx)
 
-    if phase == "flashcards" and payload.question:
-        return base + f"""
-Flashcard:
-Q: {payload.question}
-User answered: {payload.user_answer}
-Follow-up input: {user_input}
-Correct or reinforce briefly.
-"""
-    elif phase == "feynman":
-        return base + f"""
-The student is explaining aloud.
-They said: \"{user_input}\"
-Help identify gaps and improve understanding.
-"""
-    elif phase == "quiz" and payload.question:
-        return base + f"""
-Quiz:
-Q: {payload.question}
-User answered: {payload.user_answer}
-Follow-up input: {user_input}
-Correct and explain clearly.
-"""
-    elif phase == "blurting":
-        return base + f"""
-The student is blurting — recalling everything.
-They said: \"{user_input}\"
-Point out what’s missing and reinforce.
-"""
-    elif phase == "arlo_teaching":
-        return base + f"""
-This is a personalized teaching phase.
-Block goal: {description}
-The student said: \"{user_input}\"
-Tutor them interactively — explain, quiz gently, and offer clarity.
-"""
-    else:
-        return base + f"""
-Student said: \"{user_input}\"
-Reply helpfully based on input and context.
-"""
+    prompt = (
+        "You are Arlo, an expert AI tutor.\n"
+        "Always use a warm, clear teaching tone. Skip filler. Focus on direct, helpful instruction.\n\n"
+        f"{ctx_text}\n\n"
+        "Recent conversation:\n"
+        f"{recent_messages}\n\n"
+        f"Student input:\n\"{user_input}\"\n\n"
+        "Respond helpfully based on their message and the context above.\n"
+    )
 
-
-def call_gpt(prompt: str) -> str:
-    try:
-        logger.info("Calling OpenAI GPT...")
-        start = time.time()
-        response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo-0125",
-            messages=[
-                {"role": "system", "content": "You are a helpful AI tutor."},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0.5,
-            max_tokens=500,
-            request_timeout=10
-        )
-        end = time.time()
-        logger.info(f"GPT call completed in {end - start:.2f}s")
-        return response.choices[0].message.content.strip()
-    except Exception as e:
-        logger.error(f"GPT call failed: {e}")
-        return "Sorry, I had trouble generating a response."
-
+    return prompt
 
 @router.post("/chatbot", response_model=ChatbotResponse)
 async def chatbot_handler(request: Request, data: ChatbotInput):
