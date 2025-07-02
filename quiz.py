@@ -17,8 +17,8 @@ class QuizRequest(BaseModel):
     topic: str
     difficulty: Literal["easy", "medium", "hard"]
     question_count: int
-    question_types: List[Literal["multiple_choice", "true_false"]]  # Removed fill_in_blank
-    source: Optional[str] = None  # Optional, used to fall back to user ID
+    question_types: List[Literal["multiple_choice", "true_false"]]
+    source: Optional[str] = None
 
 class QuizQuestion(BaseModel):
     id: int
@@ -44,20 +44,22 @@ def extract_user_id(request: Request, req: QuizRequest) -> Optional[str]:
     else:
         return None
 
-# --- Context Helpers ---
+# --- Context from cache ---
 def fetch_context(user_id: Optional[str] = None):
     try:
-        print("🗕 Fetching context slice...")
-        url = f"{CONTEXT_API}/api/context/slice"
+        print("🗕 Fetching context cache...")
+        url = f"{CONTEXT_API}/api/context/cache"
         if user_id:
             url += f"?user_id={user_id}"
-        res = requests.get(url, timeout=10)
+        res = requests.get(url, timeout=5)
         res.raise_for_status()
-        return res.json()
+        raw = res.json()
+        return raw.get("context", {}) if "context" in raw else raw
     except Exception as e:
         print("❌ Failed to fetch context:", e)
         return {}
 
+# --- Log learning event ---
 def log_learning_event(topic, summary, count, user_id: Optional[str] = None):
     try:
         payload = {
