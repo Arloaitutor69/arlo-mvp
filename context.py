@@ -9,6 +9,7 @@ from supabase import create_client, Client
 import re
 import requests
 from fastapi import Request
+import os, requests, json, threading
 
 
 # ------------------------------
@@ -373,8 +374,73 @@ def is_stale(timestamp_str: str) -> bool:
         return True  # Treat unparseable as stale
 
 # --- Route: Cached Context ---
+def is_stale(timestamp_str: str, max_age_minutes: int = 5) -> bool:
+    try:
+        timestamp = datetime.fromisoformat(timestamp_str.replace("Z", "+00:00"))
+        age = datetime.now(timezone.utc) - timestamp
+        return age > timedelta(minutes=max_age_minutes)
+    except Exception:
+        return True
+
+def refresh_context_in_background(user_id: str):
+    def do_refresh():
+        try:
+            print(f"🔁 Background refreshing context for {user_id}")
+            context_api_base = os.getenv("CONTEXT_API_BASE", "https://arlo-mvp-2.onrender.com")
+            supabase_url = os.getenv("SUPABASE_URL")
+            supabase_key = os.getenv("SUPABASE_SERVICE_ROLE")
+
+            if not supabase_url or not supabase_key:
+                print("❌ Missing Supabase env vars")
+                return
+
+            headers = {
+                "apikey": supabase_key,
+                "Authorization": f"Bearer {supabase_key}",
+                "Content-Type": "application/json"
+            }
+
+            # Fetch fresh context from context state
+            state_url = f"{context_api_base}/api/context/state?user_id={user_id}"
+            state_resp = requests.get(state_url, timeout=10)
+            if state_resp.status_code != 200:
+                print(f"❌ Failed to refresh context: {state_resp.status_code}")
+                return
+
+            context = state_resp.json()
+
+            # Save to Supabase
+            upsert_payload = [{
+                "user_id": user_id,
+                "cached_json": json.dumps(context),
+                "last_updated": datetime.now(timezone.utc).isoformat()
+            }]
+            upsert_url = f"{supabase_url}/rest/v1/context_cache"
+            upsert_resp = requests.post(
+                upsert_url,
+                headers={**headers, "Prefer": "resolution=merge-duplicates"},
+                json=upsert_payload
+            )
+
+            if upsert_resp.status_code in [200, 201]:
+                context_cache[user_id] = {
+                    "context": context,
+                    "timestamp": datetime.now(timezone.utc)
+                }
+                print("✅ Context refreshed + cached")
+            else:
+                print(f"❌ Supabase upsert failed: {upsert_resp.status_code}")
+
+        except Exception as e:
+            print(f"❌ Background context refresh failed: {e}")
+
+    # Launch background thread
+    threading.Thread(target=do_refresh).start()
+
 @router.get("/context/cache")
+
 def get_cached_context(user_id: str):
+    now = datetime.now(timezone.utc)
     supabase_url = os.getenv("SUPABASE_URL")
     supabase_key = os.getenv("SUPABASE_SERVICE_ROLE")
 
@@ -387,41 +453,68 @@ def get_cached_context(user_id: str):
         "Content-Type": "application/json"
     }
 
-    # 1. Try fetching from Supabase cache
+    # STEP 1: Fast in-memory cache check
+    if user_id in context_cache:
+        cached = context_cache[user_id]
+        if now - cached["timestamp"] < context_ttl:
+            return {"cached": True, "stale": False, "context": cached["context"]}
+
+    # STEP 2: Supabase cache lookup
     url = f"{supabase_url}/rest/v1/context_cache?user_id=eq.{user_id}&select=*"
-    resp = requests.get(url, headers=headers)
+    resp = requests.get(url, headers=headers, timeout=5)
 
     if resp.status_code == 200 and resp.json():
         row = resp.json()[0]
-        cached = json.loads(row["cached_json"])
+        cached_context = json.loads(row["cached_json"])
         timestamp = row["last_updated"]
-        if not is_stale(timestamp):
-            return {"cached": True, "stale": False, "context": cached}
 
-    # 2. Fetch fresh context from context state
+        # Always serve cached context
+        result = {
+            "cached": True,
+            "stale": is_stale(timestamp),
+            "context": cached_context
+        }
+
+        # Save to in-memory cache
+        context_cache[user_id] = {
+            "context": cached_context,
+            "timestamp": now
+        }
+
+        # If stale, trigger async background refresh
+        if is_stale(timestamp):
+            refresh_context_in_background(user_id)
+
+        return result
+
+    # STEP 3: Supabase failed or empty — fetch fresh context (blocking)
+    print("⚠️ Supabase cache missing or error — fetching fresh context now...")
     context_api_base = os.getenv("CONTEXT_API_BASE", "https://arlo-mvp-2.onrender.com")
     state_url = f"{context_api_base}/api/context/state?user_id={user_id}"
-    state_resp = requests.get(state_url)
+    state_resp = requests.get(state_url, timeout=10)
+
     if state_resp.status_code != 200:
-        raise HTTPException(status_code=500, detail="Failed to fetch fresh context")
+        raise HTTPException(status_code=500, detail="Failed to fetch fallback context")
 
     context = state_resp.json()
 
-    # 3. Store fresh context back into Supabase
+    # Save both Supabase + in-memory
     upsert_payload = [{
         "user_id": user_id,
         "cached_json": json.dumps(context),
         "last_updated": datetime.now(timezone.utc).isoformat()
     }]
     upsert_url = f"{supabase_url}/rest/v1/context_cache"
-    upsert_resp = requests.post(
+    requests.post(
         upsert_url,
         headers={**headers, "Prefer": "resolution=merge-duplicates"},
         json=upsert_payload
     )
 
-    if upsert_resp.status_code not in [200, 201]:
-        raise HTTPException(status_code=500, detail="Failed to save context cache")
+    context_cache[user_id] = {
+        "context": context,
+        "timestamp": now
+    }
 
     return {"cached": False, "stale": True, "context": context}
 
