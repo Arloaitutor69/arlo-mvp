@@ -1,6 +1,6 @@
 from fastapi import APIRouter, FastAPI, HTTPException
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import List
 import openai
 import os
 import json
@@ -50,8 +50,8 @@ def call_gpt(prompt: str) -> str:
             {"role": "system", "content": "You are Arlo, an expert learning coach generating review sheets."},
             {"role": "user", "content": prompt}
         ],
-        temperature=0.5,
-        max_tokens=800
+        temperature=0.4,
+        max_tokens=1000
     )
     return response.choices[0].message.content.strip()
 
@@ -63,16 +63,15 @@ def build_review_prompt(context: dict) -> str:
 You are Arlo, a helpful AI tutor.
 A student has just completed a study session. Based on the following structured context data, generate a bedtime review sheet.
 
+Instructions:
+- Focus primarily on the most recent learning_history entries.
+- Use emphasized_facts, weak_areas, and user_goals if provided.
+- Do not include topics that are not present in the context.
+
 Context:
 {json.dumps(context, indent=2)}
 
-Please include ONLY the following:
-1. A short summary of what the student worked on and their general progress.
-2. A list of key facts the student should memorize (especially those tied to errors or weak spots).
-3. A list of topics that were covered during the session.
-4. A list of weak areas the student should revisit.
-
-Respond in pure JSON format as:
+Respond ONLY in the following JSON format:
 {{
   "summary": "...",
   "memorization_facts": ["..."],
@@ -88,6 +87,7 @@ Respond in pure JSON format as:
 def generate_review_sheet(request: ReviewRequest):
     context = fetch_context_slice(request.user_id)
     prompt = build_review_prompt(context)
+    print("\U0001F4DD Sending prompt to GPT:\n", prompt)
     raw_output = call_gpt(prompt)
 
     try:
@@ -99,7 +99,7 @@ def generate_review_sheet(request: ReviewRequest):
             weak_areas=parsed.get("weak_areas", [])
         )
     except Exception as e:
-        print("🔴 GPT RAW OUTPUT:\n", raw_output)
+        print("\U0001F534 GPT RAW OUTPUT:\n", raw_output)
         print("❌ Error parsing GPT output as JSON:", e)
         raise HTTPException(status_code=500, detail="Review generation failed")
 
