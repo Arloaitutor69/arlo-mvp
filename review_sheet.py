@@ -18,6 +18,9 @@ router = APIRouter()
 # ---------------------------
 # Pydantic Models
 # ---------------------------
+class ReviewRequest(BaseModel):
+    user_id: str
+
 class ReviewSheet(BaseModel):
     summary: str
     memorization_facts: List[str]
@@ -25,12 +28,12 @@ class ReviewSheet(BaseModel):
     major_topics: List[str]
 
 # ---------------------------
-# Helper: Fetch Current Context
+# Helper: Fetch Current Context for User
 # ---------------------------
-def fetch_context_slice():
+def fetch_context_slice(user_id: str):
     try:
-        print("🧠 Fetching context slice...")
-        res = requests.get(f"{CONTEXT_API_BASE}/api/context/slice", timeout=10)
+        print(f"🧠 Fetching context for user_id={user_id}...")
+        res = requests.get(f"{CONTEXT_API_BASE}/api/context/slice?user_id={user_id}", timeout=10)
         res.raise_for_status()
         return res.json()
     except Exception as e:
@@ -82,8 +85,8 @@ Respond in pure JSON format as:
 # Endpoint
 # ---------------------------
 @router.post("/review-sheet", response_model=ReviewSheet)
-def generate_review_sheet():
-    context = fetch_context_slice()
+def generate_review_sheet(request: ReviewRequest):
+    context = fetch_context_slice(request.user_id)
     prompt = build_review_prompt(context)
     raw_output = call_gpt(prompt)
 
