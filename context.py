@@ -293,9 +293,13 @@ def reset_context_state(request: ContextResetRequest):
         delete_res = requests.delete(delete_logs_url, headers=headers)
         delete_res.raise_for_status()
 
-        # 2️⃣ Reset the context_state row to clean values
+        # 2️⃣ Delete existing context_state row for this user
+        delete_ctx_url = f"{supabase_url}/rest/v1/context_state?user_id=eq.{user_id}"
+        requests.delete(delete_ctx_url, headers=headers)
+
+        # 3️⃣ Insert clean blank context state for this user
         reset_context = {
-            "id": 1,
+            "user_id": user_id,
             "context": json.dumps({
                 "current_topic": None,
                 "user_goals": [],
@@ -307,10 +311,6 @@ def reset_context_state(request: ContextResetRequest):
             })
         }
 
-        # Delete existing context_state
-        requests.delete(f"{supabase_url}/rest/v1/context_state?id=eq.1", headers=headers)
-
-        # Insert fresh reset context
         reset_res = requests.post(
             f"{supabase_url}/rest/v1/context_state",
             json=reset_context,
@@ -322,7 +322,6 @@ def reset_context_state(request: ContextResetRequest):
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Reset failed: {e}")
-
 
 @router.get("/context/logs/recent")
 def get_recent_logs(user_id: str):
