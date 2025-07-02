@@ -346,6 +346,45 @@ def reset_context_state(request: ContextResetRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Reset failed: {e}")
 
+def is_stale(timestamp: str, ttl_seconds: int = 120) -> bool:
+    dt = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+    return datetime.now(timezone.utc) - dt > timedelta(seconds=ttl_seconds)
+
+@router.get("/context/cache")
+def get_cached_context(user_id: str):
+    # 1. Try fetching from Supabase cache
+    url = f"{SUPABASE_URL}/rest/v1/context_cache?user_id=eq.{user_id}&select=*"
+    resp = requests.get(url, headers=HEADERS)
+
+    if resp.status_code == 200 and resp.json():
+        row = resp.json()[0]
+        cached = json.loads(row["cached_json"])
+        timestamp = row["last_updated"]
+        if not is_stale(timestamp):
+            return {"cached": True, "stale": False, "context": cached}
+
+    # 2. Fetch fresh context from context state
+    state_url = f"{CONTEXT_API}/api/context/state?user_id={user_id}"
+    state_resp = requests.get(state_url)
+    if state_resp.status_code != 200:
+        raise HTTPException(status_code=500, detail="Failed to fetch fresh context")
+
+    context = state_resp.json()
+
+    # 3. Store fresh context back into Supabase
+    upsert_payload = [{
+        "user_id": user_id,
+        "cached_json": json.dumps(context),
+        "last_updated": datetime.now(timezone.utc).isoformat()
+    }]
+    upsert_url = f"{SUPABASE_URL}/rest/v1/context_cache"
+    upsert_resp = requests.post(upsert_url, headers={**HEADERS, "Prefer": "resolution=merge-duplicates"}, json=upsert_payload)
+
+    if upsert_resp.status_code not in [200, 201]:
+        raise HTTPException(status_code=500, detail="Failed to save context cache")
+
+    return {"cached": False, "stale": True, "context": context}
+
 @router.get("/context/logs/recent")
 def get_recent_logs(user_id: str):
     return query_context_log_table(user_id, limit=5)
