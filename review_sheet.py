@@ -42,16 +42,17 @@ def extract_user_id(request: Request, data: ReviewRequest) -> str:
         raise HTTPException(status_code=400, detail="Missing user_id in request")
 
 # ---------------------------
-# Helper: Fetch Context
+# Helper: Fetch Context from Cache
 # ---------------------------
-def fetch_context_slice(user_id: str):
+def fetch_context_cache(user_id: str):
     try:
-        print(f"🧠 Fetching context for user_id={user_id}...")
-        res = requests.get(f"{CONTEXT_API_BASE}/api/context/slice?user_id={user_id}", timeout=10)
+        print(f"🧠 Fetching context cache for user_id={user_id}...")
+        res = requests.get(f"{CONTEXT_API_BASE}/api/context/cache?user_id={user_id}", timeout=5)
         res.raise_for_status()
-        return res.json()
+        raw = res.json()
+        return raw.get("context", {}) if "context" in raw else raw
     except Exception as e:
-        print("❌ Failed to fetch context slice:", e)
+        print("❌ Failed to fetch context cache:", e)
         raise HTTPException(status_code=500, detail="Unable to fetch current context")
 
 # ---------------------------
@@ -100,7 +101,7 @@ Respond ONLY in the following JSON format:
 @router.post("/review-sheet", response_model=ReviewSheet)
 def generate_review_sheet(request: Request, data: ReviewRequest):
     user_id = extract_user_id(request, data)
-    context = fetch_context_slice(user_id)
+    context = fetch_context_cache(user_id)
     prompt = build_review_prompt(context)
 
     print("📝 GPT prompt:\n", prompt)
