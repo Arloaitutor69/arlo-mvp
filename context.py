@@ -407,6 +407,25 @@ def get_cached_context(user_id: str):
 def get_recent_logs(user_id: str):
     return query_context_log_table(user_id, limit=5)
 
+@router.get("/context/state")
+def get_context_state(user_id: str):
+    try:
+        result = get_supabase() \
+            .table("context_state") \
+            .select("context") \
+            .eq("user_id", user_id) \
+            .single() \
+            .execute()
+
+        ctx_raw = result.data.get("context") if result.data else None
+        if not ctx_raw:
+            raise ValueError("No context found for user")
+
+        return json.loads(ctx_raw)
+
+    except Exception as e:
+        print("❌ Error fetching context state:", e)
+        raise HTTPException(status_code=404, detail=f"Context state not found: {e}")
 
 @router.get("/context/slice")
 async def get_context_slice(request: Request):
