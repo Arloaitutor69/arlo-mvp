@@ -15,9 +15,9 @@ router = APIRouter()
 # --- Models ---
 class QuizRequest(BaseModel):
     topic: str
-    difficulty: Literal["easy", "medium", "hard"]
-    question_count: int
-    question_types: List[Literal["multiple_choice", "true_false"]]
+    difficulty: Optional[Literal["easy", "medium", "hard"]] = "medium"
+    question_count: Optional[int] = 5
+    question_types: Optional[List[Literal["multiple_choice", "true_false"]]] = None
     source: Optional[str] = None
 
 class QuizQuestion(BaseModel):
@@ -161,19 +161,25 @@ async def create_quiz(req: QuizRequest, request: Request):
     user_id = extract_user_id(request, req)
     print("🔍 Using user_id:", user_id)
 
+    # Apply safe defaults
+    topic = req.topic.strip()
+    difficulty = req.difficulty or "medium"
+    count = max(1, min(req.question_count or 5, 10))
+    types = req.question_types or ["multiple_choice"]
+
     context = fetch_context(user_id)
 
     questions = generate_questions(
-        topic=req.topic,
-        difficulty=req.difficulty,
-        count=req.question_count,
-        types=req.question_types,
+        topic=topic,
+        difficulty=difficulty,
+        count=count,
+        types=types,
         context=context
     )
 
     quiz_id = f"quiz_{uuid.uuid4().hex[:6]}"
     summary = "; ".join(q.question for q in questions)
 
-    log_learning_event(req.topic, summary, len(questions), user_id)
+    log_learning_event(topic, summary, len(questions), user_id)
 
     return QuizResponse(quiz_id=quiz_id, questions=questions)
