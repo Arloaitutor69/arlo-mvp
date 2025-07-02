@@ -51,7 +51,7 @@ def fetch_context(user_id: Optional[str] = None):
         url = f"{CONTEXT_API}/api/context/cache"
         if user_id:
             url += f"?user_id={user_id}"
-        res = requests.get(url, timeout=5)
+        res = requests.get(url, timeout=15)
         res.raise_for_status()
         raw = res.json()
         return raw.get("context", {}) if "context" in raw else raw
@@ -80,7 +80,7 @@ def log_learning_event(topic, summary, count, user_id: Optional[str] = None):
             f"{CONTEXT_API}/api/context/update",
             json=payload,
             headers={"Content-Type": "application/json"},
-            timeout=10
+            timeout=20
         )
         print("📬 Context updated:", res.status_code)
     except Exception as e:
