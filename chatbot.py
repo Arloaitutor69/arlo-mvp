@@ -5,7 +5,6 @@ import openai
 import os
 import logging
 import requests
-import time
 
 # ---------------------------
 # Setup
@@ -62,6 +61,7 @@ class ChatbotResponse(BaseModel):
 # ---------------------------
 # Helpers
 # ---------------------------
+
 def extract_user_id(request: Request, data: ChatbotInput) -> str:
     user_info = getattr(request.state, "user", None)
     if user_info and "sub" in user_info:
@@ -76,9 +76,12 @@ def extract_user_id(request: Request, data: ChatbotInput) -> str:
         raise HTTPException(status_code=400, detail="Missing user_id in request")
 
 def get_context_cached(user_id: str) -> Dict[str, Any]:
+    """Try to fetch context from cache API. Fail fast after 3 seconds and fall back."""
     try:
         logger.info("Trying cached context...")
-        response = requests.get(f"{CONTEXT_API}/api/context/cache?user_id={user_id}", timeout=10)
+        response = requests.get(
+            f"{CONTEXT_API}/api/context/cache?user_id={user_id}", timeout=3
+        )
         response.raise_for_status()
         raw = response.json()
         logger.info("Context cache fetched.")
@@ -90,10 +93,18 @@ def get_context_cached(user_id: str) -> Dict[str, Any]:
             "preferred_learning_styles": raw.get("preferred_learning_styles", [])[:1]
         }
     except Exception as e:
-        logger.warning(f"Context cache failed: {e}")
-        return {}
+        logger.warning(f"Context cache failed or slow: {e}")
+        # Fallback to minimal context so chatbot can still run
+        return {
+            "current_topic": "general learning",
+            "weak_areas": [],
+            "user_goals": [],
+            "emphasized_facts": [],
+            "preferred_learning_styles": []
+        }
 
 def build_prompt(data: ChatbotInput, context: Dict[str, Any]) -> str:
+    """Format prompt for GPT with trimmed context + chat history."""
     ctx = []
     if context.get("current_topic"):
         ctx.append(f"Topic: {context['current_topic']}")
@@ -117,6 +128,7 @@ def build_prompt(data: ChatbotInput, context: Dict[str, Any]) -> str:
     return prompt
 
 def call_gpt(prompt: str) -> str:
+    """Call OpenAI GPT API with a short timeout."""
     try:
         logger.info("Calling OpenAI GPT...")
         response = openai.ChatCompletion.create(
@@ -134,20 +146,20 @@ def call_gpt(prompt: str) -> str:
         logger.error(f"GPT call failed: {e}")
         return "Sorry, I had trouble generating a response."
 
+# ---------------------------
+# Main Route
+# ---------------------------
 @router.post("/chatbot", response_model=ChatbotResponse)
 async def chatbot_handler(request: Request, data: ChatbotInput):
     logger.info("Chatbot request received")
-
     try:
         user_id = extract_user_id(request, data)
         logger.info(f"User ID extracted: {user_id}")
 
         context = get_context_cached(user_id)
-        logger.info("Context fetched successfully")
 
         prompt = build_prompt(data, context)
         logger.info("Prompt built")
-        logger.debug(f"Prompt content:\n{prompt}")
 
         gpt_reply = call_gpt(prompt)
         logger.info("GPT reply received")
@@ -167,6 +179,9 @@ async def chatbot_handler(request: Request, data: ChatbotInput):
         logger.error(f"Chatbot handler failed: {e}")
         raise HTTPException(status_code=500, detail="Chatbot failed to respond")
 
+# ---------------------------
+# Context Save Endpoint (Optional)
+# ---------------------------
 @router.post("/chatbot/save")
 def save_chat_context(payload: Dict[str, Any]):
     try:
@@ -178,4 +193,7 @@ def save_chat_context(payload: Dict[str, Any]):
         logger.error(f"Save failed: {e}")
         return {"status": "error", "detail": str(e)}
 
+# ---------------------------
+# Include in App
+# ---------------------------
 app.include_router(router)
