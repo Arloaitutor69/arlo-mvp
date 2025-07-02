@@ -8,6 +8,8 @@ import os
 from supabase import create_client, Client
 import re
 import requests
+from fastapi import Request
+
 
 # ------------------------------
 # Supabase lazy initialization
@@ -306,14 +308,30 @@ def reset_context_state(request: ContextResetRequest):
 def get_recent_logs(user_id: str):
     return query_context_log_table(user_id, limit=5)
 
+
 @router.get("/context/slice")
-async def get_context_slice():
+async def get_context_slice(request: Request):
     try:
-        res = get_supabase().table("context_state").select("context").eq("id", 1).single().execute()
+        # --- Extract user ID ---
+        user_info = getattr(request.state, "user", None)
+        user_id = (
+            user_info["sub"]
+            if user_info and "sub" in user_info else
+            request.headers.get("X-User-ID") or
+            request.query_params.get("user_id")
+        )
+
+        if not user_id:
+            raise ValueError("No user_id found in auth, header, or query")
+
+        # --- Fetch context for user ---
+        res = get_supabase().table("context_state").select("context").eq("user_id", user_id).single().execute()
         ctx_raw = res.data.get("context") if res.data else None
         if not ctx_raw:
-            raise ValueError("No context data found")
+            raise ValueError(f"No context found for user_id={user_id}")
+
         ctx = json.loads(ctx_raw)
+
     except Exception as e:
         print("⚠️ Context fallback triggered:", e)
         ctx = {
