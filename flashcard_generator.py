@@ -42,14 +42,14 @@ def extract_user_id(request: Request, data: FlashcardRequest) -> str:
     else:
         raise HTTPException(status_code=400, detail="Missing user_id in request")
 
-# --- Helper to fetch context slice from context manager ---
-def fetch_context_slice(user_id: str):
+# --- Helper to fetch context cache ---
+def fetch_context_cache(user_id: str):
     try:
-        response = requests.get(f"{CONTEXT_BASE_URL}/api/context/slice?user_id={user_id}")
+        response = requests.get(f"{CONTEXT_BASE_URL}/api/context/cache?user_id={user_id}", timeout=5)
         if response.status_code == 200:
-            return response.json()
+            return response.json().get("context", {})
     except Exception as e:
-        print("❌ Context slice fetch failed:", e)
+        print("❌ Context cache fetch failed:", e)
     return {}
 
 # --- Helper to post context update ---
@@ -62,7 +62,7 @@ def post_context_update(payload: dict):
 @router.post("/flashcards")
 def generate_flashcards(request: Request, data: FlashcardRequest):
     user_id = extract_user_id(request, data)
-    context = fetch_context_slice(user_id)
+    context = fetch_context_cache(user_id)
 
     personalization = ""
     if context:
