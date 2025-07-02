@@ -363,13 +363,18 @@ def reset_context_state(request: ContextResetRequest):
         raise HTTPException(status_code=500, detail=f"Reset failed: {e}")
 
 
-def is_stale(timestamp: str, ttl_seconds: int = 120) -> bool:
-    dt = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
-    return datetime.now(timezone.utc) - dt > timedelta(seconds=ttl_seconds)
+# --- Helper: Check if timestamp is stale (> 1 min old) ---
+def is_stale(timestamp_str: str) -> bool:
+    try:
+        timestamp = datetime.fromisoformat(timestamp_str.rstrip("Z")).replace(tzinfo=timezone.utc)
+        return (datetime.now(timezone.utc) - timestamp) > timedelta(minutes=1)
+    except Exception as e:
+        print("❌ Error parsing timestamp:", e)
+        return True  # Treat unparseable as stale
 
+# --- Route: Cached Context ---
 @router.get("/context/cache")
 def get_cached_context(user_id: str):
-    # Load Supabase settings dynamically
     supabase_url = os.getenv("SUPABASE_URL")
     supabase_key = os.getenv("SUPABASE_SERVICE_ROLE")
 
