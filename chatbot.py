@@ -75,11 +75,10 @@ def extract_user_id(request: Request, data: ChatbotInput) -> str:
     else:
         raise HTTPException(status_code=400, detail="Missing user_id in request")
 
-
 def get_context_cached(user_id: str) -> Dict[str, Any]:
     try:
         logger.info("Trying cached context...")
-        response = requests.get(f"{CONTEXT_API}/api/context/cache?user_id={user_id}", timeout=5)
+        response = requests.get(f"{CONTEXT_API}/api/context/cache?user_id={user_id}", timeout=10)
         response.raise_for_status()
         raw = response.json()
         logger.info("Context cache fetched.")
@@ -94,41 +93,46 @@ def get_context_cached(user_id: str) -> Dict[str, Any]:
         logger.warning(f"Context cache failed: {e}")
         return {}
 
-
 def build_prompt(data: ChatbotInput, context: Dict[str, Any]) -> str:
-    # Build short context summary
     ctx = []
     if context.get("current_topic"):
-        ctx.append(f"Current topic: {context['current_topic']}")
-    if context.get("user_goals"):
-        ctx.append(f"Goals: {', '.join(context['user_goals'])}")
+        ctx.append(f"Topic: {context['current_topic']}")
     if context.get("weak_areas"):
         ctx.append(f"Weak areas: {', '.join(context['weak_areas'])}")
-    if context.get("emphasized_facts"):
-        ctx.append(f"Focus points: {', '.join(context['emphasized_facts'])}")
-    if context.get("preferred_learning_styles"):
-        ctx.append(f"Style: {context['preferred_learning_styles'][0]}")
 
-    # Use most recent messages for continuity
-    recent_messages = "\n".join([
-        f"{msg['role']}: {msg['content']}" for msg in data.message_history[-3:]
-    ])
-
-    # Combine everything into one prompt
     user_input = data.user_input.strip()
-    ctx_text = "\n".join(ctx)
+    recent_messages = "\n".join([
+        f"{msg['role']}: {msg['content']}" for msg in data.message_history[-2:]
+    ])
 
     prompt = (
         "You are Arlo, an expert AI tutor.\n"
-        "Always use a warm, clear teaching tone. Skip filler. Focus on direct, helpful instruction.\n\n"
-        f"{ctx_text}\n\n"
-        "Recent conversation:\n"
-        f"{recent_messages}\n\n"
-        f"Student input:\n\"{user_input}\"\n\n"
-        "Respond helpfully based on their message and the context above.\n"
+        "Keep responses fast, clear, and helpful.\n\n"
+        f"{chr(10).join(ctx)}\n\n"
+        f"Recent conversation:\n{recent_messages}\n\n"
+        f"Student input: \"{user_input}\"\n\n"
+        "Respond clearly and concisely based on the topic and weak areas."
     )
 
     return prompt
+
+def call_gpt(prompt: str) -> str:
+    try:
+        logger.info("Calling OpenAI GPT...")
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo-1106",
+            messages=[
+                {"role": "system", "content": "You are a helpful AI tutor."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.4,
+            max_tokens=300,
+            request_timeout=10
+        )
+        return response.choices[0].message.content.strip()
+    except Exception as e:
+        logger.error(f"GPT call failed: {e}")
+        return "Sorry, I had trouble generating a response."
 
 @router.post("/chatbot", response_model=ChatbotResponse)
 async def chatbot_handler(request: Request, data: ChatbotInput):
@@ -163,7 +167,6 @@ async def chatbot_handler(request: Request, data: ChatbotInput):
         logger.error(f"Chatbot handler failed: {e}")
         raise HTTPException(status_code=500, detail="Chatbot failed to respond")
 
-
 @router.post("/chatbot/save")
 def save_chat_context(payload: Dict[str, Any]):
     try:
@@ -174,6 +177,5 @@ def save_chat_context(payload: Dict[str, Any]):
     except Exception as e:
         logger.error(f"Save failed: {e}")
         return {"status": "error", "detail": str(e)}
-
 
 app.include_router(router)
