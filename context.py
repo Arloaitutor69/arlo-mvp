@@ -301,6 +301,7 @@ def reset_context_state(request: ContextResetRequest):
         # Load Supabase credentials
         supabase_url = os.getenv("SUPABASE_URL")
         supabase_key = os.getenv("SUPABASE_SERVICE_ROLE")
+        context_api_base = os.getenv("CONTEXT_API_BASE", "https://arlo-mvp-2.onrender.com")
 
         if not supabase_url or not supabase_key:
             raise HTTPException(status_code=500, detail="Missing Supabase env variables")
@@ -341,10 +342,26 @@ def reset_context_state(request: ContextResetRequest):
         )
         reset_res.raise_for_status()
 
+        # 4️⃣ Delete cached context for this user
+        try:
+            delete_cache_url = f"{supabase_url}/rest/v1/context_cache?user_id=eq.{user_id}"
+            cache_res = requests.delete(delete_cache_url, headers=headers)
+            cache_res.raise_for_status()
+        except Exception as e:
+            print(f"⚠️ Failed to clear context cache: {e}")
+
+        # 5️⃣ Optional: Refresh the cache so it’s ready for chatbot
+        try:
+            refresh_url = f"{context_api_base}/api/context/cache?user_id={user_id}"
+            requests.get(refresh_url, timeout=5)
+        except Exception as e:
+            print(f"⚠️ Failed to auto-refresh context cache: {e}")
+
         return {"status": "context fully wiped"}
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Reset failed: {e}")
+
 
 def is_stale(timestamp: str, ttl_seconds: int = 120) -> bool:
     dt = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
