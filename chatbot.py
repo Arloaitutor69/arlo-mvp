@@ -5,6 +5,7 @@ import openai
 import os
 import logging
 import requests
+import time
 
 # ---------------------------
 # Setup
@@ -76,9 +77,11 @@ def extract_user_id(request: Request, data: ChatbotInput) -> str:
 
 def get_context_slice(user_id: str) -> Dict[str, Any]:
     try:
-        response = requests.get(f"{CONTEXT_API}/api/context/slice?user_id={user_id}")
+        logger.info("Fetching context slice...")
+        response = requests.get(f"{CONTEXT_API}/api/context/slice?user_id={user_id}", timeout=5)
         response.raise_for_status()
         raw = response.json()
+        logger.info("Context fetched.")
         return {
             "current_topic": raw.get("current_topic"),
             "user_goals": raw.get("user_goals", [])[:2],
@@ -165,6 +168,8 @@ Reply helpfully based on input and context.
 
 def call_gpt(prompt: str) -> str:
     try:
+        logger.info("Calling OpenAI GPT...")
+        start = time.time()
         response = openai.ChatCompletion.create(
             model="gpt-3.5-turbo-0125",
             messages=[
@@ -172,8 +177,11 @@ def call_gpt(prompt: str) -> str:
                 {"role": "user", "content": prompt}
             ],
             temperature=0.5,
-            max_tokens=500
+            max_tokens=500,
+            request_timeout=10
         )
+        end = time.time()
+        logger.info(f"GPT call completed in {end - start:.2f}s")
         return response.choices[0].message.content.strip()
     except Exception as e:
         logger.error(f"GPT call failed: {e}")
@@ -182,22 +190,35 @@ def call_gpt(prompt: str) -> str:
 @router.post("/chatbot", response_model=ChatbotResponse)
 async def chatbot_handler(request: Request, data: ChatbotInput):
     logger.info("Chatbot request received")
-    user_id = extract_user_id(request, data)
-    context = get_context_slice(user_id)
-    prompt = build_prompt(data, context)
-    logger.debug(f"Prompt built:\n{prompt}")
-    gpt_reply = call_gpt(prompt)
 
-    action = None
-    if data.current_phase.phase in ["flashcards", "quiz"] and "correct" in gpt_reply.lower():
-        action = ActionSuggestion(type="next_phase", reason="Answer was correct")
+    try:
+        user_id = extract_user_id(request, data)
+        logger.info(f"User ID extracted: {user_id}")
 
-    return ChatbotResponse(
-        message=gpt_reply,
-        follow_up_question=None,
-        action_suggestion=action,
-        context_update_required=False
-    )
+        context = get_context_slice(user_id)
+        logger.info("Context fetched successfully")
+
+        prompt = build_prompt(data, context)
+        logger.info("Prompt built")
+        logger.debug(f"Prompt content:\n{prompt}")
+
+        gpt_reply = call_gpt(prompt)
+        logger.info("GPT reply received")
+
+        action = None
+        if data.current_phase.phase in ["flashcards", "quiz"] and "correct" in gpt_reply.lower():
+            action = ActionSuggestion(type="next_phase", reason="Answer was correct")
+
+        return ChatbotResponse(
+            message=gpt_reply,
+            follow_up_question=None,
+            action_suggestion=action,
+            context_update_required=False
+        )
+
+    except Exception as e:
+        logger.error(f"Chatbot handler failed: {e}")
+        raise HTTPException(status_code=500, detail="Chatbot failed to respond")
 
 @router.post("/chatbot/save")
 def save_chat_context(payload: Dict[str, Any]):
