@@ -1,4 +1,3 @@
-# ✅ FINAL QUIZ MODULE — Fully working with GPT, logging, and context
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 from typing import List, Literal, Union, Optional
@@ -18,12 +17,12 @@ class QuizRequest(BaseModel):
     topic: str
     difficulty: Literal["easy", "medium", "hard"]
     question_count: int
-    question_types: List[Literal["multiple_choice", "true_false", "fill_in_blank"]]
+    question_types: List[Literal["multiple_choice", "true_false"]]  # Removed fill_in_blank
     source: Optional[str] = None  # Optional, used to fall back to user ID
 
 class QuizQuestion(BaseModel):
     id: int
-    type: Literal["multiple_choice", "true_false", "fill_in_blank"]
+    type: Literal["multiple_choice", "true_false"]
     question: str
     options: Union[List[str], None] = None
     correct_answer: str
@@ -33,11 +32,26 @@ class QuizResponse(BaseModel):
     quiz_id: str
     questions: List[QuizQuestion]
 
+# --- User ID Extraction ---
+def extract_user_id(request: Request, req: QuizRequest) -> Optional[str]:
+    user_info = getattr(request.state, "user", None)
+    if user_info and "sub" in user_info:
+        return user_info["sub"]
+    elif request.headers.get("x-user-id"):
+        return request.headers["x-user-id"]
+    elif req.source and req.source.startswith("user:"):
+        return req.source.replace("user:", "")
+    else:
+        return None
+
 # --- Context Helpers ---
-def fetch_context():
+def fetch_context(user_id: Optional[str] = None):
     try:
         print("🗕 Fetching context slice...")
-        res = requests.get(f"{CONTEXT_API}/api/context/slice", timeout=10)
+        url = f"{CONTEXT_API}/api/context/slice"
+        if user_id:
+            url += f"?user_id={user_id}"
+        res = requests.get(url, timeout=10)
         res.raise_for_status()
         return res.json()
     except Exception as e:
@@ -47,9 +61,9 @@ def fetch_context():
 def log_learning_event(topic, summary, count, user_id: Optional[str] = None):
     try:
         payload = {
-            "source": f"user:{user_id}" if user_id else "quiz",
-            "phase": "quiz",
-            "event_type": "generation",
+            "source": "quiz",
+            "user_id": user_id,
+            "current_topic": topic,
             "learning_event": {
                 "concept": topic,
                 "phase": "quiz",
@@ -58,10 +72,6 @@ def log_learning_event(topic, summary, count, user_id: Optional[str] = None):
                 "source_summary": summary,
                 "repetition_count": 1,
                 "review_scheduled": False
-            },
-            "data": {
-                "topic": topic,
-                "question_count": count
             }
         }
         res = requests.post(
@@ -85,8 +95,9 @@ def generate_questions(topic, difficulty, count, types, context):
     review_queue = ", ".join(context.get("review_queue", []))
 
     user_msg = f"""
-Generate {count} quiz questions on the topic: \"{topic}\" (current context topic: \"{current_topic}\").
-Difficulty: \"{difficulty}\". Allowed types: {types}.
+Generate {count} quiz questions on the topic: \"{topic}\" (context: \"{current_topic}\").
+Difficulty: \"{difficulty}\".
+Allowed types: {types}.
 
 Personalize:
 - Weak areas: {weak_areas or 'none'}
@@ -94,7 +105,7 @@ Personalize:
 - User goals: {user_goals or 'none'}
 - Include 1–2 questions from review queue: {review_queue or 'none'}
 
-Return ONLY a valid JSON array of objects like:
+Return ONLY a valid JSON array like:
 [
   {{
     "id": 1,
@@ -105,13 +116,13 @@ Return ONLY a valid JSON array of objects like:
     "explanation": "..."
   }}
 ]
-No extra text. No markdown.
+No markdown, no preamble.
 """
 
     try:
         print("🧐 Sending request to GPT...")
         response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
+            model="gpt-3.5-turbo-0125",
             messages=[
                 {"role": "system", "content": system_msg},
                 {"role": "user", "content": user_msg}
@@ -145,18 +156,10 @@ def quiz_health_check():
 async def create_quiz(req: QuizRequest, request: Request):
     print("🚀 Received quiz request:", req)
 
-    user_info = getattr(request.state, "user", None)
-
-    if user_info and "sub" in user_info:
-        user_id = user_info["sub"]
-    elif req.source and req.source.startswith("user:"):
-        user_id = req.source.replace("user:", "")
-    else:
-        user_id = None
-
+    user_id = extract_user_id(request, req)
     print("🔍 Using user_id:", user_id)
 
-    context = fetch_context()
+    context = fetch_context(user_id)
 
     questions = generate_questions(
         topic=req.topic,
