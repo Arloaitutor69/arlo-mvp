@@ -1,6 +1,6 @@
-from fastapi import APIRouter, FastAPI, HTTPException
+from fastapi import APIRouter, FastAPI, HTTPException, Request
 from pydantic import BaseModel
-from typing import List
+from typing import List, Optional
 import openai
 import os
 import json
@@ -19,7 +19,7 @@ router = APIRouter()
 # Pydantic Models
 # ---------------------------
 class ReviewRequest(BaseModel):
-    user_id: str
+    user_id: Optional[str] = None
 
 class ReviewSheet(BaseModel):
     summary: str
@@ -28,7 +28,21 @@ class ReviewSheet(BaseModel):
     major_topics: List[str]
 
 # ---------------------------
-# Helper: Fetch Current Context for User
+# Extract user_id from all valid locations
+# ---------------------------
+def extract_user_id(request: Request, data: ReviewRequest) -> str:
+    user_info = getattr(request.state, "user", None)
+    if user_info and "sub" in user_info:
+        return user_info["sub"]
+    elif request.headers.get("x-user-id"):
+        return request.headers["x-user-id"]
+    elif data.user_id:
+        return data.user_id
+    else:
+        raise HTTPException(status_code=400, detail="Missing user_id in request")
+
+# ---------------------------
+# Helper: Fetch Context
 # ---------------------------
 def fetch_context_slice(user_id: str):
     try:
@@ -84,10 +98,12 @@ Respond ONLY in the following JSON format:
 # Endpoint
 # ---------------------------
 @router.post("/review-sheet", response_model=ReviewSheet)
-def generate_review_sheet(request: ReviewRequest):
-    context = fetch_context_slice(request.user_id)
+def generate_review_sheet(request: Request, data: ReviewRequest):
+    user_id = extract_user_id(request, data)
+    context = fetch_context_slice(user_id)
     prompt = build_review_prompt(context)
-    print("\U0001F4DD Sending prompt to GPT:\n", prompt)
+
+    print("📝 GPT prompt:\n", prompt)
     raw_output = call_gpt(prompt)
 
     try:
@@ -99,7 +115,7 @@ def generate_review_sheet(request: ReviewRequest):
             weak_areas=parsed.get("weak_areas", [])
         )
     except Exception as e:
-        print("\U0001F534 GPT RAW OUTPUT:\n", raw_output)
+        print("🟥 GPT RAW OUTPUT:\n", raw_output)
         print("❌ Error parsing GPT output as JSON:", e)
         raise HTTPException(status_code=500, detail="Review generation failed")
 
