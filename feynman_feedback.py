@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 from typing import Optional
 import openai
@@ -36,12 +36,26 @@ class FeynmanResponse(BaseModel):
     action_suggestion: Optional[str] = "stay_in_phase"
 
 # -----------------------------
+# User ID extraction helper
+# -----------------------------
+def extract_user_id(request: Request, data: FeynmanRequest) -> str:
+    user_info = getattr(request.state, "user", None)
+    if user_info and "sub" in user_info:
+        return user_info["sub"]
+    elif request.headers.get("x-user-id"):
+        return request.headers["x-user-id"]
+    elif data.user_id:
+        return data.user_id
+    else:
+        raise HTTPException(status_code=400, detail="Missing user_id in request")
+
+# -----------------------------
 # Helper to get context
 # -----------------------------
-def get_context_slice():
+def get_context_slice(user_id: str):
     try:
         logger.info("Fetching context slice from: %s", CONTEXT_BASE)
-        res = requests.get(f"{CONTEXT_BASE}/api/context/slice", timeout=10)
+        res = requests.get(f"{CONTEXT_BASE}/api/context/slice?user_id={user_id}", timeout=10)
         res.raise_for_status()
         return res.json()
     except Exception as e:
@@ -52,10 +66,12 @@ def get_context_slice():
 # Feynman endpoint
 # -----------------------------
 @router.post("/feynman", response_model=FeynmanResponse)
-def run_feynman_phase(payload: FeynmanRequest):
+def run_feynman_phase(request: Request, payload: FeynmanRequest):
     logger.info("Received Feynman request for concept: %s", payload.concept)
 
-    context = get_context_slice()
+    user_id = extract_user_id(request, payload)
+    context = get_context_slice(user_id)
+
     prompt = (
         f"You are an AI tutor helping a student master the concept of {payload.concept}.\n"
         f"They just explained it like this:\n"
@@ -83,7 +99,6 @@ def run_feynman_phase(payload: FeynmanRequest):
         raw_reply = response["choices"][0]["message"]["content"]
         logger.info("OpenAI response: %s", raw_reply)
 
-        # Simple structured parsing
         split_parts = raw_reply.split("\n")
         message = "\n".join(split_parts[:3]).strip()
         follow_up = next((line for line in split_parts if "?" in line), None)
