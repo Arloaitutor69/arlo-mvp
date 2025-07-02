@@ -126,12 +126,13 @@ def synthesize_context_gpt(user_id: str) -> dict:
     # 1. Get recent context logs for this user only
     logs_raw = get_supabase() \
         .table("context_log") \
-        .select("learning_event, current_topic, source") \
+        .select("learning_event, current_topic, user_goals, source, weak_areas, emphasized_facts, preferred_learning_styles, review_queue") \
         .eq("user_id", user_id) \
         .order("id", desc=True) \
         .limit(10) \
         .execute().data[::-1]  # chronological order
 
+    # 2. Build merged raw input
     flattened_logs = []
     for entry in logs_raw:
         le = entry.get("learning_event") or {}
@@ -144,6 +145,25 @@ def synthesize_context_gpt(user_id: str) -> dict:
             "repetition_count": le.get("repetition_count", 0),
             "review_scheduled": le.get("review_scheduled", False)
         })
+
+    # Pull best available non-null metadata from recent entries
+    def first_valid(field):
+        for e in reversed(logs_raw):  # prioritize newer
+            val = e.get(field)
+            if isinstance(val, list) and val:
+                return val
+            elif isinstance(val, str) and val.strip():
+                return val
+        return [] if field != "current_topic" else None
+
+    context_fields = {
+        "current_topic": first_valid("current_topic"),
+        "user_goals": first_valid("user_goals"),
+        "weak_areas": first_valid("weak_areas"),
+        "emphasized_facts": first_valid("emphasized_facts"),
+        "preferred_learning_styles": first_valid("preferred_learning_styles"),
+        "review_queue": first_valid("review_queue")
+    }
 
     prompt = f"""
 You are ARLO's memory engine. Read the raw study logs below and return ONLY valid JSON.
@@ -189,7 +209,10 @@ Raw Logs:
         raw_content = response.choices[0].message["content"].strip()
         context_json = extract_and_parse_json(raw_content)
 
-        # 2. Save result into per-user context_state using UPSERT
+        # 3. Insert best metadata into final state
+        context_json.update(context_fields)
+
+        # 4. Save into per-user context_state using UPSERT
         get_supabase().table("context_state").upsert({
             "user_id": user_id,
             "context": json.dumps(context_json)
