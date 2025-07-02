@@ -60,27 +60,20 @@ def build_gpt_prompt(topic: str, details: Optional[str], duration: int, level: s
     source_text = f"\n\nUse the following source material as your primary reference:\n{parsed_text[:3000]}..." if parsed_text else ""
 
     return (
-        "You are ARLO, an AI-powered tutor creating a structured, high-impact study session.\n\n"
-        f"The student has {duration} minutes to study the topic: \"{topic}\" at a **{level} level**."
+        "You are a tutor creating a structured study session.\n\n"
+        f"The student has {duration} minutes to study: \"{topic}\" at a **{level} level**."
         f"{detail_text}{source_text}\n\n"
         "Instructions:\n"
-        "- Break the topic into 4 to 6 focused instructional units, as if designing a mini curriculum.\n"
-        "- Assign **exactly one learning technique** to each block: flashcards, quiz, feynman, blurting, or arlo_teaching.\n"
-        "- Pair teaching-style techniques (e.g., arlo_teaching, flashcards) with **consolidation methods (e.g., quiz, feynman, blurting).\n"
-        "- Do not reuse the same technique more than once unless necessary.\n"
-        "- Vary technique ordering between sessions — avoid always starting with flashcards or ending with quiz.\n"
-        "- Tailor the blocks based on content type: use conceptual techniques earlier for abstract topics, and consolidation later to reinforce.\n"
-        "- For each block, generate:\n"
-        "  • A concise `unit` title\n"
-        "  • The assigned `technique`\n"
-        "  • A rich, self-contained `description` of what is to be studied, explained, or practiced\n"
-        "     - Include specific subtopics, key terms, processes, or examples\n"
-        "     - Define clear comprehension goals (e.g., 'Explain X vs Y with examples')\n"
-        "     - Avoid generic phrases like 'Take a quiz on X' — describe real content\n"
-        "  • A reasonable `duration` in minutes (8–15 per block based on complexity)\n"
-        "- The `description` is the only input other modules will receive — make it specific and context-rich.\n"
-        "- Use clear, engaging language, and match the difficulty to the specified academic level.\n"
-        "- Format your output as strict JSON ONLY — no markdown, headings, or explanation.\n\n"
+        "- Break the topic into 4–6 instructional units, like a mini curriculum.\n"
+        "- Assign exactly one technique per block: flashcards, quiz, feynman, blurting, or arlo_teaching, and avoid repeats\n"
+        "- For each block, return:\n"
+        "  • `unit`: concise title\n"
+        "  • `technique`: assigned method\n"
+        "  • `description`: clear and specific — include subtopics, terms, goals, and examples\n"
+        "  • `duration`: 8–15 minutes\n"
+        "- The `description` is the only input other modules will see — make it self-contained.\n"
+        "- Match difficulty to the academic level.\n"
+        "- Return output as strict JSON only — no markdown, headings, or extra text.\n\n"
         "Example format:\n"
         "{\n"
         "  \"units_to_cover\": [\"Structure of the Cell Membrane\", \"Photosynthesis Pathway\"],\n"
@@ -95,7 +88,8 @@ def build_gpt_prompt(topic: str, details: Optional[str], duration: int, level: s
         "    }\n"
         "  ]\n"
         "}"
-    )
+)
+
 
 # --- Endpoint ---
 @router.post("/study-session", response_model=StudyPlanResponse)
