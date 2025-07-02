@@ -11,7 +11,7 @@ from threading import Thread
 router = APIRouter()
 openai.api_key = os.getenv("OPENAI_API_KEY")
 
-# Set local or prod context API base
+# Determine context API base URL
 if os.getenv("ENV") == "dev":
     CONTEXT_BASE = "http://localhost:10000"
 else:
@@ -42,19 +42,20 @@ def extract_user_id(request: Request, data: BlurtingRequest) -> str:
     else:
         raise HTTPException(status_code=400, detail="Missing user_id in request")
 
-# Context functions
-def get_context_slice(user_id: str):
+# --- CONTEXT CACHE ---
+def get_context_cache(user_id: str):
     try:
-        res = requests.get(f"{CONTEXT_BASE}/api/context/slice?user_id={user_id}", timeout=30)
+        res = requests.get(f"{CONTEXT_BASE}/api/context/cache?user_id={user_id}", timeout=5)
         res.raise_for_status()
         return res.json()
     except Exception as e:
-        print("❌ Failed to fetch context:", e)
+        print("❌ Failed to fetch cached context:", e)
         return None
 
 def safe_context_fetch(user_id: str, result_holder: dict):
-    result_holder['data'] = get_context_slice(user_id)
+    result_holder['data'] = get_context_cache(user_id)
 
+# --- CONTEXT POSTING ---
 def post_learning_event_to_context(user_id: str, topic: str, missed_concepts: List[str], feedback: str):
     payload = {
         "source": "blurting",
@@ -88,7 +89,7 @@ def safe_context_log(user_id, topic, missed, feedback):
     except Exception as e:
         print(f"⚠️ Background context log failed: {e}")
 
-# Prompt builder
+# --- PROMPT BUILDER ---
 def generate_blurting_prompt(topic: str, content_summary: Optional[str], blurted_response: str, context_prompt: Optional[str]) -> str:
     summary_block = f"\nSummary of key concepts:\n{content_summary}" if content_summary else ""
     context_block = f"\nAdditional context for evaluation:\n{context_prompt}" if context_prompt else ""
@@ -104,7 +105,7 @@ def generate_blurting_prompt(topic: str, content_summary: Optional[str], blurted
         "Only return valid JSON."
     )
 
-# Endpoint
+# --- ENDPOINT ---
 @router.post("/blurting", response_model=BlurtingResponse)
 async def evaluate_blurting(request: Request, data: BlurtingRequest):
     try:
