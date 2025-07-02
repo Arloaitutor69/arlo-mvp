@@ -121,8 +121,15 @@ def extract_and_parse_json(text: str) -> dict:
         return {"status": "error", "synthesized": False}
 
 
-def synthesize_context_gpt() -> dict:
-    logs_raw = get_supabase().table("context_log").select("learning_event, current_topic, source").order("id", desc=True).limit(10).execute().data[::-1]
+def synthesize_context_gpt(user_id: str) -> dict:
+    # 1. Get recent context logs for this user only
+    logs_raw = get_supabase() \
+        .table("context_log") \
+        .select("learning_event, current_topic, source") \
+        .eq("user_id", user_id) \
+        .order("id", desc=True) \
+        .limit(10) \
+        .execute().data[::-1]  # chronological order
 
     flattened_logs = []
     for entry in logs_raw:
@@ -179,7 +186,15 @@ Raw Logs:
         )
 
         raw_content = response.choices[0].message["content"].strip()
-        return extract_and_parse_json(raw_content)
+        context_json = extract_and_parse_json(raw_content)
+
+        # 2. Save result into per-user context_state using UPSERT
+        get_supabase().table("context_state").upsert({
+            "user_id": user_id,
+            "context": json.dumps(context_json)
+        }, on_conflict=["user_id"]).execute()
+
+        return context_json
 
     except Exception as e:
         print("❌ GPT synthesis failed:", e)
