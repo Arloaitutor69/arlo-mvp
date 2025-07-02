@@ -45,6 +45,7 @@ class LearningEvent(BaseModel):
     review_scheduled: Optional[bool] = False
 
 class ContextUpdate(BaseModel):
+    user_id: Optional[str] = None  # ← Add this line
     current_topic: Optional[str] = None
     user_goals: Optional[List[str]] = None
     preferred_learning_styles: Optional[List[str]] = None
