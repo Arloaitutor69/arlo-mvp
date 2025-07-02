@@ -3,7 +3,7 @@ import os
 import json
 import uuid
 import requests
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 from typing import List, Optional, Dict
 
@@ -15,11 +15,11 @@ router = APIRouter()
 # --- Models ---
 class StudyPlanRequest(BaseModel):
     topic: str
-    duration: int  # in minutes
-    details: Optional[str] = None  # user-submitted focus or goals
+    duration: int
+    details: Optional[str] = None
     difficulty: Optional[str] = "medium"
     target_level: Optional[str] = "high_school"
-    parsed_text: Optional[str] = None  # optional notes/textbook input
+    parsed_text: Optional[str] = None
 
 class StudyBlock(BaseModel):
     id: str
@@ -44,11 +44,20 @@ class StudyPlanResponse(BaseModel):
     techniques: List[str]
     blocks: List[StudyBlock]
 
-# --- Helper Functions ---
+# --- Extract user_id ---
+def extract_user_id(request: Request) -> str:
+    user_info = getattr(request.state, "user", None)
+    if user_info and "sub" in user_info:
+        return user_info["sub"]
+    elif request.headers.get("x-user-id"):
+        return request.headers["x-user-id"]
+    else:
+        raise HTTPException(status_code=400, detail="Missing user_id in request")
+
+# --- Prompt builder ---
 def build_gpt_prompt(topic: str, details: Optional[str], duration: int, level: str, parsed_text: Optional[str]) -> str:
     detail_text = f"\nThe student mentioned specific goals:\n\"{details.strip()}\"" if details else ""
     source_text = f"\n\nUse the following source material as your primary reference:\n{parsed_text[:3000]}..." if parsed_text else ""
-
 
     return (
         "You are ARLO, an AI-powered tutor creating a structured, high-impact study session.\n\n"
@@ -81,18 +90,18 @@ def build_gpt_prompt(topic: str, details: Optional[str], duration: int, level: s
         "    {\n"
         "      \"unit\": \"Structure of the Cell Membrane\",\n"
         "      \"technique\": \"flashcards\",\n"
-        "      \"description\": \"Review phospholipid bilayer components (hydrophilic heads, hydrophobic tails), protein channels, cholesterol’s role in fluidity, and embedded glycoproteins. Comprehension goal: Be able to label and explain each structure’s function.\",\n"
+        "      \"description\": \"Review phospholipid bilayer components...\",\n"
         "      \"duration\": 10\n"
         "    }\n"
         "  ]\n"
         "}"
     )
 
-
 # --- Endpoint ---
 @router.post("/study-session", response_model=StudyPlanResponse)
-def generate_plan(data: StudyPlanRequest):
+def generate_plan(data: StudyPlanRequest, request: Request):
     try:
+        user_id = extract_user_id(request)
         prompt = build_gpt_prompt(data.topic, data.details, data.duration, data.target_level, data.parsed_text)
 
         completion = openai.ChatCompletion.create(
@@ -110,7 +119,6 @@ def generate_plan(data: StudyPlanRequest):
 
         parsed = json.loads(raw)
         session_id = f"session_{uuid.uuid4().hex[:6]}"
-
         units = parsed.get("units_to_cover", [])
         techniques = parsed.get("techniques", [])
         blocks_json = parsed.get("blocks", [])
@@ -129,7 +137,8 @@ def generate_plan(data: StudyPlanRequest):
 
             try:
                 payload = {
-                    "source": "user:54a623b9-9804-456b-9ae5-4fc9e048859d",
+                    "source": "session_planner",
+                    "user_id": user_id,
                     "current_topic": f"{unit} — {desc}",
                     "learning_event": {
                         "concept": unit,
@@ -162,12 +171,13 @@ def generate_plan(data: StudyPlanRequest):
             ))
             total_time += mins
 
-        # Final synthesis trigger bundled with a meaningful event
+        # Trigger synthesis after all blocks logged
         if any_block_logged:
             try:
                 print("🧠 Final plan context + synthesis trigger...")
                 final_payload = {
-                    "source": "user:54a623b9-9804-456b-9ae5-4fc9e048859d",
+                    "source": "session_planner",
+                    "user_id": user_id,
                     "current_topic": f"Full study plan: {data.topic}",
                     "learning_event": {
                         "concept": data.topic,
