@@ -78,7 +78,14 @@ def get_context_slice(user_id: str) -> Dict[str, Any]:
     try:
         response = requests.get(f"{CONTEXT_API}/api/context/slice?user_id={user_id}")
         response.raise_for_status()
-        return response.json()
+        raw = response.json()
+        return {
+            "current_topic": raw.get("current_topic"),
+            "user_goals": raw.get("user_goals", [])[:2],
+            "weak_areas": raw.get("weak_areas", [])[:2],
+            "emphasized_facts": raw.get("emphasized_facts", [])[:2],
+            "preferred_learning_styles": raw.get("preferred_learning_styles", [])[:1]
+        }
     except Exception as e:
         logger.warning(f"Context fetch failed: {e}")
         return {}
@@ -88,25 +95,22 @@ def build_prompt(data: ChatbotInput, context: Dict[str, Any]) -> str:
     if context.get("current_topic"):
         ctx.append(f"Current topic: {context['current_topic']}")
     if context.get("user_goals"):
-        ctx.append(f"User goals: {', '.join(context['user_goals'])}")
+        ctx.append(f"Goals: {', '.join(context['user_goals'])}")
     if context.get("weak_areas"):
         ctx.append(f"Weak areas: {', '.join(context['weak_areas'])}")
     if context.get("emphasized_facts"):
-        ctx.append(f"Emphasized facts: {', '.join(context['emphasized_facts'])}")
+        ctx.append(f"Focus points: {', '.join(context['emphasized_facts'])}")
     if context.get("preferred_learning_styles"):
-        ctx.append(f"Preferred learning styles: {', '.join(context['preferred_learning_styles'])}")
+        ctx.append(f"Style: {context['preferred_learning_styles'][0]}")
 
     recent_messages = "\n".join([
         f"{msg['role']}: {msg['content']}" for msg in data.message_history[-3:]
     ])
 
     ctx_text = "\n".join(ctx)
-
     base = f"""
 You are Arlo, an expert AI tutor.
-Avoid greetings or filler phrases like 'Hey there' or 'Nice to see you.'
-Respond directly and clearly like a human teacher sitting next to the student.
-Focus first on the student’s current question, and supplement only with relevant context.
+Skip greetings and filler. Focus on instruction.
 {ctx_text}
 
 Recent conversation:
@@ -116,6 +120,7 @@ Recent conversation:
     user_input = data.user_input.strip()
     phase = data.current_phase.phase
     payload = data.current_phase.payload or PhasePayload()
+    description = data.current_phase.description or ""
 
     if phase == "flashcards" and payload.question:
         return base + f"""
@@ -123,42 +128,45 @@ Flashcard:
 Q: {payload.question}
 User answered: {payload.user_answer}
 Follow-up input: {user_input}
-Give concise correction or reinforcement.
+Correct or reinforce briefly.
 """
-
     elif phase == "feynman":
         return base + f"""
 The student is explaining aloud.
 They said: \"{user_input}\"
-Help them identify gaps and improve the explanation.
+Help identify gaps and improve understanding.
 """
-
     elif phase == "quiz" and payload.question:
         return base + f"""
 Quiz:
 Q: {payload.question}
 User answered: {payload.user_answer}
 Follow-up input: {user_input}
-Correct and explain.
+Correct and explain clearly.
 """
-
     elif phase == "blurting":
         return base + f"""
-The student is blurting — trying to recall everything about the topic.
+The student is blurting — recalling everything.
 They said: \"{user_input}\"
-Point out missing info and help reinforce.
+Point out what’s missing and reinforce.
 """
-
+    elif phase == "arlo_teaching":
+        return base + f"""
+This is a personalized teaching phase.
+Block goal: {description}
+The student said: \"{user_input}\"
+Tutor them interactively — explain, quiz gently, and offer clarity.
+"""
     else:
         return base + f"""
 Student said: \"{user_input}\"
-Respond with helpful explanation or next step.
+Reply helpfully based on input and context.
 """
 
 def call_gpt(prompt: str) -> str:
     try:
         response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
+            model="gpt-3.5-turbo-0125",
             messages=[
                 {"role": "system", "content": "You are a helpful AI tutor."},
                 {"role": "user", "content": prompt}
@@ -168,7 +176,7 @@ def call_gpt(prompt: str) -> str:
         )
         return response.choices[0].message.content.strip()
     except Exception as e:
-        logger.error(f"Error calling GPT: {e}")
+        logger.error(f"GPT call failed: {e}")
         return "Sorry, I had trouble generating a response."
 
 @router.post("/chatbot", response_model=ChatbotResponse)
@@ -177,7 +185,7 @@ async def chatbot_handler(request: Request, data: ChatbotInput):
     user_id = extract_user_id(request, data)
     context = get_context_slice(user_id)
     prompt = build_prompt(data, context)
-    logger.debug(f"Prompt:\n{prompt}")
+    logger.debug(f"Prompt built:\n{prompt}")
     gpt_reply = call_gpt(prompt)
 
     action = None
@@ -194,12 +202,12 @@ async def chatbot_handler(request: Request, data: ChatbotInput):
 @router.post("/chatbot/save")
 def save_chat_context(payload: Dict[str, Any]):
     try:
-        logger.info(f"Forwarding context update from chatbot: {payload}")
+        logger.info(f"Saving chatbot context: {payload}")
         response = requests.post(f"{CONTEXT_API}/api/context/update", json=payload)
         response.raise_for_status()
         return {"status": "ok"}
     except Exception as e:
-        logger.error(f"Failed to save context: {e}")
+        logger.error(f"Save failed: {e}")
         return {"status": "error", "detail": str(e)}
 
 app.include_router(router)
