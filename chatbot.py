@@ -1,4 +1,4 @@
-from fastapi import APIRouter, FastAPI
+from fastapi import APIRouter, FastAPI, HTTPException, Request
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
 import openai
@@ -43,6 +43,8 @@ class ChatbotInput(BaseModel):
     current_phase: Phase
     session_summary: SessionSummary
     message_history: Optional[List[Dict[str, str]]] = []
+    source: Optional[str] = None
+    user_id: Optional[str] = None
 
 class ActionSuggestion(BaseModel):
     type: str
@@ -59,9 +61,22 @@ class ChatbotResponse(BaseModel):
 # ---------------------------
 # Helpers
 # ---------------------------
-def get_context_slice() -> Dict[str, Any]:
+def extract_user_id(request: Request, data: ChatbotInput) -> str:
+    user_info = getattr(request.state, "user", None)
+    if user_info and "sub" in user_info:
+        return user_info["sub"]
+    elif request.headers.get("x-user-id"):
+        return request.headers["x-user-id"]
+    elif data.user_id:
+        return data.user_id
+    elif data.source and str(data.source).startswith("user:"):
+        return data.source.replace("user:", "")
+    else:
+        raise HTTPException(status_code=400, detail="Missing user_id in request")
+
+def get_context_slice(user_id: str) -> Dict[str, Any]:
     try:
-        response = requests.get(f"{CONTEXT_API}/api/context/slice")
+        response = requests.get(f"{CONTEXT_API}/api/context/slice?user_id={user_id}")
         response.raise_for_status()
         return response.json()
     except Exception as e:
@@ -157,9 +172,10 @@ def call_gpt(prompt: str) -> str:
         return "Sorry, I had trouble generating a response."
 
 @router.post("/chatbot", response_model=ChatbotResponse)
-def chatbot_handler(data: ChatbotInput):
+async def chatbot_handler(request: Request, data: ChatbotInput):
     logger.info("Chatbot request received")
-    context = get_context_slice()
+    user_id = extract_user_id(request, data)
+    context = get_context_slice(user_id)
     prompt = build_prompt(data, context)
     logger.debug(f"Prompt:\n{prompt}")
     gpt_reply = call_gpt(prompt)
@@ -177,10 +193,6 @@ def chatbot_handler(data: ChatbotInput):
 
 @router.post("/chatbot/save")
 def save_chat_context(payload: Dict[str, Any]):
-    """
-    Allows manual saving of chatbot insights to the context manager.
-    Expects the full payload including `source`, `current_topic`, `learning_event`, etc.
-    """
     try:
         logger.info(f"Forwarding context update from chatbot: {payload}")
         response = requests.post(f"{CONTEXT_API}/api/context/update", json=payload)
