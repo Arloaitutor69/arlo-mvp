@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Request, HTTPException
 from pydantic import BaseModel
 from typing import List, Optional, Literal
-from datetime import datetime
+from datetime import datetime, timezone
 import json
 import openai
 import os
