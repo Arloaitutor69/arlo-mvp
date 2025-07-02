@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 from typing import List, Optional
 import openai
@@ -20,6 +20,7 @@ class FlashcardRequest(BaseModel):
     difficulty: Optional[str] = "medium"
     count: Optional[int] = 10
     format: Optional[str] = "Q&A"
+    user_id: Optional[str] = None  # New field for user identification
 
 # --- Output schema for flashcard items ---
 class FlashcardItem(BaseModel):
@@ -29,10 +30,22 @@ class FlashcardItem(BaseModel):
     difficulty: str
     category: str
 
+# --- Extract user_id ---
+def extract_user_id(request: Request, data: FlashcardRequest) -> str:
+    user_info = getattr(request.state, "user", None)
+    if user_info and "sub" in user_info:
+        return user_info["sub"]
+    elif request.headers.get("x-user-id"):
+        return request.headers["x-user-id"]
+    elif data.user_id:
+        return data.user_id
+    else:
+        raise HTTPException(status_code=400, detail="Missing user_id in request")
+
 # --- Helper to fetch context slice from context manager ---
-def fetch_context_slice():
+def fetch_context_slice(user_id: str):
     try:
-        response = requests.get(f"{CONTEXT_BASE_URL}/api/context/slice")
+        response = requests.get(f"{CONTEXT_BASE_URL}/api/context/slice?user_id={user_id}")
         if response.status_code == 200:
             return response.json()
     except Exception as e:
@@ -47,8 +60,9 @@ def post_context_update(payload: dict):
         print("❌ Context update failed:", e)
 
 @router.post("/flashcards")
-def generate_flashcards(data: FlashcardRequest):
-    context = fetch_context_slice()
+def generate_flashcards(request: Request, data: FlashcardRequest):
+    user_id = extract_user_id(request, data)
+    context = fetch_context_slice(user_id)
 
     personalization = ""
     if context:
@@ -116,6 +130,7 @@ Return only the JSON array — no other text.
     # ✅ Log session context for review and tracking
     post_context_update({
         "source": "flashcards",
+        "user_id": user_id,
         "current_topic": data.topic,
         "learning_event": {
             "concept": data.topic,
