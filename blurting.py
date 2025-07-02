@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 from typing import Optional, List
 import openai
@@ -30,22 +30,34 @@ class BlurtingResponse(BaseModel):
     missed_concepts: List[str]
     context_alignment: str
 
-# Context functions (safe threaded)
-def get_context_slice():
+# --- USER ID EXTRACTION ---
+def extract_user_id(request: Request, data: BlurtingRequest) -> str:
+    user_info = getattr(request.state, "user", None)
+    if user_info and "sub" in user_info:
+        return user_info["sub"]
+    elif request.headers.get("x-user-id"):
+        return request.headers["x-user-id"]
+    elif data.user_id:
+        return data.user_id
+    else:
+        raise HTTPException(status_code=400, detail="Missing user_id in request")
+
+# Context functions
+def get_context_slice(user_id: str):
     try:
-        res = requests.get(f"{CONTEXT_BASE}/api/context/slice", timeout=30)
+        res = requests.get(f"{CONTEXT_BASE}/api/context/slice?user_id={user_id}", timeout=30)
         res.raise_for_status()
         return res.json()
     except Exception as e:
         print("❌ Failed to fetch context:", e)
         return None
 
-def safe_context_fetch(result_holder: dict):
-    result_holder['data'] = get_context_slice()
+def safe_context_fetch(user_id: str, result_holder: dict):
+    result_holder['data'] = get_context_slice(user_id)
 
 def post_learning_event_to_context(user_id: str, topic: str, missed_concepts: List[str], feedback: str):
     payload = {
-        "source": f"user:{user_id}",
+        "source": "blurting",
         "user_id": user_id,
         "current_topic": topic,
         "weak_areas": missed_concepts[:3],
@@ -94,21 +106,23 @@ def generate_blurting_prompt(topic: str, content_summary: Optional[str], blurted
 
 # Endpoint
 @router.post("/blurting", response_model=BlurtingResponse)
-async def evaluate_blurting(request: BlurtingRequest):
+async def evaluate_blurting(request: Request, data: BlurtingRequest):
     try:
-        if not request.context_prompt:
+        user_id = extract_user_id(request, data)
+
+        if not data.context_prompt:
             context_holder = {}
-            fetch_thread = Thread(target=safe_context_fetch, args=(context_holder,))
+            fetch_thread = Thread(target=safe_context_fetch, args=(user_id, context_holder))
             fetch_thread.start()
             fetch_thread.join(timeout=3)
             context_data = context_holder.get('data')
-            request.context_prompt = json.dumps(context_data.get("weak_areas", [])) if context_data else None
+            data.context_prompt = json.dumps(context_data.get("weak_areas", [])) if context_data else None
 
         prompt = generate_blurting_prompt(
-            request.topic,
-            request.content_summary,
-            request.blurted_response,
-            request.context_prompt
+            data.topic,
+            data.content_summary,
+            data.blurted_response,
+            data.context_prompt
         )
 
         start = time.time()
@@ -126,13 +140,12 @@ async def evaluate_blurting(request: BlurtingRequest):
         print("🧠 GPT raw content:", content)
         parsed = json.loads(content)
 
-        if request.user_id:
-            Thread(target=safe_context_log, args=(
-                request.user_id,
-                request.topic,
-                parsed["missed_concepts"],
-                parsed["feedback"]
-            )).start()
+        Thread(target=safe_context_log, args=(
+            user_id,
+            data.topic,
+            parsed["missed_concepts"],
+            parsed["feedback"]
+        )).start()
 
         return BlurtingResponse(**parsed)
 
