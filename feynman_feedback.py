@@ -50,16 +50,16 @@ def extract_user_id(request: Request, data: FeynmanRequest) -> str:
         raise HTTPException(status_code=400, detail="Missing user_id in request")
 
 # -----------------------------
-# Helper to get context
+# Helper to get context from cache
 # -----------------------------
-def get_context_slice(user_id: str):
+def get_context_cache(user_id: str):
     try:
-        logger.info("Fetching context slice from: %s", CONTEXT_BASE)
-        res = requests.get(f"{CONTEXT_BASE}/api/context/slice?user_id={user_id}", timeout=10)
+        logger.info("Fetching cached context from: %s", CONTEXT_BASE)
+        res = requests.get(f"{CONTEXT_BASE}/api/context/cache?user_id={user_id}", timeout=5)
         res.raise_for_status()
         return res.json()
     except Exception as e:
-        logger.error("Failed to fetch context slice: %s", str(e))
+        logger.error("Failed to fetch context cache: %s", str(e))
         return {}
 
 # -----------------------------
@@ -70,17 +70,35 @@ def run_feynman_phase(request: Request, payload: FeynmanRequest):
     logger.info("Received Feynman request for concept: %s", payload.concept)
 
     user_id = extract_user_id(request, payload)
-    context = get_context_slice(user_id)
+    context = get_context_cache(user_id)
 
+    # Build context summary string
+    context_lines = []
+    ctx = context.get("context", {}) if "context" in context else context
+    if ctx.get("current_topic"):
+        context_lines.append(f"Current topic: {ctx['current_topic']}")
+    if ctx.get("user_goals"):
+        context_lines.append(f"Goals: {', '.join(ctx['user_goals'])}")
+    if ctx.get("weak_areas"):
+        context_lines.append(f"Weak areas: {', '.join(ctx['weak_areas'])}")
+    if ctx.get("emphasized_facts"):
+        context_lines.append(f"Focus points: {', '.join(ctx['emphasized_facts'])}")
+    if ctx.get("preferred_learning_styles"):
+        context_lines.append(f"Style: {ctx['preferred_learning_styles'][0]}")
+
+    context_summary = "\n".join(context_lines)
+
+    # Prompt construction
     prompt = (
-        f"You are an AI tutor helping a student master the concept of {payload.concept}.\n"
-        f"They just explained it like this:\n"
-        f"\"\"\"\n{payload.user_explanation}\n\"\"\"\n"
-        f"Your task is to provide kind, constructive feedback. Use their context to guide you:\n"
-        f"Context: {payload.personalized_context or context}\n"
-        "1. Identify any major gaps or inaccuracies in their explanation.\n"
-        "2. Provide a revised explanation or clarification if needed.\n"
-        "3. Ask a follow-up question to probe deeper understanding."
+        f"You are Arlo, an AI tutor helping a student master the concept of \"{payload.concept}\".\n"
+        f"They just tried to explain it in their own words:\n\"{payload.user_explanation}\"\n\n"
+        f"Use the personalized context and tutoring context below to guide your response.\n\n"
+        f"{payload.personalized_context or context_summary}\n\n"
+        "Your job:\n"
+        "1. Gently point out any major gaps or mistakes in their explanation.\n"
+        "2. Rephrase or clarify key points to improve understanding.\n"
+        "3. Ask one helpful follow-up question to go deeper.\n"
+        "Keep your tone warm and supportive."
     )
 
     logger.info("Constructed prompt:\n%s", prompt)
@@ -92,19 +110,20 @@ def run_feynman_phase(request: Request, payload: FeynmanRequest):
                 {"role": "system", "content": "You are a helpful AI tutor."},
                 {"role": "user", "content": prompt},
             ],
-            temperature=0.7,
-            max_tokens=500
+            temperature=0.6,
+            max_tokens=500,
+            request_timeout=15
         )
 
-        raw_reply = response["choices"][0]["message"]["content"]
+        raw_reply = response["choices"][0]["message"]["content"].strip()
         logger.info("OpenAI response: %s", raw_reply)
 
-        split_parts = raw_reply.split("\n")
-        message = "\n".join(split_parts[:3]).strip()
-        follow_up = next((line for line in split_parts if "?" in line), None)
+        # Try to extract a follow-up question (any line with a '?')
+        lines = raw_reply.split("\n")
+        follow_up = next((line for line in lines if "?" in line), None)
 
         return FeynmanResponse(
-            message=message,
+            message=raw_reply,
             follow_up_question=follow_up,
             action_suggestion="stay_in_phase"
         )
