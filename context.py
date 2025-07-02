@@ -352,9 +352,22 @@ def is_stale(timestamp: str, ttl_seconds: int = 120) -> bool:
 
 @router.get("/context/cache")
 def get_cached_context(user_id: str):
+    # Load Supabase settings dynamically
+    supabase_url = os.getenv("SUPABASE_URL")
+    supabase_key = os.getenv("SUPABASE_SERVICE_ROLE")
+
+    if not supabase_url or not supabase_key:
+        raise HTTPException(status_code=500, detail="Missing SUPABASE_URL or SERVICE_ROLE key")
+
+    headers = {
+        "apikey": supabase_key,
+        "Authorization": f"Bearer {supabase_key}",
+        "Content-Type": "application/json"
+    }
+
     # 1. Try fetching from Supabase cache
-    url = f"{SUPABASE_URL}/rest/v1/context_cache?user_id=eq.{user_id}&select=*"
-    resp = requests.get(url, headers=HEADERS)
+    url = f"{supabase_url}/rest/v1/context_cache?user_id=eq.{user_id}&select=*"
+    resp = requests.get(url, headers=headers)
 
     if resp.status_code == 200 and resp.json():
         row = resp.json()[0]
@@ -364,7 +377,8 @@ def get_cached_context(user_id: str):
             return {"cached": True, "stale": False, "context": cached}
 
     # 2. Fetch fresh context from context state
-    state_url = f"{CONTEXT_API}/api/context/state?user_id={user_id}"
+    context_api_base = os.getenv("CONTEXT_API_BASE", "https://arlo-mvp-2.onrender.com")
+    state_url = f"{context_api_base}/api/context/state?user_id={user_id}"
     state_resp = requests.get(state_url)
     if state_resp.status_code != 200:
         raise HTTPException(status_code=500, detail="Failed to fetch fresh context")
@@ -377,8 +391,12 @@ def get_cached_context(user_id: str):
         "cached_json": json.dumps(context),
         "last_updated": datetime.now(timezone.utc).isoformat()
     }]
-    upsert_url = f"{SUPABASE_URL}/rest/v1/context_cache"
-    upsert_resp = requests.post(upsert_url, headers={**HEADERS, "Prefer": "resolution=merge-duplicates"}, json=upsert_payload)
+    upsert_url = f"{supabase_url}/rest/v1/context_cache"
+    upsert_resp = requests.post(
+        upsert_url,
+        headers={**headers, "Prefer": "resolution=merge-duplicates"},
+        json=upsert_payload
+    )
 
     if upsert_resp.status_code not in [200, 201]:
         raise HTTPException(status_code=500, detail="Failed to save context cache")
