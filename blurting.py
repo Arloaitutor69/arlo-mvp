@@ -1,3 +1,5 @@
+# UPDATED BLURTING MODULE WITH IN-MODULE CONTEXT CACHE
+
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 from typing import Optional, List
@@ -6,18 +8,38 @@ import os
 import json
 import requests
 import time
+from datetime import datetime, timedelta
 from threading import Thread
 
 router = APIRouter()
 openai.api_key = os.getenv("OPENAI_API_KEY")
 
-# Determine context API base URL
+# ------------------- CONTEXT CACHE -------------------
+context_cache: dict = {}
+context_ttl = timedelta(minutes=5)
+
 if os.getenv("ENV") == "dev":
     CONTEXT_BASE = "http://localhost:10000"
 else:
     CONTEXT_BASE = os.getenv("CONTEXT_API_BASE", "https://arlo-mvp-2.onrender.com")
 
-# Models
+def get_cached_context(user_id: str):
+    now = datetime.now()
+    if user_id in context_cache:
+        timestamp, cached_value = context_cache[user_id]
+        if now - timestamp < context_ttl:
+            return {"cached": True, "stale": False, "context": cached_value}
+    try:
+        response = requests.get(f"{CONTEXT_BASE}/api/context/current?user_id={user_id}", timeout=5)
+        response.raise_for_status()
+        context = response.json()
+        context_cache[user_id] = (now, context)
+        return {"cached": False, "stale": False, "context": context}
+    except Exception as e:
+        print("❌ Failed to fetch cached context:", e)
+        return {"cached": False, "stale": True, "context": None, "error": str(e)}
+
+# ------------------- MODELS -------------------
 class BlurtingRequest(BaseModel):
     topic: str
     content_summary: Optional[str] = None
@@ -30,7 +52,7 @@ class BlurtingResponse(BaseModel):
     missed_concepts: List[str]
     context_alignment: str
 
-# --- USER ID EXTRACTION ---
+# ------------------- USER ID EXTRACTION -------------------
 def extract_user_id(request: Request, data: BlurtingRequest) -> str:
     user_info = getattr(request.state, "user", None)
     if user_info and "sub" in user_info:
@@ -42,20 +64,7 @@ def extract_user_id(request: Request, data: BlurtingRequest) -> str:
     else:
         raise HTTPException(status_code=400, detail="Missing user_id in request")
 
-# --- CONTEXT CACHE ---
-def get_context_cache(user_id: str):
-    try:
-        res = requests.get(f"{CONTEXT_BASE}/api/context/cache?user_id={user_id}", timeout=5)
-        res.raise_for_status()
-        return res.json()
-    except Exception as e:
-        print("❌ Failed to fetch cached context:", e)
-        return None
-
-def safe_context_fetch(user_id: str, result_holder: dict):
-    result_holder['data'] = get_context_cache(user_id)
-
-# --- CONTEXT POSTING ---
+# ------------------- CONTEXT POSTING -------------------
 def post_learning_event_to_context(user_id: str, topic: str, missed_concepts: List[str], feedback: str):
     payload = {
         "source": "blurting",
@@ -89,7 +98,7 @@ def safe_context_log(user_id, topic, missed, feedback):
     except Exception as e:
         print(f"⚠️ Background context log failed: {e}")
 
-# --- PROMPT BUILDER ---
+# ------------------- PROMPT BUILDER -------------------
 def generate_blurting_prompt(topic: str, content_summary: Optional[str], blurted_response: str, context_prompt: Optional[str]) -> str:
     summary_block = f"\nSummary of key concepts:\n{content_summary}" if content_summary else ""
     context_block = f"\nAdditional context for evaluation:\n{context_prompt}" if context_prompt else ""
@@ -105,19 +114,17 @@ def generate_blurting_prompt(topic: str, content_summary: Optional[str], blurted
         "Only return valid JSON."
     )
 
-# --- ENDPOINT ---
+# ------------------- MAIN ENDPOINT -------------------
 @router.post("/blurting", response_model=BlurtingResponse)
 async def evaluate_blurting(request: Request, data: BlurtingRequest):
     try:
         user_id = extract_user_id(request, data)
 
+        # Try to pull cached context only if user didn’t provide custom
         if not data.context_prompt:
-            context_holder = {}
-            fetch_thread = Thread(target=safe_context_fetch, args=(user_id, context_holder))
-            fetch_thread.start()
-            fetch_thread.join(timeout=3)
-            context_data = context_holder.get('data')
-            data.context_prompt = json.dumps(context_data.get("weak_areas", [])) if context_data else None
+            result = get_cached_context(user_id)
+            if result["context"]:
+                data.context_prompt = json.dumps(result["context"].get("weak_areas", []))
 
         prompt = generate_blurting_prompt(
             data.topic,
