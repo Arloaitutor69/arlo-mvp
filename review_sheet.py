@@ -27,7 +27,7 @@ context_ttl = timedelta(minutes=5)
 
 def fetch_and_update_context(user_id: str):
     try:
-        res = requests.get(f"{CONTEXT_API_BASE}/api/context/current?user_id={user_id}", timeout=5)
+        res = requests.get(f"{CONTEXT_API_BASE}/api/context/cache?user_id={user_id}", timeout=5)
         res.raise_for_status()
         context_cache[user_id] = (datetime.now(), res.json())
     except Exception as e:
