@@ -1,3 +1,5 @@
+# UPDATED FLASHCARDS MODULE WITH SHARED IN-MODULE CONTEXT CACHE
+
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 from typing import List, Optional
@@ -6,12 +8,35 @@ import os
 import json
 import uuid
 import requests
+from datetime import datetime, timedelta
 
 # Load environment variables
 openai.api_key = os.getenv("OPENAI_API_KEY")
 CONTEXT_BASE_URL = os.getenv("CONTEXT_API_BASE", "https://arlo-mvp-2.onrender.com")
 
 router = APIRouter()
+
+# -----------------------------
+# In-memory Context Cache
+# -----------------------------
+context_cache = {}
+context_ttl = timedelta(minutes=5)
+
+def get_cached_context(user_id: str):
+    now = datetime.now()
+    if user_id in context_cache:
+        timestamp, cached_value = context_cache[user_id]
+        if now - timestamp < context_ttl:
+            return cached_value
+    try:
+        res = requests.get(f"{CONTEXT_BASE_URL}/api/context/current?user_id={user_id}", timeout=5)
+        res.raise_for_status()
+        context = res.json()
+        context_cache[user_id] = (now, context)
+        return context
+    except Exception as e:
+        print("❌ Failed to fetch context:", e)
+        return {}
 
 # --- Input model from the frontend or planner ---
 class FlashcardRequest(BaseModel):
@@ -20,7 +45,7 @@ class FlashcardRequest(BaseModel):
     difficulty: Optional[str] = "medium"
     count: Optional[int] = 10
     format: Optional[str] = "Q&A"
-    user_id: Optional[str] = None  # New field for user identification
+    user_id: Optional[str] = None
 
 # --- Output schema for flashcard items ---
 class FlashcardItem(BaseModel):
@@ -42,16 +67,6 @@ def extract_user_id(request: Request, data: FlashcardRequest) -> str:
     else:
         raise HTTPException(status_code=400, detail="Missing user_id in request")
 
-# --- Helper to fetch context cache ---
-def fetch_context_cache(user_id: str):
-    try:
-        response = requests.get(f"{CONTEXT_BASE_URL}/api/context/cache?user_id={user_id}", timeout=5)
-        if response.status_code == 200:
-            return response.json().get("context", {})
-    except Exception as e:
-        print("❌ Context cache fetch failed:", e)
-    return {}
-
 # --- Helper to post context update ---
 def post_context_update(payload: dict):
     try:
@@ -62,7 +77,7 @@ def post_context_update(payload: dict):
 @router.post("/flashcards")
 def generate_flashcards(request: Request, data: FlashcardRequest):
     user_id = extract_user_id(request, data)
-    context = fetch_context_cache(user_id)
+    context = get_cached_context(user_id)
 
     personalization = ""
     if context:
@@ -74,7 +89,6 @@ Goals: {', '.join(context.get('user_goals', [])) or 'N/A'}
 Review queue: {', '.join(context.get('review_queue', [])) or 'N/A'}
 """
 
-    # --- Optimized, concise prompt using GPT-4 ---
     prompt = f"""
 You are a flashcard-generating tutor.
 
@@ -127,7 +141,6 @@ Return only the JSON array — no other text.
         ))
         questions_summary.append(q)
 
-    # ✅ Log session context for review and tracking
     post_context_update({
         "source": "flashcards",
         "user_id": user_id,
