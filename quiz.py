@@ -1,3 +1,5 @@
+# UPDATED QUIZ MODULE WITH SHARED IN-MODULE CONTEXT CACHE
+
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 from typing import List, Literal, Union, Optional
@@ -6,11 +8,34 @@ import os
 import json
 import openai
 import requests
+from datetime import datetime, timedelta
 
 openai.api_key = os.getenv("OPENAI_API_KEY")
 CONTEXT_API = os.getenv("CONTEXT_API_BASE", "https://arlo-mvp-2.onrender.com")
 
 router = APIRouter()
+
+# -----------------------------
+# In-memory Context Cache
+# -----------------------------
+context_cache = {}
+context_ttl = timedelta(minutes=5)
+
+def get_cached_context(user_id: str):
+    now = datetime.now()
+    if user_id in context_cache:
+        timestamp, cached_value = context_cache[user_id]
+        if now - timestamp < context_ttl:
+            return cached_value
+    try:
+        res = requests.get(f"{CONTEXT_API}/api/context/current?user_id={user_id}", timeout=5)
+        res.raise_for_status()
+        context = res.json()
+        context_cache[user_id] = (now, context)
+        return context
+    except Exception as e:
+        print("❌ Failed to fetch context:", e)
+        return {}
 
 # --- Models ---
 class QuizRequest(BaseModel):
@@ -43,21 +68,6 @@ def extract_user_id(request: Request, req: QuizRequest) -> Optional[str]:
         return req.source.replace("user:", "")
     else:
         return None
-
-# --- Context from cache ---
-def fetch_context(user_id: Optional[str] = None):
-    try:
-        print("🗕 Fetching context cache...")
-        url = f"{CONTEXT_API}/api/context/cache"
-        if user_id:
-            url += f"?user_id={user_id}"
-        res = requests.get(url, timeout=15)
-        res.raise_for_status()
-        raw = res.json()
-        return raw.get("context", {}) if "context" in raw else raw
-    except Exception as e:
-        print("❌ Failed to fetch context:", e)
-        return {}
 
 # --- Log learning event ---
 def log_learning_event(topic, summary, count, user_id: Optional[str] = None):
@@ -161,13 +171,12 @@ async def create_quiz(req: QuizRequest, request: Request):
     user_id = extract_user_id(request, req)
     print("🔍 Using user_id:", user_id)
 
-    # Apply safe defaults
     topic = req.topic.strip()
     difficulty = req.difficulty or "medium"
     count = max(1, min(req.question_count or 5, 10))
     types = req.question_types or ["multiple_choice"]
 
-    context = fetch_context(user_id)
+    context = get_cached_context(user_id)
 
     questions = generate_questions(
         topic=topic,
