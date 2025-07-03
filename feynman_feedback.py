@@ -37,7 +37,7 @@ def get_cached_context(user_id: str):
         if now - timestamp < context_ttl:
             return cached_value
     try:
-        res = requests.get(f"{CONTEXT_BASE}/api/context/current?user_id={user_id}", timeout=5)
+        res = requests.get(f"{CONTEXT_BASE}/api/context/cache?user_id={user_id}", timeout=5)
         res.raise_for_status()
         context = res.json()
         context_cache[user_id] = (now, context)
