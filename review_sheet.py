@@ -1,3 +1,5 @@
+# UPDATED REVIEW SHEET MODULE WITH SHARED IN-MODULE CONTEXT CACHE
+
 from fastapi import APIRouter, FastAPI, HTTPException, Request
 from pydantic import BaseModel
 from typing import List, Optional
@@ -5,6 +7,8 @@ import openai
 import os
 import json
 import requests
+from datetime import datetime, timedelta
+from threading import Thread
 
 # ---------------------------
 # Setup
@@ -14,6 +18,38 @@ CONTEXT_API_BASE = os.getenv("CONTEXT_API_BASE", "https://arlo-mvp-2.onrender.co
 
 app = FastAPI()
 router = APIRouter()
+
+# ---------------------------
+# In-memory Context Cache
+# ---------------------------
+context_cache = {}
+context_ttl = timedelta(minutes=5)
+
+def fetch_and_update_context(user_id: str):
+    try:
+        res = requests.get(f"{CONTEXT_API_BASE}/api/context/current?user_id={user_id}", timeout=5)
+        res.raise_for_status()
+        context_cache[user_id] = (datetime.now(), res.json())
+    except Exception as e:
+        print("❌ Background context fetch failed:", e)
+
+def get_cached_context(user_id: str):
+    now = datetime.now()
+    if user_id in context_cache:
+        timestamp, cached_value = context_cache[user_id]
+        if now - timestamp > context_ttl:
+            Thread(target=fetch_and_update_context, args=(user_id,)).start()
+        return cached_value
+    else:
+        try:
+            res = requests.get(f"{CONTEXT_API_BASE}/api/context/current?user_id={user_id}", timeout=5)
+            res.raise_for_status()
+            context = res.json()
+            context_cache[user_id] = (now, context)
+            return context
+        except Exception as e:
+            print("❌ Initial context fetch failed:", e)
+            return {}
 
 # ---------------------------
 # Pydantic Models
@@ -40,20 +76,6 @@ def extract_user_id(request: Request, data: ReviewRequest) -> str:
         return data.user_id
     else:
         raise HTTPException(status_code=400, detail="Missing user_id in request")
-
-# ---------------------------
-# Helper: Fetch Context from Cache
-# ---------------------------
-def fetch_context_cache(user_id: str):
-    try:
-        print(f"🧠 Fetching context cache for user_id={user_id}...")
-        res = requests.get(f"{CONTEXT_API_BASE}/api/context/cache?user_id={user_id}", timeout=5)
-        res.raise_for_status()
-        raw = res.json()
-        return raw.get("context", {}) if "context" in raw else raw
-    except Exception as e:
-        print("❌ Failed to fetch context cache:", e)
-        raise HTTPException(status_code=500, detail="Unable to fetch current context")
 
 # ---------------------------
 # GPT API Call
@@ -101,7 +123,7 @@ Respond ONLY in the following JSON format:
 @router.post("/review-sheet", response_model=ReviewSheet)
 def generate_review_sheet(request: Request, data: ReviewRequest):
     user_id = extract_user_id(request, data)
-    context = fetch_context_cache(user_id)
+    context = get_cached_context(user_id)
     prompt = build_review_prompt(context)
 
     print("📝 GPT prompt:\n", prompt)
