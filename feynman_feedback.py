@@ -1,3 +1,5 @@
+# UPDATED FEYNMAN MODULE WITH SHARED IN-MODULE CONTEXT CACHE
+
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 from typing import Optional
@@ -6,6 +8,7 @@ import os
 import json
 import requests
 import logging
+from datetime import datetime, timedelta
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -20,6 +23,28 @@ openai.api_key = os.getenv("OPENAI_API_KEY")
 CONTEXT_BASE = os.getenv("CONTEXT_API_BASE", "https://arlo-mvp-2.onrender.com")
 
 router = APIRouter()
+
+# -----------------------------
+# In-memory Context Cache
+# -----------------------------
+context_cache = {}
+context_ttl = timedelta(minutes=5)
+
+def get_cached_context(user_id: str):
+    now = datetime.now()
+    if user_id in context_cache:
+        timestamp, cached_value = context_cache[user_id]
+        if now - timestamp < context_ttl:
+            return cached_value
+    try:
+        res = requests.get(f"{CONTEXT_BASE}/api/context/current?user_id={user_id}", timeout=5)
+        res.raise_for_status()
+        context = res.json()
+        context_cache[user_id] = (now, context)
+        return context
+    except Exception as e:
+        logger.error("❌ Failed to fetch context: %s", str(e))
+        return {}
 
 # -----------------------------
 # Pydantic models
@@ -50,19 +75,6 @@ def extract_user_id(request: Request, data: FeynmanRequest) -> str:
         raise HTTPException(status_code=400, detail="Missing user_id in request")
 
 # -----------------------------
-# Helper to get context from cache
-# -----------------------------
-def get_context_cache(user_id: str):
-    try:
-        logger.info("Fetching cached context from: %s", CONTEXT_BASE)
-        res = requests.get(f"{CONTEXT_BASE}/api/context/cache?user_id={user_id}", timeout=5)
-        res.raise_for_status()
-        return res.json()
-    except Exception as e:
-        logger.error("Failed to fetch context cache: %s", str(e))
-        return {}
-
-# -----------------------------
 # Feynman endpoint
 # -----------------------------
 @router.post("/feynman", response_model=FeynmanResponse)
@@ -70,21 +82,20 @@ def run_feynman_phase(request: Request, payload: FeynmanRequest):
     logger.info("Received Feynman request for concept: %s", payload.concept)
 
     user_id = extract_user_id(request, payload)
-    context = get_context_cache(user_id)
+    context = get_cached_context(user_id)
 
     # Build context summary string
     context_lines = []
-    ctx = context.get("context", {}) if "context" in context else context
-    if ctx.get("current_topic"):
-        context_lines.append(f"Current topic: {ctx['current_topic']}")
-    if ctx.get("user_goals"):
-        context_lines.append(f"Goals: {', '.join(ctx['user_goals'])}")
-    if ctx.get("weak_areas"):
-        context_lines.append(f"Weak areas: {', '.join(ctx['weak_areas'])}")
-    if ctx.get("emphasized_facts"):
-        context_lines.append(f"Focus points: {', '.join(ctx['emphasized_facts'])}")
-    if ctx.get("preferred_learning_styles"):
-        context_lines.append(f"Style: {ctx['preferred_learning_styles'][0]}")
+    if context.get("current_topic"):
+        context_lines.append(f"Current topic: {context['current_topic']}")
+    if context.get("user_goals"):
+        context_lines.append(f"Goals: {', '.join(context['user_goals'])}")
+    if context.get("weak_areas"):
+        context_lines.append(f"Weak areas: {', '.join(context['weak_areas'])}")
+    if context.get("emphasized_facts"):
+        context_lines.append(f"Focus points: {', '.join(context['emphasized_facts'])}")
+    if context.get("preferred_learning_styles"):
+        context_lines.append(f"Style: {context['preferred_learning_styles'][0]}")
 
     context_summary = "\n".join(context_lines)
 
