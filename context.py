@@ -11,7 +11,15 @@ import requests
 from fastapi import Request
 import os, requests, json, threading
 
+# -------- Context Cache Setup --------
+# Cache structure: key = user_id, value = (timestamp, context)
+context_cache: dict = {}
 
+# How long a cached context stays fresh
+context_ttl = timedelta(minutes=5)
+
+# Optional: Get the backend URL from environment variables
+CONTEXT_API = os.getenv("CONTEXT_API_BASE", "https://arlo-mvp-2.onrender.com")
 # ------------------------------
 # Supabase lazy initialization
 # ------------------------------
