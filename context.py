@@ -11,39 +11,39 @@ import requests
 from fastapi import Request
 import os, requests, json, threading
 
-# -------- Context Cache Setup --------
-# Cache structure: key = user_id, value = (timestamp, context)
-context_cache: dict = {}
+# ---------------------------
+# In-memory Context Cache
+# ---------------------------
+context_cache = {}
+context_stale_threshold = timedelta(minutes=3)
+context_expire_threshold = timedelta(minutes=5)
 
-# How long a cached context stays fresh
-context_ttl = timedelta(minutes=5)
-
-# Optional: Get the backend URL from environment variables
-CONTEXT_API = os.getenv("CONTEXT_API_BASE", "https://arlo-mvp-2.onrender.com")
+def fetch_and_update_context(user_id: str):
+    try:
+        res = requests.get(f"{CONTEXT_API_BASE}/api/context/current?user_id={user_id}", timeout=5)
+        res.raise_for_status()
+        context_cache[user_id] = (datetime.now(), res.json())
+    except Exception as e:
+        print("❌ Background context fetch failed:", e)
 
 def get_cached_context(user_id: str):
     now = datetime.now()
-
-    # Return cached context if fresh
     if user_id in context_cache:
         timestamp, cached_value = context_cache[user_id]
-        if now - timestamp < context_ttl:
-            return {"cached": True, "stale": False, "context": cached_value}
-
-    # Fetch fresh context from backend
-    try:
-        response = requests.get(f"{CONTEXT_API}/context/current?user_id={user_id}")
-        response.raise_for_status()
-        context = response.json()
-
-        # Save to cache
-        context_cache[user_id] = (now, context)
-
-        return {"cached": False, "stale": False, "context": context}
-    except Exception as e:
-        return {"cached": False, "stale": True, "context": None, "error": str(e)}
-
-
+        age = now - timestamp
+        if age > context_stale_threshold:
+            Thread(target=fetch_and_update_context, args=(user_id,)).start()
+        return cached_value
+    else:
+        try:
+            res = requests.get(f"{CONTEXT_API_BASE}/api/context/current?user_id={user_id}", timeout=5)
+            res.raise_for_status()
+            context = res.json()
+            context_cache[user_id] = (now, context)
+            return context
+        except Exception as e:
+            print("❌ Initial context fetch failed:", e)
+            return {}
 
 # ------------------------------
 # Supabase lazy initialization
