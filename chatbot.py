@@ -1,3 +1,5 @@
+# UPDATED CHATBOT MODULE WITH IN-MODULE CONTEXT CACHE AND BETTER STUDY BLOCK DESCRIPTION HANDLING
+
 from fastapi import APIRouter, FastAPI, HTTPException, Request
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
@@ -5,6 +7,7 @@ import openai
 import os
 import logging
 import requests
+from datetime import datetime, timedelta
 
 # ---------------------------
 # Setup
@@ -17,6 +20,41 @@ logger = logging.getLogger("chatbot")
 
 app = FastAPI()
 router = APIRouter()
+
+# ---------------------------
+# In-memory Context Cache
+# ---------------------------
+context_cache: dict = {}
+context_ttl = timedelta(minutes=5)
+
+def get_cached_context(user_id: str) -> Dict[str, Any]:
+    now = datetime.now()
+    if user_id in context_cache:
+        timestamp, cached_value = context_cache[user_id]
+        if now - timestamp < context_ttl:
+            return cached_value
+    try:
+        response = requests.get(f"{CONTEXT_API}/api/context/current?user_id={user_id}", timeout=3)
+        response.raise_for_status()
+        raw = response.json()
+        trimmed = {
+            "current_topic": raw.get("current_topic"),
+            "user_goals": raw.get("user_goals", [])[:2],
+            "weak_areas": raw.get("weak_areas", [])[:2],
+            "emphasized_facts": raw.get("emphasized_facts", [])[:2],
+            "preferred_learning_styles": raw.get("preferred_learning_styles", [])[:1]
+        }
+        context_cache[user_id] = (now, trimmed)
+        return trimmed
+    except Exception as e:
+        logger.warning(f"Context fetch failed: {e}")
+        return {
+            "current_topic": "general learning",
+            "weak_areas": [],
+            "user_goals": [],
+            "emphasized_facts": [],
+            "preferred_learning_styles": []
+        }
 
 # ---------------------------
 # Schemas
@@ -61,7 +99,6 @@ class ChatbotResponse(BaseModel):
 # ---------------------------
 # Helpers
 # ---------------------------
-
 def extract_user_id(request: Request, data: ChatbotInput) -> str:
     user_info = getattr(request.state, "user", None)
     if user_info and "sub" in user_info:
@@ -75,60 +112,36 @@ def extract_user_id(request: Request, data: ChatbotInput) -> str:
     else:
         raise HTTPException(status_code=400, detail="Missing user_id in request")
 
-def get_context_cached(user_id: str) -> Dict[str, Any]:
-    """Try to fetch context from cache API. Fail fast after 3 seconds and fall back."""
-    try:
-        logger.info("Trying cached context...")
-        response = requests.get(
-            f"{CONTEXT_API}/api/context/cache?user_id={user_id}", timeout=3
-        )
-        response.raise_for_status()
-        raw = response.json()
-        logger.info("Context cache fetched.")
-        return {
-            "current_topic": raw.get("current_topic"),
-            "user_goals": raw.get("user_goals", [])[:2],
-            "weak_areas": raw.get("weak_areas", [])[:2],
-            "emphasized_facts": raw.get("emphasized_facts", [])[:2],
-            "preferred_learning_styles": raw.get("preferred_learning_styles", [])[:1]
-        }
-    except Exception as e:
-        logger.warning(f"Context cache failed or slow: {e}")
-        # Fallback to minimal context so chatbot can still run
-        return {
-            "current_topic": "general learning",
-            "weak_areas": [],
-            "user_goals": [],
-            "emphasized_facts": [],
-            "preferred_learning_styles": []
-        }
-
 def build_prompt(data: ChatbotInput, context: Dict[str, Any]) -> str:
-    """Format prompt for GPT with trimmed context + chat history."""
     ctx = []
     if context.get("current_topic"):
-        ctx.append(f"Topic: {context['current_topic']}")
+        ctx.append(f"Current Topic: {context['current_topic']}")
     if context.get("weak_areas"):
-        ctx.append(f"Weak areas: {', '.join(context['weak_areas'])}")
+        ctx.append(f"Weak Areas: {', '.join(context['weak_areas'])}")
+    if context.get("emphasized_facts"):
+        ctx.append(f"Important Facts: {', '.join(context['emphasized_facts'])}")
 
-    user_input = data.user_input.strip()
-    recent_messages = "\n".join([
-        f"{msg['role']}: {msg['content']}" for msg in data.message_history[-2:]
-    ])
+    # Add phase description from Lovable to stay on topic
+    description = data.current_phase.description or ""
+    phase_type = data.current_phase.phase
+    technique = data.current_phase.tool
+
+    history = "\n".join([f"{m['role']}: {m['content']}" for m in data.message_history[-2:]])
 
     prompt = (
-        "You are Arlo, an expert AI tutor.\n"
-        "Keep responses fast, clear, and helpful.\n\n"
+        f"You are Arlo, an AI tutor helping a student with the current learning phase.\n"
+        f"Technique: {technique}\n"
+        f"Phase Type: {phase_type}\n"
+        f"Description of task: {description}\n"
         f"{chr(10).join(ctx)}\n\n"
-        f"Recent conversation:\n{recent_messages}\n\n"
-        f"Student input: \"{user_input}\"\n\n"
-        "Respond clearly and concisely based on the topic and weak areas."
+        f"Recent Conversation:\n{history}\n\n"
+        f"Student input: \"{data.user_input.strip()}\"\n\n"
+        "Your response should directly support the student's progress in this phase. Be concise, clear, and encouraging."
     )
 
     return prompt
 
 def call_gpt(prompt: str) -> str:
-    """Call OpenAI GPT API with a short timeout."""
     try:
         logger.info("Calling OpenAI GPT...")
         response = openai.ChatCompletion.create(
@@ -154,15 +167,9 @@ async def chatbot_handler(request: Request, data: ChatbotInput):
     logger.info("Chatbot request received")
     try:
         user_id = extract_user_id(request, data)
-        logger.info(f"User ID extracted: {user_id}")
-
-        context = get_context_cached(user_id)
-
+        context = get_cached_context(user_id)
         prompt = build_prompt(data, context)
-        logger.info("Prompt built")
-
         gpt_reply = call_gpt(prompt)
-        logger.info("GPT reply received")
 
         action = None
         if data.current_phase.phase in ["flashcards", "quiz"] and "correct" in gpt_reply.lower():
@@ -174,13 +181,12 @@ async def chatbot_handler(request: Request, data: ChatbotInput):
             action_suggestion=action,
             context_update_required=False
         )
-
     except Exception as e:
         logger.error(f"Chatbot handler failed: {e}")
         raise HTTPException(status_code=500, detail="Chatbot failed to respond")
 
 # ---------------------------
-# Context Save Endpoint (Optional)
+# Context Save Endpoint
 # ---------------------------
 @router.post("/chatbot/save")
 def save_chat_context(payload: Dict[str, Any]):
