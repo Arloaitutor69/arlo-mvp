@@ -66,6 +66,7 @@ def build_gpt_prompt(topic: str, details: Optional[str], duration: int, level: s
         "Instructions:\n"
         "- Break the topic into 4–6 instructional units, like a mini curriculum.\n"
         "- Assign exactly one technique per block: flashcards, quiz, feynman, blurting, or arlo_teaching, and avoid repeats\n"
+        "- never but flashcards and quiz directly next to one another\n"
         "- For each block, return:\n"
         "  • `unit`: concise title\n"
         "  • `technique`: assigned method\n"
