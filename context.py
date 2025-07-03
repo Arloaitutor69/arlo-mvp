@@ -16,7 +16,7 @@ import os, requests, json, threading
 # ---------------------------
 context_cache = {}
 context_stale_threshold = timedelta(minutes=3)
-context_expire_threshold = timedelta(minutes=5)
+context_ttl = timedelta(minutes=3) 
 
 def fetch_and_update_context(user_id: str):
     try:
