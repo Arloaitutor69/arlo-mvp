@@ -20,7 +20,7 @@ context_expire_threshold = timedelta(minutes=5)
 
 def fetch_and_update_context(user_id: str):
     try:
-        res = requests.get(f"{CONTEXT_API_BASE}/api/context/current?user_id={user_id}", timeout=5)
+        res = requests.get(f"{CONTEXT_API_BASE}/api/context/cache?user_id={user_id}", timeout=5)
         res.raise_for_status()
         context_cache[user_id] = (datetime.now(), res.json())
     except Exception as e:
@@ -36,7 +36,7 @@ def get_cached_context(user_id: str):
         return cached_value
     else:
         try:
-            res = requests.get(f"{CONTEXT_API_BASE}/api/context/current?user_id={user_id}", timeout=5)
+            res = requests.get(f"{CONTEXT_API_BASE}/api/context/cache?user_id={user_id}", timeout=5)
             res.raise_for_status()
             context = res.json()
             context_cache[user_id] = (now, context)
