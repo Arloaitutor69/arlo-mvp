@@ -34,7 +34,7 @@ def get_cached_context(user_id: str) -> Dict[str, Any]:
         if now - timestamp < context_ttl:
             return cached_value
     try:
-        response = requests.get(f"{CONTEXT_API}/api/context/cache?user_id={user_id}", timeout=3)
+        response = requests.get(f"{CONTEXT_API}/api/context/cache?user_id={user_id}", timeout=5)
         response.raise_for_status()
         raw = response.json()
         trimmed = {
