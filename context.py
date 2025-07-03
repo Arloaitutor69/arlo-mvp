@@ -20,6 +20,31 @@ context_ttl = timedelta(minutes=5)
 
 # Optional: Get the backend URL from environment variables
 CONTEXT_API = os.getenv("CONTEXT_API_BASE", "https://arlo-mvp-2.onrender.com")
+
+def get_cached_context(user_id: str):
+    now = datetime.now()
+
+    # Return cached context if fresh
+    if user_id in context_cache:
+        timestamp, cached_value = context_cache[user_id]
+        if now - timestamp < context_ttl:
+            return {"cached": True, "stale": False, "context": cached_value}
+
+    # Fetch fresh context from backend
+    try:
+        response = requests.get(f"{CONTEXT_API}/context/current?user_id={user_id}")
+        response.raise_for_status()
+        context = response.json()
+
+        # Save to cache
+        context_cache[user_id] = (now, context)
+
+        return {"cached": False, "stale": False, "context": context}
+    except Exception as e:
+        return {"cached": False, "stale": True, "context": None, "error": str(e)}
+
+
+
 # ------------------------------
 # Supabase lazy initialization
 # ------------------------------
