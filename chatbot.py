@@ -1,3 +1,5 @@
+# FIXED CHATBOT MODULE WITHOUT ACTION LOGIC
+
 from fastapi import APIRouter, FastAPI, HTTPException, Request
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
@@ -46,14 +48,9 @@ class ChatbotInput(BaseModel):
     source: Optional[str] = None
     user_id: Optional[str] = None
 
-class ActionSuggestion(BaseModel):
-    type: str
-    reason: Optional[str] = None
-
 class ChatbotResponse(BaseModel):
     message: str
     follow_up_question: Optional[str] = None
-    action_suggestion: Optional[ActionSuggestion] = None
     context_update_required: bool = False
     learning_concepts_covered: Optional[List[str]] = None
     new_user_goal: Optional[str] = None
@@ -129,11 +126,9 @@ async def chatbot_handler(request: Request, data: ChatbotInput):
         prompt = build_prompt(data)
         gpt_reply = call_gpt(prompt)
 
-
         return ChatbotResponse(
             message=gpt_reply,
             follow_up_question=None,
-            action_suggestion=action,
             context_update_required=False
         )
     except Exception as e:
