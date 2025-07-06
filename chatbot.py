@@ -1,5 +1,3 @@
-# UPDATED CHATBOT MODULE WITH IN-MODULE CONTEXT CACHE AND BETTER STUDY BLOCK DESCRIPTION HANDLING
-
 from fastapi import APIRouter, FastAPI, HTTPException, Request
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
@@ -7,7 +5,6 @@ import openai
 import os
 import logging
 import requests
-from datetime import datetime, timedelta
 
 # ---------------------------
 # Setup
@@ -20,7 +17,6 @@ logger = logging.getLogger("chatbot")
 
 app = FastAPI()
 router = APIRouter()
-
 
 # ---------------------------
 # Schemas
@@ -66,10 +62,7 @@ class ChatbotResponse(BaseModel):
 # Helpers
 # ---------------------------
 def extract_user_id(request: Request, data: ChatbotInput) -> str:
-    user_info = getattr(request.state, "user", None)
-    if user_info and "sub" in user_info:
-        return user_info["sub"]
-    elif request.headers.get("x-user-id"):
+    if request.headers.get("x-user-id"):
         return request.headers["x-user-id"]
     elif data.user_id:
         return data.user_id
@@ -78,14 +71,21 @@ def extract_user_id(request: Request, data: ChatbotInput) -> str:
     else:
         raise HTTPException(status_code=400, detail="Missing user_id in request")
 
-def build_prompt(data: ChatbotInput, context: Dict[str, Any]) -> str:
+def build_prompt(data: ChatbotInput) -> str:
+    # Build short context block from session_summary
     ctx = []
-    # Add phase description from Lovable to stay on topic
-    description = data.current_phase.description or ""
-    phase_type = data.current_phase.phase
-    technique = data.current_phase.tool
+    if data.session_summary.topic:
+        ctx.append(f"Current Topic: {data.session_summary.topic}")
+    if data.session_summary.weak_areas:
+        ctx.append(f"Weak Areas: {', '.join(data.session_summary.weak_areas)}")
+    if data.session_summary.target_level:
+        ctx.append(f"Target Level: {data.session_summary.target_level}")
 
-    history = "\n".join([f"{m['role']}: {m['content']}" for m in data.message_history[-4:]])
+    technique = data.current_phase.tool
+    phase_type = data.current_phase.phase
+    description = data.current_phase.description or ""
+
+    history = "\n".join([f"{m['role']}: {m['content']}" for m in data.message_history[-3:]])
 
     prompt = (
         f"You are Arlo, an AI tutor helping a student learn. Using all information below, continue with the lesson plan \n"
@@ -98,7 +98,6 @@ def build_prompt(data: ChatbotInput, context: Dict[str, Any]) -> str:
         f"Recent Conversation:\n{history}\n\n"
         f"Student input: \"{data.user_input.strip()}\"\n\n"
     )
-
     return prompt
 
 def call_gpt(prompt: str) -> str:
@@ -120,15 +119,16 @@ def call_gpt(prompt: str) -> str:
         return "Sorry, I had trouble generating a response."
 
 # ---------------------------
-# Main Route
+# Main Chatbot Route
 # ---------------------------
 @router.post("/chatbot", response_model=ChatbotResponse)
 async def chatbot_handler(request: Request, data: ChatbotInput):
     logger.info("Chatbot request received")
     try:
         user_id = extract_user_id(request, data)
-        prompt = build_prompt(data, context)
+        prompt = build_prompt(data)
         gpt_reply = call_gpt(prompt)
+
 
         return ChatbotResponse(
             message=gpt_reply,
