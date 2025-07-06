@@ -21,40 +21,6 @@ logger = logging.getLogger("chatbot")
 app = FastAPI()
 router = APIRouter()
 
-# ---------------------------
-# In-memory Context Cache
-# ---------------------------
-context_cache: dict = {}
-context_ttl = timedelta(minutes=5)
-
-def get_cached_context(user_id: str) -> Dict[str, Any]:
-    now = datetime.now()
-    if user_id in context_cache:
-        timestamp, cached_value = context_cache[user_id]
-        if now - timestamp < context_ttl:
-            return cached_value
-    try:
-        response = requests.get(f"{CONTEXT_API}/api/context/cache?user_id={user_id}", timeout=5)
-        response.raise_for_status()
-        raw = response.json()
-        trimmed = {
-            "current_topic": raw.get("current_topic"),
-            "user_goals": raw.get("user_goals", [])[:2],
-            "weak_areas": raw.get("weak_areas", [])[:2],
-            "emphasized_facts": raw.get("emphasized_facts", [])[:2],
-            "preferred_learning_styles": raw.get("preferred_learning_styles", [])[:1]
-        }
-        context_cache[user_id] = (now, trimmed)
-        return trimmed
-    except Exception as e:
-        logger.warning(f"Context fetch failed: {e}")
-        return {
-            "current_topic": "general learning",
-            "weak_areas": [],
-            "user_goals": [],
-            "emphasized_facts": [],
-            "preferred_learning_styles": []
-        }
 
 # ---------------------------
 # Schemas
@@ -114,29 +80,23 @@ def extract_user_id(request: Request, data: ChatbotInput) -> str:
 
 def build_prompt(data: ChatbotInput, context: Dict[str, Any]) -> str:
     ctx = []
-    if context.get("current_topic"):
-        ctx.append(f"Current Topic: {context['current_topic']}")
-    if context.get("weak_areas"):
-        ctx.append(f"Weak Areas: {', '.join(context['weak_areas'])}")
-    if context.get("emphasized_facts"):
-        ctx.append(f"Important Facts: {', '.join(context['emphasized_facts'])}")
-
     # Add phase description from Lovable to stay on topic
     description = data.current_phase.description or ""
     phase_type = data.current_phase.phase
     technique = data.current_phase.tool
 
-    history = "\n".join([f"{m['role']}: {m['content']}" for m in data.message_history[-2:]])
+    history = "\n".join([f"{m['role']}: {m['content']}" for m in data.message_history[-4:]])
 
     prompt = (
-        f"You are Arlo, an AI tutor helping a student with the current learning phase.\n"
+        f"You are Arlo, an AI tutor helping a student learn. Using all information below, continue with the lesson plan \n"
+        f"ensuring that all information is presented in detailed, concise, and informative form. Keep teaching continous\n"
+        f"and guided to teach all relevant information about topic, without repeating content unless clarification is needed\n"
         f"Technique: {technique}\n"
         f"Phase Type: {phase_type}\n"
         f"Description of task: {description}\n"
         f"{chr(10).join(ctx)}\n\n"
         f"Recent Conversation:\n{history}\n\n"
         f"Student input: \"{data.user_input.strip()}\"\n\n"
-        "Your response should directly support the student's progress in this phase. Be concise, clear, and encouraging."
     )
 
     return prompt
