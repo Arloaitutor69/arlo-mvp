@@ -127,13 +127,8 @@ async def chatbot_handler(request: Request, data: ChatbotInput):
     logger.info("Chatbot request received")
     try:
         user_id = extract_user_id(request, data)
-        context = get_cached_context(user_id)
         prompt = build_prompt(data, context)
         gpt_reply = call_gpt(prompt)
-
-        action = None
-        if data.current_phase.phase in ["flashcards", "quiz"] and "correct" in gpt_reply.lower():
-            action = ActionSuggestion(type="next_phase", reason="Answer was correct")
 
         return ChatbotResponse(
             message=gpt_reply,
