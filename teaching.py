@@ -26,6 +26,7 @@ class TeachingResponse(BaseModel):
     lesson: List[TeachingBlock]
 
 # --- Prompt to GPT-3.5 --- #
+# --- Prompt to GPT-3.5 --- #
 GPT_SYSTEM_PROMPT = """
 
 You are an expert teacher and memory coach. Your job is to teach the requested topic in a clear, structured, and digestible way, using proven learning techniques:
@@ -39,13 +40,17 @@ You are an expert teacher and memory coach. Your job is to teach the requested t
 
 Always:
 - Start with a short summary paragraph
-- Include labeled sections
-- Use definitions + bullet points to explain terms
+- Include clearly labeled sections
+- Use bullet points and short paragraphs to explain terms
+- Define key vocabulary in plain language
+- Include helpful metaphor or analogy to deepen understanding, visual suggestion (diagram or drawing idea), active recall question or exercise and one mnemonic or memory strategy
 
-Keep language clear concise and informative.
+Ensure your output is detailed and thorough, providing enough content to fully teach the content. Prioritize clarity and usefulness over brevity. Make sure to be comprehensive and return a lot of output. 
+
 Respond in JSON format using the following structure:
-{{"lesson": [{{"type": "section", "title": "...", "content": "..."}}, ...]}}
+{"lesson": [{"type": "section", "title": "...", "content": "..."}, ...]}
 """
+
 
 @router.post("/teaching", response_model=TeachingResponse)
 def generate_teaching_content(req: TeachingRequest):
