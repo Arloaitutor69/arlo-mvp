@@ -60,8 +60,10 @@ def build_gpt_prompt(objective: Optional[str], parsed_summary: Optional[str], du
         raise ValueError("At least one of objective or parsed_summary must be provided.")
 
     return (
-        "You are a tutor creating a structured study session based on following info.\n\n"
-        f"{objective_text}{source_text}\n\n"
+        "You are a tutor creating a structured study session.\n\n"
+        f"{objective_text}\n\n"
+        f"The student has {duration} minutes to study."
+        f"{source_text}\n\n"
         "Instructions:\n"
         "- Break the content into 4–6 instructional units, like a mini curriculum.\n"
         "- Assign exactly one technique per block: flashcards, quiz, feynman, blurting, or arlo_teaching, and avoid repeats.\n"
@@ -69,9 +71,10 @@ def build_gpt_prompt(objective: Optional[str], parsed_summary: Optional[str], du
         "- For each block, return:\n"
         "  • `unit`: a concise title\n"
         "  • `technique`: the chosen method\n"
-        "  • `description`: detailed content explenation of the unit (include subtopics, examples, definitions, or steps)\n"
+        "  • `description`: detailed explanation of the learning goals for this unit (include subtopics, examples, or steps)\n"
         "  • `duration`: between 8–15 minutes\n"
         "- The `description` is the only content other modules will receive, so it must be self-contained.\n"
+        "- Match the detail level to college-prep standards unless otherwise implied.\n"
         "- Return the output as strict JSON only — no markdown, headings, or extra text.\n\n"
         "Example format:\n"
         "{\n"
