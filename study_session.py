@@ -71,7 +71,7 @@ def build_gpt_prompt(objective: Optional[str], parsed_summary: Optional[str], du
         "- For each block, return:\n"
         "  • `unit`: a concise title\n"
         "  • `technique`: the chosen method\n"
-        "  • `description`: provide detailed content/information for this unit, enough specifics to fully capture what needs to be learned\n"
+        "  • `description`: only provide detailed content/information for this unit, enough specifics to fully capture what needs to be learned\n"
         "  • `duration`: between 8–15 minutes\n"
         "- The `description` is the only content other modules will receive, so it must be self-contained.\n"
         "- Return the output as strict JSON only — no markdown, headings, or extra text.\n\n"
