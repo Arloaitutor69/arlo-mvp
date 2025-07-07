@@ -84,7 +84,7 @@ def build_gpt_prompt(objective: Optional[str], parsed_summary: Optional[str], du
         "    {\n"
         "      \"unit\": \"Structure of the Cell Membrane\",\n"
         "      \"technique\": \"flashcards\",\n"
-        "      \"description\": \"Review phospholipid bilayer components and embedded proteins...\",\n"
+        "      \"description\": \"all content for unit...\",\n"
         "      \"duration\": 10\n"
         "    }\n"
         "  ]\n"
