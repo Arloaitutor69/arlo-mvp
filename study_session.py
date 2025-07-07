@@ -14,12 +14,9 @@ router = APIRouter()
 
 # --- Models ---
 class StudyPlanRequest(BaseModel):
-    topic: str
-    duration: int
-    details: Optional[str] = None
-    difficulty: Optional[str] = "medium"
-    target_level: Optional[str] = "high_school"
-    parsed_text: Optional[str] = None
+    objective: Optional[str] = None  # Freeform input from student
+    parsed_summary: Optional[str] = None  # Optional PDF parser output
+    duration: int = 60
 
 class StudyBlock(BaseModel):
     id: str
@@ -55,26 +52,27 @@ def extract_user_id(request: Request) -> str:
         raise HTTPException(status_code=400, detail="Missing user_id in request")
 
 # --- Prompt builder ---
-def build_gpt_prompt(topic: str, details: Optional[str], duration: int, level: str, parsed_text: Optional[str]) -> str:
-    detail_text = f"\nThe student mentioned specific goals:\n\"{details.strip()}\"" if details else ""
-    source_text = f"\n\nUse the following source material as your primary reference:\n{parsed_text[:3000]}..." if parsed_text else ""
+def build_gpt_prompt(objective: Optional[str], parsed_summary: Optional[str], duration: int) -> str:
+    objective_text = f"The student wrote the following objective:\n\"{objective.strip()}\"" if objective else ""
+    source_text = f"\n\nUse the following academic content as your reference:\n{parsed_summary[:3000]}..." if parsed_summary else ""
+
+    if not objective and not parsed_summary:
+        raise ValueError("At least one of objective or parsed_summary must be provided.")
 
     return (
-        "You are a tutor creating a structured study session.\n\n"
-        f"The student has {duration} minutes to study: \"{topic}\" at a **{level} level**."
-        f"{detail_text}{source_text}\n\n"
+        "You are a tutor creating a structured study session based on following info.\n\n"
+        f"{objective_text}{source_text}\n\n"
         "Instructions:\n"
-        "- Break the topic into 4–6 instructional units, like a mini curriculum.\n"
-        "- Assign exactly one technique per block: flashcards, quiz, feynman, blurting, or arlo_teaching, and avoid repeats\n"
-        "- never but flashcards and quiz directly next to one another\n"
+        "- Break the content into 4–6 instructional units, like a mini curriculum.\n"
+        "- Assign exactly one technique per block: flashcards, quiz, feynman, blurting, or arlo_teaching, and avoid repeats.\n"
+        "- Never place flashcards and quiz blocks directly next to one another.\n"
         "- For each block, return:\n"
-        "  • `unit`: concise title\n"
-        "  • `technique`: assigned method\n"
-        "  • `description`: clear and specific — include subtopics, terms, goals, and examples\n"
-        "  • `duration`: 8–15 minutes\n"
-        "- The `description` is the only input other modules will see — make it self-contained.\n"
-        "- Match difficulty to the academic level.\n"
-        "- Return output as strict JSON only — no markdown, headings, or extra text.\n\n"
+        "  • `unit`: a concise title\n"
+        "  • `technique`: the chosen method\n"
+        "  • `description`: detailed content explenation of the unit (include subtopics, examples, definitions, or steps)\n"
+        "  • `duration`: between 8–15 minutes\n"
+        "- The `description` is the only content other modules will receive, so it must be self-contained.\n"
+        "- Return the output as strict JSON only — no markdown, headings, or extra text.\n\n"
         "Example format:\n"
         "{\n"
         "  \"units_to_cover\": [\"Structure of the Cell Membrane\", \"Photosynthesis Pathway\"],\n"
@@ -84,20 +82,19 @@ def build_gpt_prompt(topic: str, details: Optional[str], duration: int, level: s
         "    {\n"
         "      \"unit\": \"Structure of the Cell Membrane\",\n"
         "      \"technique\": \"flashcards\",\n"
-        "      \"description\": \"Review phospholipid bilayer components...\",\n"
+        "      \"description\": \"Review phospholipid bilayer components and embedded proteins, focusing on permeability and fluidity principles.\",\n"
         "      \"duration\": 10\n"
         "    }\n"
         "  ]\n"
         "}"
-)
-
+    )
 
 # --- Endpoint ---
 @router.post("/study-session", response_model=StudyPlanResponse)
 def generate_plan(data: StudyPlanRequest, request: Request):
     try:
         user_id = extract_user_id(request)
-        prompt = build_gpt_prompt(data.topic, data.details, data.duration, data.target_level, data.parsed_text)
+        prompt = build_gpt_prompt(data.objective, data.parsed_summary, data.duration)
 
         completion = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
@@ -145,7 +142,7 @@ def generate_plan(data: StudyPlanRequest, request: Request):
                         "review_scheduled": False
                     }
                 }
-                print("📤 Sending to context:\n", json.dumps(payload, indent=2))
+                print("\U0001f4e4 Sending to context:\n", json.dumps(payload, indent=2))
                 resp = requests.post(f"{CONTEXT_API}/api/context/update", json=payload)
                 print("✅ Context update response:", resp.status_code, resp.text)
                 if resp.status_code == 200:
@@ -166,16 +163,15 @@ def generate_plan(data: StudyPlanRequest, request: Request):
             ))
             total_time += mins
 
-        # Trigger synthesis after all blocks logged
         if any_block_logged:
             try:
-                print("🧠 Final plan context + synthesis trigger...")
+                print("\U0001f9e0 Final plan context + synthesis trigger...")
                 final_payload = {
                     "source": "session_planner",
                     "user_id": user_id,
-                    "current_topic": f"Full study plan: {data.topic}",
+                    "current_topic": f"Full study plan",
                     "learning_event": {
-                        "concept": data.topic,
+                        "concept": data.objective or "Study Plan",
                         "phase": "planning",
                         "confidence": None,
                         "depth": None,
@@ -186,13 +182,13 @@ def generate_plan(data: StudyPlanRequest, request: Request):
                     "trigger_synthesis": True
                 }
                 synth = requests.post(f"{CONTEXT_API}/api/context/update", json=final_payload)
-                print("🧠 Synthesis response:", synth.status_code, synth.text)
+                print("\U0001f9e0 Synthesis response:", synth.status_code, synth.text)
             except Exception as e:
                 print("⚠️ Failed to trigger synthesis:", e)
 
         return StudyPlanResponse(
             session_id=session_id,
-            topic=data.topic,
+            topic=data.objective or "Generated from PDF",
             total_duration=total_time,
             pomodoro=pomodoro,
             units_to_cover=units,
