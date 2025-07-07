@@ -7,3 +7,4 @@ PyPDF2==3.0.1
 python-multipart
 git+https://github.com/supabase-community/supabase-py.git@v1.0.3
 PyJWT>=2.0.0
+PyMuPDF
