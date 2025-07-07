@@ -35,10 +35,16 @@ async def parse_pdf(file: UploadFile = File(...)):
     # Step 3: Send to OpenAI for summarization
     try:
         prompt = (
-            "You are an academic summarizer. Summarize the following PDF content into a concise, clear overview "
-            "that captures the main ideas and topics. Don't miss any key details, facts, or definitions.\n\n"
+            "You are an AI tutor helping design a personalized study plan from a student's document.\n\n"
+            "Your task is to extract only the *academic content* from the following text. Ignore all non-learning info "
+            "(such as professors, textbooks, grading, or scheduling).\n\n"
+            "Summarize the key learning material in a way that supports building a detailed study curriculum. "
+            "Include:\n"
+            "- Core topics and subtopics\n"
+            "- Important definitions or terms\n"
             f"{text.strip()}"
         )
+
 
         response = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
