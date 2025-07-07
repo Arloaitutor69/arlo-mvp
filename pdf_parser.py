@@ -9,7 +9,7 @@ router = APIRouter()
 # Load your OpenAI API key from environment
 openai.api_key = os.getenv("OPENAI_API_KEY")
 
-@router.post("/api/pdf/parse", response_class=PlainTextResponse)
+@router.post("/pdf/parse", response_class=PlainTextResponse)
 async def parse_pdf(file: UploadFile = File(...)):
     # Step 1: Check file type
     if not file.filename.endswith(".pdf"):
