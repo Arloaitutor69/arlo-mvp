@@ -2,12 +2,12 @@
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from typing import List, Literal
+from typing import List, Literal, Union
 import openai
 import os
 import json
 
-# Ensure your OpenAI key is loaded from environment
+# Load OpenAI key from environment
 openai.api_key = os.getenv("OPENAI_API_KEY")
 
 router = APIRouter()
@@ -16,19 +16,17 @@ router = APIRouter()
 class TeachingRequest(BaseModel):
     description: str
 
-# --- Output block schema --- #
+# --- Output schema --- #
 class TeachingBlock(BaseModel):
     type: Literal["section", "bullet_list", "example", "diagram_hint", "interactive_tip"]
     title: str
-    content: str
+    content: Union[str, List[str]]  # support both plain strings and structured lists
 
 class TeachingResponse(BaseModel):
     lesson: List[TeachingBlock]
 
-# --- Prompt to GPT-3.5 --- #
-# --- Prompt to GPT-3.5 --- #
+# --- GPT Prompt --- #
 GPT_SYSTEM_PROMPT = """
-
 You are an expert teacher and memory coach. Your job is to teach the requested topic in a clear, structured, and digestible way, using proven learning techniques:
 - Active recall
 - Mnemonics
@@ -43,14 +41,14 @@ Always:
 - Include clearly labeled sections
 - Use bullet points and short paragraphs to explain terms
 - Define key vocabulary in plain language
-- Include helpful metaphor or analogy to deepen understanding, visual suggestion (diagram or drawing idea), active recall question or exercise and one mnemonic or memory strategy
+- Include helpful metaphor or analogy to deepen understanding, visual suggestion (diagram or drawing idea), active recall question or exercise, and one mnemonic or memory strategy
+- If listing bullet points, use type: "bullet_list" and make content an array of strings
 
-Ensure your output is detailed and thorough, providing enough content to fully teach the content. Prioritize clarity and usefulness over brevity. Make sure to be comprehensive and return a lot of output. 
+Ensure your output is detailed and thorough, providing enough content to fully teach the content. Prioritize clarity and usefulness over brevity. Make sure to be comprehensive and return a lot of output.
 
 Respond in JSON format using the following structure:
 {"lesson": [{"type": "section", "title": "...", "content": "..."}, ...]}
 """
-
 
 @router.post("/teaching", response_model=TeachingResponse)
 def generate_teaching_content(req: TeachingRequest):
@@ -68,6 +66,20 @@ def generate_teaching_content(req: TeachingRequest):
 
         raw_output = response["choices"][0]["message"]["content"]
         parsed_output = json.loads(raw_output)
+
+        # Cleanup: convert malformed bullet dicts into list of strings
+        for block in parsed_output.get("lesson", []):
+            content = block.get("content")
+            if isinstance(content, list):
+                # Convert list of dicts to list of strings if needed
+                new_content = []
+                for item in content:
+                    if isinstance(item, dict) and "content" in item:
+                        new_content.append(item["content"])
+                    elif isinstance(item, str):
+                        new_content.append(item)
+                block["content"] = new_content
+
         return parsed_output
 
     except Exception as e:
