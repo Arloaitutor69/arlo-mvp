@@ -70,8 +70,7 @@ from feynman_feedback import router as feynman_router
 from blurting import router as blurting_router
 from context import router as context_router
 from pdf_parser import router as pdf_parser_router
-
-
+from teaching import router as teaching_router
 # --- Include all routes ---
 app.include_router(flashcard_router, prefix="/api")
 app.include_router(quiz_router, prefix="/api/quiz")
@@ -82,6 +81,7 @@ app.include_router(feynman_router, prefix="/api")
 app.include_router(blurting_router, prefix="/api")
 app.include_router(context_router, prefix="/api")
 app.include_router(pdf_parser_router, prefix="/api")
+app.include_router(teaching_router, prefix="/api")
 
 # --- Root and health check ---
 @app.get("/")
