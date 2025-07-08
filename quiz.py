@@ -39,11 +39,10 @@ def get_cached_context(user_id: str):
 
 # --- Models ---
 class QuizRequest(BaseModel):
-    topic: str
+    content: str
     difficulty: Optional[Literal["easy", "medium", "hard"]] = "medium"
-    question_count: Optional[int] = 5
-    question_types: Optional[List[Literal["multiple_choice", "true_false"]]] = None
-    source: Optional[str] = None
+    question_types: Optional[List[Literal["multiple_choice", "true_false"]]] = ["multiple_choice"]
+    user_id: Optional[str] = None
 
 class QuizQuestion(BaseModel):
     id: int
@@ -64,8 +63,8 @@ def extract_user_id(request: Request, req: QuizRequest) -> Optional[str]:
         return user_info["sub"]
     elif request.headers.get("x-user-id"):
         return request.headers["x-user-id"]
-    elif req.source and req.source.startswith("user:"):
-        return req.source.replace("user:", "")
+    elif req.user_id:
+        return req.user_id
     else:
         return None
 
@@ -97,17 +96,21 @@ def log_learning_event(topic, summary, count, user_id: Optional[str] = None):
         print("❌ Failed to log learning event:", e)
 
 # --- GPT Helper ---
-def generate_questions(topic, difficulty, count, types, context):
+def generate_questions(content, difficulty, types, context):
     system_msg = "You are a quiz tutor who writes clear, factual questions in JSON."
 
-    current_topic = context.get("current_topic", "")
+    current_topic = context.get("current_topic", "General")
     weak_areas = ", ".join(context.get("weak_areas", []))
     emphasized_facts = ", ".join(context.get("emphasized_facts", []))
     user_goals = ", ".join(context.get("user_goals", []))
     review_queue = ", ".join(context.get("review_queue", []))
 
     user_msg = f"""
-Generate {count} quiz questions on the topic: \"{topic}\" (context: \"{current_topic}\").
+Generate 8 - 12 quiz questions based on the content that was taught to user: 
+{content}
+
+Ensure all questions are detailed, thought provoking, meant to consolidate infromation and get student
+to think more about what they learnt. 
 Difficulty: \"{difficulty}\".
 Allowed types: {types}.
 
@@ -134,7 +137,7 @@ No markdown, no preamble.
     try:
         print("🧐 Sending request to GPT...")
         response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo-0125",
+            model="gpt-3.5-turbo",
             messages=[
                 {"role": "system", "content": system_msg},
                 {"role": "user", "content": user_msg}
@@ -171,17 +174,14 @@ async def create_quiz(req: QuizRequest, request: Request):
     user_id = extract_user_id(request, req)
     print("🔍 Using user_id:", user_id)
 
-    topic = req.topic.strip()
     difficulty = req.difficulty or "medium"
-    count = max(1, min(req.question_count or 5, 10))
     types = req.question_types or ["multiple_choice"]
 
     context = get_cached_context(user_id)
 
     questions = generate_questions(
-        topic=topic,
+        content=req.content,
         difficulty=difficulty,
-        count=count,
         types=types,
         context=context
     )
@@ -189,6 +189,6 @@ async def create_quiz(req: QuizRequest, request: Request):
     quiz_id = f"quiz_{uuid.uuid4().hex[:6]}"
     summary = "; ".join(q.question for q in questions)
 
-    log_learning_event(topic, summary, len(questions), user_id)
+    log_learning_event(context.get("current_topic", "General"), summary, len(questions), user_id)
 
     return QuizResponse(quiz_id=quiz_id, questions=questions)
