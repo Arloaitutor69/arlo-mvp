@@ -16,7 +16,7 @@ load_dotenv()
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("feynman_feedback")
 
 # OpenAI and Context API configuration
 openai.api_key = os.getenv("OPENAI_API_KEY")
@@ -93,7 +93,6 @@ def run_feynman_phase(request: Request, payload: FeynmanRequest):
     user_id = extract_user_id(request, payload)
     context = get_cached_context(user_id)
 
-    # Build context summary string
     context_lines = []
     if context.get("current_topic"):
         context_lines.append(f"Current topic: {context['current_topic']}")
@@ -112,6 +111,7 @@ def run_feynman_phase(request: Request, payload: FeynmanRequest):
         f"You are Arlo, an AI tutor helping a student master the concept of \"{payload.concept}\".\n"
         f"They just tried to explain it in their own words:\n\"{payload.user_explanation}\"\n\n"
         f"Use the personalized context and tutoring context below to guide your response.\n\n"
+        f"{payload.personalized_context or context_summary}\n\n"
         "Your task:\n"
         "- Analyze the student's explanation for clarity and completeness.\n"
         "- Start with one sentence that affirms what they got right.\n"
@@ -163,11 +163,12 @@ def generate_feynman_exercises(request: Request, payload: FeynmanExerciseRequest
 
     prompt = (
         f"You are an AI tutor designing two Feynman-style exercises to help a student deeply understand the concept of \"{payload.concept}\".\n"
-        f"The student just studied this teaching content:\n\"{payload.teaching_block}\"\n\n"
+        f"They just studied this teaching content:\n\"{payload.teaching_block}\"\n\n"
         f"Only generate exercises if the content includes complex, conceptual ideas, processes, or mechanisms that would benefit from being taught aloud or in simplified terms.\n\n"
         f"Each exercise should involve either teaching it to a beginner, drawing a metaphor, or exploring what-if changes to the process.\n\n"
-        f"Return only a JSON object with two exercises in this format:\n"
-        f"{{\n  'exercise_1': {{'prompt': ..., 'focus': ...}},\n  'exercise_2': {{'prompt': ..., 'focus': ...}}\n}}"
+        f"Use this context if useful:\n{json.dumps(context, indent=2)}\n\n"
+        f"Respond ONLY with valid minified JSON using double quotes. Format:\n"
+        f"{{\"exercise_1\": {{\"prompt\": ..., \"focus\": ...}}, \"exercise_2\": {{\"prompt\": ..., \"focus\": ...}}}}"
     )
 
     try:
