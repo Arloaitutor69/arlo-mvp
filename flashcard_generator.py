@@ -1,4 +1,4 @@
-# UPDATED FLASHCARDS MODULE WITH SHARED IN-MODULE CONTEXT CACHE
+# flashcards.py
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
@@ -38,16 +38,13 @@ def get_cached_context(user_id: str):
         print("❌ Failed to fetch context:", e)
         return {}
 
-# --- Input model from the frontend or planner ---
+# --- Input model ---
 class FlashcardRequest(BaseModel):
-    topic: str
-    content: Optional[str] = ""
-    difficulty: Optional[str] = "medium"
-    count: Optional[int] = 10
+    content: str
     format: Optional[str] = "Q&A"
     user_id: Optional[str] = None
 
-# --- Output schema for flashcard items ---
+# --- Output schema ---
 class FlashcardItem(BaseModel):
     id: str
     front: str
@@ -79,10 +76,14 @@ def generate_flashcards(request: Request, data: FlashcardRequest):
     user_id = extract_user_id(request, data)
     context = get_cached_context(user_id)
 
+    count = 12
+    difficulty = "medium"
+    topic = context.get("current_topic", "general")
+
     personalization = ""
     if context:
         personalization = f"""
-Session topic: {context.get('current_topic', data.topic)}
+Session topic: {topic}
 Emphasize: {', '.join(context.get('emphasized_facts', [])) or 'N/A'}
 Weak areas: {', '.join(context.get('weak_areas', [])) or 'N/A'}
 Goals: {', '.join(context.get('user_goals', [])) or 'N/A'}
@@ -126,24 +127,24 @@ Return only the JSON array — no other text.
     flashcards = []
     questions_summary = []
 
-    for item in cards[:data.count]:
+    for item in cards[:count]:
         q = item.get("question", "No question.")
         a = item.get("answer", "No answer.")
         flashcards.append(FlashcardItem(
             id=f"card_{uuid.uuid4().hex[:6]}",
             front=q,
             back=a,
-            difficulty=data.difficulty,
-            category=data.topic
+            difficulty=difficulty,
+            category=topic
         ))
         questions_summary.append(q)
 
     post_context_update({
         "source": "flashcards",
         "user_id": user_id,
-        "current_topic": data.topic,
+        "current_topic": topic,
         "learning_event": {
-            "concept": data.topic,
+            "concept": topic,
             "phase": "flashcards",
             "confidence": 0.5,
             "depth": "shallow",
