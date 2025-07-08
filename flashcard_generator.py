@@ -90,19 +90,16 @@ Review queue: {', '.join(context.get('review_queue', [])) or 'N/A'}
 """
 
     prompt = f"""
-You are a flashcard-generating tutor.
+You are a personalized flashcard-generating tutor. Please generate detailed, optimized flaschards for memory retention and understanding. 
+Base flashcards primarily off of what was taught to user: {data.content} and prioritize information that can be best memorized using flashcards. 
 
-Topic: {data.topic}
-Notes: {data.content or 'Use general knowledge.'}
-
-Create exactly {data.count} flashcards as a JSON array with objects like:
+Create exactly 10 - 15 flashcards as a JSON array with objects like:
   {{ "question": "...", "answer": "..." }}
 
 Requirements:
-- Format: {data.format} (only Q&A supported for now)
-- Difficulty: {data.difficulty}
+- Format: {data.format} (only Q&A supported)
 - Include variety: facts, definitions, exceptions, how-to steps
-- Prioritize clarity, helpfulness, and spaced retention
+- Prioritize clarity, helpfulness, and detail 
 - Adapt based on: {personalization.strip()}
 
 Return only the JSON array — no other text.
