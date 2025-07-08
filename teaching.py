@@ -67,11 +67,16 @@ def generate_teaching_content(req: TeachingRequest):
         raw_output = response["choices"][0]["message"]["content"]
         parsed_output = json.loads(raw_output)
 
-        # Cleanup: convert malformed bullet dicts into list of strings
-        for block in parsed_output.get("lesson", []):
+        # Cleanup: ensure valid structure
+        for i, block in enumerate(parsed_output.get("lesson", [])):
+
+            # Fallback: insert title if missing
+            if not block.get("title"):
+                block["title"] = f"Part {i + 1}"
+
+            # Normalize bullet lists
             content = block.get("content")
             if isinstance(content, list):
-                # Convert list of dicts to list of strings if needed
                 new_content = []
                 for item in content:
                     if isinstance(item, dict) and "content" in item:
