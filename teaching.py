@@ -69,21 +69,38 @@ def generate_teaching_content(req: TeachingRequest):
 
         # Cleanup: ensure valid structure
         for i, block in enumerate(parsed_output.get("lesson", [])):
-
             # Fallback: insert title if missing
+            if not isinstance(block, dict):
+                continue
+
             if not block.get("title"):
                 block["title"] = f"Part {i + 1}"
 
-            # Normalize bullet lists
-            content = block.get("content")
-            if isinstance(content, list):
+            if "type" not in block or block["type"] not in ["section", "bullet_list", "example", "diagram_hint", "interactive_tip"]:
+                block["type"] = "section"
+
+            # Fix nested content dicts like {"bullet_list": [...]}
+            if isinstance(block.get("content"), dict):
+                if "bullet_list" in block["content"]:
+                    block["content"] = block["content"]["bullet_list"]
+
+            # Flatten malformed bullet lists of dicts
+            if isinstance(block.get("content"), list):
                 new_content = []
-                for item in content:
+                for item in block["content"]:
                     if isinstance(item, dict) and "content" in item:
                         new_content.append(item["content"])
                     elif isinstance(item, str):
                         new_content.append(item)
                 block["content"] = new_content
+
+            # Final fallback: convert list to string if block is not bullet_list
+            if block["type"] != "bullet_list" and isinstance(block["content"], list):
+                block["content"] = "\n".join(block["content"])
+
+            # Fallback if content is still invalid type
+            if not isinstance(block["content"], (str, list)):
+                block["content"] = str(block["content"])
 
         return parsed_output
 
