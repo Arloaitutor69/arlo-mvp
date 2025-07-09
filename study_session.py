@@ -60,7 +60,7 @@ def build_gpt_prompt(objective: Optional[str], parsed_summary: Optional[str], du
         raise ValueError("At least one of objective or parsed_summary must be provided.")
 
     return (
-        "You are a tutor creating a structured study session.\n\n"
+        "You are a world-class tutor. For each study block, write a full, self-contained lesson plan to capture that unit and avoid repitition in next units."
         f"{objective_text}\n\n"
         f"The student has {duration} minutes to study."
         f"{source_text}\n\n"
