@@ -75,7 +75,7 @@ def build_gpt_prompt(objective: Optional[str], parsed_summary: Optional[str], du
         "- For each block, return:\n"
         "  • `unit`: a concise title\n"
         "  • `technique`: the chosen method\n"
-        "  • `description`: only provide detailed content/information for this unit, enough specifics to fully capture what needs to be learned\n"
+        "  • `description`: include all core facts, steps, sub-concepts, definitions, and examples needed to fully learn the unit; write it like a short tutoring explanation or teaching note\n"
         "  • `duration`: between 8–15 minutes\n"
         "- The `description` is the only content other modules will receive, so it must be self-contained.\n"
         "- Return the output as strict JSON only — no markdown, headings, or extra text.\n\n"
@@ -108,7 +108,7 @@ def generate_plan(data: StudyPlanRequest, request: Request):
                 {"role": "system", "content": "You are a world-class curriculum planner."},
                 {"role": "user", "content": prompt}
             ],
-            temperature=0.5
+            temperature=0.7
         )
 
         raw = completion.choices[0].message.content.strip()
