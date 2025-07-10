@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from typing import List, Literal, Union
+from typing import List, Literal, Union, Optional
 import openai
 import os
 import json
@@ -12,96 +12,217 @@ openai.api_key = os.getenv("OPENAI_API_KEY")
 
 router = APIRouter()
 
-# --- Input schema: only description --- #
+# --- Input schema: enhanced with context --- #
 class TeachingRequest(BaseModel):
     description: str
+    subject: Optional[str] = None  # e.g., "Biology", "History", "Mathematics"
+    level: Optional[str] = None    # e.g., "High School", "College", "Graduate"
+    test_type: Optional[str] = None # e.g., "SAT", "AP Exam", "Midterm", "Final"
 
 # --- Output schema --- #
 class TeachingBlock(BaseModel):
-    type: Literal["section", "bullet_list", "example", "diagram_hint", "interactive_tip"]
+    type: Literal["overview", "key_concepts", "detailed_explanation", "examples", "test_strategies", "practice_questions", "memory_aids", "common_mistakes"]
     title: str
-    content: Union[str, List[str]]  # support both plain strings and structured lists
+    content: Union[str, List[str]]
+    importance: Optional[str] = None  # "High", "Medium", "Low" for test relevance
 
 class TeachingResponse(BaseModel):
     lesson: List[TeachingBlock]
+    estimated_study_time: str
+    difficulty_level: str
+    test_tips: List[str]
 
-# --- GPT Prompt --- #
+# --- Enhanced GPT Prompt --- #
 GPT_SYSTEM_PROMPT = """
-You are an expert teacher and memory coach. Your job is to teach the requested topic in a clear, structured, and digestible way, using proven learning techniques:
-- Active recall
-- Mnemonics
-- Chunking
-- Memory palace (descriptive visuals)
-- Metaphors/examples (especially based on student interests)
-- Bullet points + short paragraphs + definitions
-- Humor and engagement when appropriate
+You are an elite test preparation tutor with expertise across all academic subjects. Your mission is to create comprehensive, test-focused learning content that maximizes student performance on exams.
 
-Always:
-- Start with a short summary paragraph
-- Include clearly labeled sections
-- Use bullet points and short paragraphs to explain terms
-- Define key vocabulary in plain language
-- Include helpful metaphor or analogy to deepen understanding, visual suggestion (diagram or drawing idea), active recall question or exercise, and one mnemonic or memory strategy
-- If listing bullet points, use type: "bullet_list" and make content an array of strings
+CORE TEACHING PRINCIPLES:
+1. TEST-CENTRIC APPROACH: Everything must be relevant to potential test questions or school curriculums 
+2. COMPREHENSIVE COVERAGE: Cover all essential concepts thoroughly
+3. STRATEGIC FOCUS: Prioritize high-yield topics that frequently appear on tests
+4. CLARITY & EFFICIENCY: Clear explanations without unnecessary fluff
 
-Ensure your output is detailed and thorough, providing enough content to fully teach the content. Prioritize clarity and usefulness over brevity. Make sure to be comprehensive and return a lot of output.
+CONTENT STRUCTURE REQUIREMENTS:
+- Start with a strategic overview highlighting what's most important for tests
+- Identify and thoroughly explain key concepts with precise definitions
+- Provide detailed explanations with step-by-step breakdowns
+- Include multiple relevant examples showing different question types
+- Provide memory aids (mnemonics, acronyms, visual associations)
+- Highlight common mistakes and misconceptions to avoid
 
-Respond in JSON format using the following structure:
-{"lesson": [{"type": "section", "title": "...", "content": "..."}, ...]}
+CONTENT QUALITY STANDARDS:
+- Each section should be substantial (200-300 words minimum)
+- Include specific facts, formulas, dates, or processes as applicable
+- Focus on understanding AND memorization where both are needed
+
+OUTPUT FORMAT:
+Return comprehensive JSON with these block types:
+- "overview": Strategic summary of what students need to know for tests
+- "key_concepts": Essential definitions and core principles
+- "detailed_explanation": In-depth coverage of complex topics
+- "examples": Multiple worked examples showing different approaches
+- "test_strategies": Specific tactics for test success
+- "practice_questions": Sample questions with explanations
+- "memory_aids": Mnemonics, acronyms, visualization techniques
+- "common_mistakes": Pitfalls to avoid and how to prevent them
+
+RESPONSE STRUCTURE:
+{
+  "lesson": [
+    {
+      "type": "overview",
+      "title": "Test-Focused Overview",
+      "content": "Strategic summary...",
+      "importance": "High"
+    },
+    {
+      "type": "key_concepts", 
+      "title": "Essential Concepts",
+      "content": ["Concept 1: Definition...", "Concept 2: Definition..."],
+      "importance": "High"
+    }
+  ],
+  "estimated_study_time": "2-3 hours",
+  "difficulty_level": "Intermediate",
+  "test_tips": ["Tip 1", "Tip 2", "Tip 3"]
+}
+
+Make content comprehensive, test-relevant, and immediately actionable for student success.
 """
 
 @router.post("/teaching", response_model=TeachingResponse)
 def generate_teaching_content(req: TeachingRequest):
     try:
+        # Enhanced context for better content generation
+        context_info = ""
+        if req.subject:
+            context_info += f"Subject: {req.subject}\n"
+        if req.level:
+            context_info += f"Academic Level: {req.level}\n"
+        if req.test_type:
+            context_info += f"Test Type: {req.test_type}\n"
+        
+        user_prompt = f"{context_info}\nTopic to teach: {req.description}\n\nProvide comprehensive test-focused teaching content covering all essential aspects of this topic."
+
         messages = [
             {"role": "system", "content": GPT_SYSTEM_PROMPT},
-            {"role": "user", "content": req.description}
+            {"role": "user", "content": user_prompt}
         ]
 
         response = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
             messages=messages,
-            temperature=0.7,
+            temperature=0.3,  # Lower temperature for more consistent, focused output
+            max_tokens=3000,  # Increased for more comprehensive content
         )
 
         raw_output = response["choices"][0]["message"]["content"]
         parsed_output = json.loads(raw_output)
 
-        # Cleanup: ensure valid structure
-        for i, block in enumerate(parsed_output.get("lesson", [])):
-            # Fallback: insert title if missing
+        # Enhanced validation and cleanup
+        lesson_blocks = parsed_output.get("lesson", [])
+        
+        # Ensure comprehensive coverage by validating required block types
+        required_types = ["overview", "key_concepts", "detailed_explanation", "examples"]
+        existing_types = [block.get("type") for block in lesson_blocks]
+        
+        for block in lesson_blocks:
             if not isinstance(block, dict):
                 continue
 
+            # Validate and fix block structure
+            if "type" not in block or block["type"] not in [
+                "overview", "key_concepts", "detailed_explanation", "examples", 
+                "test_strategies", "practice_questions", "memory_aids", "common_mistakes"
+            ]:
+                block["type"] = "detailed_explanation"
+
+            # Ensure title exists
             if not block.get("title"):
-                block["title"] = f"Part {i + 1}"
+                block["title"] = f"{block['type'].replace('_', ' ').title()}"
 
-            if "type" not in block or block["type"] not in ["section", "bullet_list", "example", "diagram_hint", "interactive_tip"]:
-                block["type"] = "section"
-
-            # Fix nested content dicts like {"bullet_list": [...]}
+            # Clean up content structure
             if isinstance(block.get("content"), dict):
-                if "bullet_list" in block["content"]:
-                    block["content"] = block["content"]["bullet_list"]
+                # Handle nested content structures
+                if "items" in block["content"]:
+                    block["content"] = block["content"]["items"]
+                elif "text" in block["content"]:
+                    block["content"] = block["content"]["text"]
+                else:
+                    block["content"] = str(block["content"])
 
-            # Flatten malformed bullet lists of dicts
-            if isinstance(block.get("content"), list):
-                new_content = []
-                for item in block["content"]:
-                    if isinstance(item, dict) and "content" in item:
-                        new_content.append(item["content"])
-                    elif isinstance(item, str):
-                        new_content.append(item)
-                block["content"] = new_content
+            # Validate content type based on block type
+            if block["type"] in ["key_concepts", "practice_questions", "memory_aids"] and not isinstance(block.get("content"), list):
+                # Convert string to list for these types
+                content_str = str(block.get("content", ""))
+                block["content"] = [item.strip() for item in content_str.split('\n') if item.strip()]
 
-            # Final fallback: convert list to string if block is not bullet_list
-            if block["type"] != "bullet_list" and isinstance(block["content"], list):
-                block["content"] = "\n".join(block["content"])
+            # Ensure non-list types have string content
+            if block["type"] not in ["key_concepts", "practice_questions", "memory_aids"] and isinstance(block.get("content"), list):
+                block["content"] = "\n\n".join(block["content"])
 
-            # Fallback if content is still invalid type
-            if not isinstance(block["content"], (str, list)):
-                block["content"] = str(block["content"])
+            # Set importance if not provided
+            if "importance" not in block:
+                high_importance_types = ["overview", "key_concepts", "test_strategies"]
+                block["importance"] = "High" if block["type"] in high_importance_types else "Medium"
 
+        # Ensure required fields exist in response
+        if "estimated_study_time" not in parsed_output:
+            parsed_output["estimated_study_time"] = "2-3 hours"
+        
+        if "difficulty_level" not in parsed_output:
+            parsed_output["difficulty_level"] = "Intermediate"
+        
+        if "test_tips" not in parsed_output:
+            parsed_output["test_tips"] = [
+                "Review key concepts multiple times",
+                "Practice with sample questions",
+                "Focus on understanding, not just memorization"
+            ]
+
+        return parsed_output
+
+    except json.JSONDecodeError as e:
+        raise HTTPException(status_code=500, detail=f"Failed to parse AI response: {str(e)}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error generating teaching content: {str(e)}")
+
+# --- Additional endpoint for quick concept review --- #
+@router.post("/quick-review")
+def generate_quick_review(req: TeachingRequest):
+    """Generate condensed review content for last-minute studying"""
+    try:
+        quick_prompt = f"""
+        Create a condensed, high-yield review of: {req.description}
+        
+        Focus on:
+        - Key facts and formulas
+        - Most likely test questions
+        - Critical concepts to remember
+        - Quick memory aids
+        
+        Return in same JSON format but more concise.
+        """
+
+        messages = [
+            {"role": "system", "content": GPT_SYSTEM_PROMPT},
+            {"role": "user", "content": quick_prompt}
+        ]
+
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=messages,
+            temperature=0.2,
+            max_tokens=1500,
+        )
+
+        raw_output = response["choices"][0]["message"]["content"]
+        parsed_output = json.loads(raw_output)
+        
+        # Add quick review indicator
+        parsed_output["estimated_study_time"] = "30-45 minutes"
+        parsed_output["format"] = "Quick Review"
+        
         return parsed_output
 
     except Exception as e:
