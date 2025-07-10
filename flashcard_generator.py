@@ -276,8 +276,7 @@ async def generate_flashcards_async(
     )
     
     try:
-        # Use GPT-4 for better quality if available, fallback to GPT-3.5
-        model = "gpt-4" if os.getenv("USE_GPT4", "false").lower() == "true" else "gpt-3.5-turbo"
+        model = "gpt-3.5-turbo" 
         
         response = await openai.ChatCompletion.acreate(
             model=model,
