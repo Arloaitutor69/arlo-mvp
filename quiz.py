@@ -229,7 +229,7 @@ class QuestionGenerator:
         system_context = f"""
         You are an expert educational content creator specializing in adaptive learning.
         
-        Create exactly {max_questions} high-quality quiz questions that:
+        Create 7 - 12 high-quality quiz questions that:
         1. Test deep understanding, not just memorization
         2. Include varying difficulty levels to challenge the student appropriately
         3. Cover multiple learning objectives (knowledge, comprehension, application, analysis)
