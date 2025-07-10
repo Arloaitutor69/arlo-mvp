@@ -72,40 +72,7 @@ def create_content_hash(objective: str, parsed_summary: str, duration: int) -> s
     content = f"{objective or ''}{parsed_summary or ''}{duration}"
     return hashlib.md5(content.encode()).hexdigest()
 
-def validate_block_content(block: dict) -> bool:
-    """Validate that block has substantial, educational content"""
-    description = block.get("description", "")
-    
-    # Minimum length check
-    if len(description) < 150:
-        return False
-    
-    # Check for educational markers
-    educational_markers = [
-        "definition", "process", "example", "step", "key", "important", 
-        "remember", "concept", "principle", "formula", "equation", "theory"
-    ]
-    
-    description_lower = description.lower()
-    marker_count = sum(1 for marker in educational_markers if marker in description_lower)
-    
-    # Should have at least 2 educational markers
-    return marker_count >= 2
-
-def get_technique_distribution(num_blocks: int) -> List[str]:
-    """Get optimal technique distribution based on number of blocks"""
-    # Base techniques for different block counts
-    technique_pools = {
-        2: ["arlo_teaching", "quiz"],
-        3: ["arlo_teaching", "flashcards", "quiz"],
-        4: ["arlo_teaching", "flashcards", "feynman", "quiz"],
-        5: ["arlo_teaching", "flashcards", "feynman", "quiz", "blurting"],
-        6: ["arlo_teaching", "flashcards", "feynman", "quiz", "blurting", "flashcards"],
-        7: ["arlo_teaching", "flashcards", "feynman", "quiz", "blurting", "flashcards", "quiz"],
-        8: ["arlo_teaching", "flashcards", "feynman", "quiz", "blurting", "flashcards", "quiz", "feynman"]
-    }
-    
-    return technique_pools.get(num_blocks, ["arlo_teaching", "flashcards", "quiz", "feynman"])
+# Removed get_technique_distribution - let GPT choose techniques freely
 
 def build_enhanced_prompt(objective: Optional[str], parsed_summary: Optional[str], duration: int) -> str:
     """Build comprehensive GPT prompt with better structure and examples"""
@@ -124,88 +91,47 @@ def build_enhanced_prompt(objective: Optional[str], parsed_summary: Optional[str
     if not objective and not parsed_summary:
         raise ValueError("At least one of objective or parsed_summary must be provided.")
 
-    prompt = f"""You are an expert curriculum designer with deep knowledge of cognitive science and learning optimization.
+    prompt = f"""You are an expert curriculum designer creating a study plan.
 
 {content_section}
 
 PLAN SPECIFICATIONS:
 - Duration: {duration} minutes total
 - Create exactly {num_blocks} learning blocks  
-- Each block should be {block_duration}-15 minutes long
+- Each block should be {block_duration} minutes long
 
-SCIENTIFICALLY-OPTIMIZED TECHNIQUE SELECTION:
-You must analyze the content and choose techniques based on cognitive science research:
+AVAILABLE TECHNIQUES (choose what's best for each unit):
+• arlo_teaching: Interactive teaching and explanation
+• flashcards: Spaced repetition for memorization
+• feynman: Explain concepts in simple terms
+• quiz: Active recall testing
+• blurting: Free recall without prompts
 
-CONTENT ANALYSIS RULES:
-1. FACTUAL CONTENT (definitions, dates, formulas, vocabulary):
-   - High information density, requires memorization
-   - Use: flashcards → quiz → blurting (spacing effect + testing effect)
+REQUIREMENTS:
+- Each block needs a clear unit/topic name
+- Choose the BEST technique for each specific unit/topic
+- You can use the same technique multiple times if optimal
+- You can use any combination or sequence of techniques
+- Focus on what will help the student learn THIS specific content most effectively
+- Provide helpful description for each block
+- Make descriptions practical and actionable
 
-2. CONCEPTUAL CONTENT (theories, principles, cause-effect relationships):
-   - Requires deep understanding and connections
-   - Use: arlo_teaching → feynman → quiz (elaborative interrogation + generation effect)
-
-3. PROCEDURAL CONTENT (step-by-step processes, problem-solving):
-   - Requires practice and application
-   - Use: arlo_teaching → blurting → quiz → feynman (practice effect + reflection)
-
-4. MIXED CONTENT:
-   - Combine techniques strategically
-   - Always start with arlo_teaching for initial encoding
-   - End with quiz for retrieval practice (testing effect)
-
-TECHNIQUE DESCRIPTIONS (Based on Learning Science):
-• arlo_teaching: Initial encoding and guided instruction (reduces cognitive load)
-• flashcards: Spaced repetition for factual recall (spacing effect, testing effect)
-• feynman: Elaborative explanation in simple terms (generation effect, elaborative interrogation)
-• quiz: Active retrieval practice (testing effect, desirable difficulties)
-• blurting: Free recall without cues (retrieval practice, transfer appropriate processing)
-
-SELECTION STRATEGY:
-1. Analyze each unit's content type (factual/conceptual/procedural)
-2. Choose techniques that match the cognitive demands
-3. Sequence techniques to build from encoding → practice → retrieval
-4. Ensure variety to maintain engagement (attention restoration theory)
-
-CONTENT REQUIREMENTS FOR EACH BLOCK:
-Each description must be a complete mini-lesson including:
-1. Key definitions with clear examples
-2. Step-by-step processes or procedures
-3. Important formulas, equations, or principles
-4. Common misconceptions students should avoid
-5. Real-world applications or examples
-6. Specific facts, data points, or details to remember
-
-QUALITY STANDARDS:
-- Each description should be 200-400 words
-- Include concrete examples, not just abstract concepts
-- Provide actionable learning content, not just topic overviews
-- Make content self-contained (other modules only see the description)
-
-EXAMPLE OUTPUT FORMAT:
+Return ONLY valid JSON in this exact format:
 {{
-  "content_analysis": {{
-    "primary_content_type": "mixed",
-    "reasoning": "Contains both factual information (equations, definitions) and conceptual understanding (processes, principles)",
-    "technique_rationale": "Starting with teaching for encoding, using flashcards for factual recall, Feynman for conceptual understanding, quiz for testing effect"
-  }},
-  "units_to_cover": ["Photosynthesis Overview", "Light Reactions", "Calvin Cycle"],
+  "units_to_cover": ["Unit 1", "Unit 2", "Unit 3"],
   "pomodoro": "25/5",
-  "techniques": ["arlo_teaching", "flashcards", "feynman", "quiz"],
+  "techniques": ["arlo_teaching", "flashcards", "quiz", "feynman"],
   "blocks": [
     {{
-      "unit": "Photosynthesis Overview",
+      "unit": "Unit Name",
       "technique": "arlo_teaching",
-      "content_type": "conceptual",
-      "description": "Photosynthesis is the fundamental process where plants convert light energy into chemical energy stored as glucose. Key equation: 6CO2 + 6H2O + light energy → C6H12O6 + 6O2 + ATP. This process occurs in chloroplasts, specifically in two stages: light reactions (thylakoids) and Calvin cycle (stroma). Important principle: Plants are autotrophs, meaning they produce their own food. Common misconception: plants don't need oxygen - actually, they produce oxygen during photosynthesis but consume it during cellular respiration at night. Real-world significance: photosynthesis produces approximately 70% of Earth's oxygen and forms the foundation of most food chains. Key terms to remember: chlorophyll (green pigment that captures light), stomata (pores for gas exchange), and ATP (energy currency). Process efficiency: only about 1-2% of sunlight is converted to chemical energy.",
-      "duration": 12
+      "description": "Clear description of what to study and how",
+      "duration": {block_duration}
     }}
   ]
 }}
 
-CRITICAL: Analyze the content type for each unit and select techniques based on cognitive science, not just following a preset sequence. Justify your technique choices in the content_analysis section.
-
-Return only valid JSON with no markdown formatting or additional text."""
+Make sure to include exactly {num_blocks} blocks in your response."""
     
     return prompt
 
@@ -220,7 +146,7 @@ async def update_context_async(payload: dict) -> bool:
         return False
 
 def generate_gpt_plan(prompt: str, max_retries: int = 2) -> dict:
-    """Generate study plan with GPT with retries and validation"""
+    """Generate study plan with GPT with retries - NO VALIDATION"""
     
     for attempt in range(max_retries + 1):
         try:
@@ -229,15 +155,16 @@ def generate_gpt_plan(prompt: str, max_retries: int = 2) -> dict:
             completion = openai.ChatCompletion.create(
                 model="gpt-3.5-turbo",
                 messages=[
-                    {"role": "system", "content": "You are an expert curriculum designer. Return only valid JSON with comprehensive educational content."},
+                    {"role": "system", "content": "You are an expert curriculum designer. Return only valid JSON with study plan blocks."},
                     {"role": "user", "content": prompt}
                 ],
-                temperature=0.3,  # Lower temperature for more focused content
-                max_tokens=2500,  # Ensure complete responses
+                temperature=0.3,
+                max_tokens=2000,
                 top_p=0.9
             )
 
             raw_response = completion.choices[0].message.content.strip()
+            print(f"📝 Raw GPT response: {raw_response[:200]}...")
             
             # Clean up response
             if raw_response.startswith("```json"):
@@ -248,7 +175,7 @@ def generate_gpt_plan(prompt: str, max_retries: int = 2) -> dict:
             # Parse JSON
             parsed = json.loads(raw_response)
             
-            # Validate required fields
+            # Only validate basic structure - no content validation
             if not all(key in parsed for key in ["blocks", "units_to_cover", "techniques"]):
                 raise ValueError("Missing required fields in GPT response")
             
@@ -256,14 +183,7 @@ def generate_gpt_plan(prompt: str, max_retries: int = 2) -> dict:
             if not blocks:
                 raise ValueError("No blocks generated")
             
-            # Validate block content quality
-            valid_blocks = [block for block in blocks if validate_block_content(block)]
-            
-            if len(valid_blocks) < len(blocks) * 0.7:  # At least 70% should be valid
-                raise ValueError(f"Only {len(valid_blocks)}/{len(blocks)} blocks passed validation")
-            
-            parsed["blocks"] = valid_blocks
-            print(f"✅ GPT generated {len(valid_blocks)} valid blocks")
+            print(f"✅ GPT generated {len(blocks)} blocks - accepting all")
             return parsed
             
         except json.JSONDecodeError as e:
@@ -281,7 +201,7 @@ def generate_gpt_plan(prompt: str, max_retries: int = 2) -> dict:
 # --- Main Endpoint ---
 @router.post("/study-session", response_model=StudyPlanResponse)
 async def generate_plan(data: StudyPlanRequest, request: Request):
-    """Generate comprehensive study plan with improved content quality and performance"""
+    """Generate comprehensive study plan - simplified version"""
     
     try:
         user_id = extract_user_id(request)
@@ -299,7 +219,7 @@ async def generate_plan(data: StudyPlanRequest, request: Request):
         blocks_json = parsed.get("blocks", [])
         pomodoro = parsed.get("pomodoro", "25/5")
         
-        # Build study blocks
+        # Build study blocks - accept whatever GPT gives us
         blocks = []
         context_tasks = []
         total_time = 0
@@ -326,6 +246,9 @@ async def generate_plan(data: StudyPlanRequest, request: Request):
             
             blocks.append(study_block)
             total_time += duration
+            
+            print(f"📋 Block {idx + 1}: {unit} - {technique} ({duration}min)")
+            print(f"   Description: {description[:100]}...")
             
             # Prepare context update (async)
             context_payload = {
