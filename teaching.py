@@ -47,13 +47,14 @@ CONTENT STRUCTURE REQUIREMENTS:
 - Identify and thoroughly explain key concepts with precise definitions
 - Provide detailed explanations with step-by-step breakdowns
 - Include multiple relevant examples showing different question types
-- Provide memory aids (mnemonics, acronyms, visual associations)
+- Provide memory aids throughout (mnemonics, acronyms, visual associations)
 - Highlight common mistakes and misconceptions to avoid
 
 CONTENT QUALITY STANDARDS:
 - Each section should be substantial (200-300 words minimum)
 - Include specific facts, formulas, dates, or processes as applicable
 - Focus on understanding AND memorization where both are needed
+- ensure teaching style is not overly intimidating and inaccesible, keep it clear and easy to understand
 
 OUTPUT FORMAT:
 Return comprehensive JSON with these block types:
