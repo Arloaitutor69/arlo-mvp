@@ -66,6 +66,17 @@ Return comprehensive JSON with these block types:
 - "memory_aids": Mnemonics, acronyms, visualization techniques
 - "common_mistakes": Pitfalls to avoid and how to prevent them
 
+OUTPUT FORMAT:
+Return comprehensive JSON with these block types:
+- "overview": Strategic summary of what students need to know for tests
+- "key_concepts": Essential definitions and core principles
+- "detailed_explanation": In-depth coverage of complex topics
+- "examples": Multiple worked examples showing different approaches
+- "test_strategies": Specific tactics for test success
+- "practice_questions": Sample questions with explanations
+- "memory_aids": Mnemonics, acronyms, visualization techniques
+- "common_mistakes": Pitfalls to avoid and how to prevent them
+
 RESPONSE STRUCTURE:
 {
   "lesson": [
@@ -151,15 +162,37 @@ def generate_teaching_content(req: TeachingRequest):
                 else:
                     block["content"] = str(block["content"])
 
-            # Validate content type based on block type
-            if block["type"] in ["key_concepts", "practice_questions", "memory_aids"] and not isinstance(block.get("content"), list):
-                # Convert string to list for these types
-                content_str = str(block.get("content", ""))
-                block["content"] = [item.strip() for item in content_str.split('\n') if item.strip()]
+            # Ensure content is properly formatted
+            content = block.get("content", "")
+            
+            # Handle list content - ensure all items are strings
+            if isinstance(content, list):
+                clean_content = []
+                for item in content:
+                    if isinstance(item, dict):
+                        # Extract string content from dict
+                        if "content" in item:
+                            clean_content.append(str(item["content"]))
+                        elif "text" in item:
+                            clean_content.append(str(item["text"]))
+                        else:
+                            clean_content.append(str(item))
+                    else:
+                        clean_content.append(str(item))
+                block["content"] = clean_content
 
-            # Ensure non-list types have string content
-            if block["type"] not in ["key_concepts", "practice_questions", "memory_aids"] and isinstance(block.get("content"), list):
-                block["content"] = "\n\n".join(block["content"])
+            # Validate content type based on block type
+            if block["type"] in ["key_concepts", "practice_questions", "memory_aids"]:
+                # These should be lists
+                if not isinstance(block.get("content"), list):
+                    content_str = str(block.get("content", ""))
+                    block["content"] = [item.strip() for item in content_str.split('\n') if item.strip()]
+            else:
+                # These should be strings
+                if isinstance(block.get("content"), list):
+                    # Convert list to string, ensuring all items are strings
+                    string_items = [str(item) for item in block["content"]]
+                    block["content"] = "\n\n".join(string_items)
 
             # Set importance if not provided
             if "importance" not in block:
@@ -213,7 +246,7 @@ def generate_quick_review(req: TeachingRequest):
             model="gpt-3.5-turbo",
             messages=messages,
             temperature=0.2,
-            max_tokens=1500,
+            max_tokens=2000,
         )
 
         raw_output = response["choices"][0]["message"]["content"]
