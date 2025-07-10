@@ -72,8 +72,6 @@ def create_content_hash(objective: str, parsed_summary: str, duration: int) -> s
     content = f"{objective or ''}{parsed_summary or ''}{duration}"
     return hashlib.md5(content.encode()).hexdigest()
 
-# Removed get_technique_distribution - let GPT choose techniques freely
-
 def build_enhanced_prompt(objective: Optional[str], parsed_summary: Optional[str], duration: int) -> str:
     """Build comprehensive GPT prompt with better structure and examples"""
     
@@ -127,7 +125,30 @@ QUALITY STANDARDS:
 - Include concrete examples, not just abstract concepts
 - Provide actionable learning content, not just topic overviews
 
-EXAMPLE OUTPUT FORMAT, Return ONLY valid JSON in this exact format:
+CRITICAL: You MUST return a complete JSON object with ALL required fields. Missing any field will cause the system to fail.
+
+REQUIRED JSON STRUCTURE - Return ONLY this JSON format:
+{{
+  "units_to_cover": ["Unit 1 Name", "Unit 2 Name", "Unit 3 Name"],
+  "pomodoro": "25/5",
+  "techniques": ["technique1", "technique2", "technique3"],
+  "blocks": [
+    {{
+      "unit": "Unit 1 Name",
+      "technique": "arlo_teaching",
+      "description": "Complete detailed description with key concepts, formulas, examples, and common misconceptions. Should be 100-200 words covering all relevant subtopics for this unit.",
+      "duration": {block_duration}
+    }},
+    {{
+      "unit": "Unit 2 Name", 
+      "technique": "quiz",
+      "description": "Complete detailed description with key concepts, formulas, examples, and common misconceptions. Should be 100-200 words covering all relevant subtopics for this unit.",
+      "duration": {block_duration}
+    }}
+  ]
+}}
+
+EXAMPLE COMPLETE RESPONSE:
 {{
   "units_to_cover": ["Photosynthesis Overview", "Light Reactions", "Calvin Cycle"],
   "pomodoro": "25/5",
@@ -136,13 +157,19 @@ EXAMPLE OUTPUT FORMAT, Return ONLY valid JSON in this exact format:
     {{
       "unit": "Photosynthesis Overview",
       "technique": "arlo_teaching",
-      "description": "Photosynthesis converts light energy into chemical energy through two interconnected stages. Master equation: 6CO2 + 6H2O + light energy → C6H12O6 + 6O2. Key definitions: autotrophs (self-feeding organisms), chloroplasts (organelles containing chlorophyll), thylakoids (membrane structures for light reactions), stroma (fluid space for Calvin cycle). Critical subtopics: chlorophyll a vs b absorption spectra, stomatal regulation, C3 vs C4 vs CAM pathways, photorespiration effects. Essential principles: light-dependent reactions produce ATP/NADPH, light-independent reactions fix CO2 into glucose, oxygen is a byproduct not the goal. Common errors to avoid: thinking plants don't respire (they do both photosynthesis and respiration), confusing reactants/products, assuming all plant cells photosynthesize (only those with chloroplasts). Quantitative facts: ~1-2% light conversion efficiency, 70% of atmospheric oxygen from photosynthesis, 150 billion tons CO2 fixed annually. Real applications: crop yield optimization, biofuel production, climate change mitigation.",
+      "description": "Photosynthesis converts light energy into chemical energy through two interconnected stages. Master equation: 6CO2 + 6H2O + light energy → C6H12O6 + 6O2. Key definitions: autotrophs (self-feeding organisms), chloroplasts (organelles containing chlorophyll), thylakoids (membrane structures for light reactions), stroma (fluid space for Calvin cycle). Critical subtopics: chlorophyll a vs b absorption spectra, stomatal regulation, C3 vs C4 vs CAM pathways, photorespiration effects. Essential principles: light-dependent reactions produce ATP/NADPH, light-independent reactions fix CO2 into glucose, oxygen is a byproduct not the goal. Common errors to avoid: thinking plants don't respire (they do both photosynthesis and respiration), confusing reactants/products, assuming all plant cells photosynthesize (only those with chloroplasts). Quantitative facts: ~1-2% light conversion efficiency, 70% of atmospheric oxygen from photosynthesis, 150 billion tons CO2 fixed annually.",
+      "duration": 12
+    }},
+    {{
+      "unit": "Light Reactions",
+      "technique": "flashcards",
+      "description": "Light reactions occur in thylakoid membranes converting light energy to chemical energy. Key equation: 2H2O + 2NADP+ + 3ADP + 3Pi + light → O2 + 2NADPH + 3ATP. Critical components: Photosystem II (P680 reaction center), Photosystem I (P700 reaction center), cytochrome b6f complex, ATP synthase. Essential processes: water splitting (oxygen evolution), electron transport chain, proton pumping, chemiosmosis. Important facts: cyclic vs non-cyclic electron flow, Z-scheme energy diagram, plastoquinone and plastocyanin carriers. Common misconceptions: thinking ATP is made directly by light (it's made by chemiosmosis), confusing photosystems I and II order. Quantitative details: 8 photons needed per O2 molecule, proton gradient of 3-4 pH units, ATP:NADPH ratio of 3:2.",
       "duration": 12
     }}
   ]
 }}
 
-Make sure to include exactly {num_blocks} blocks in your response."""
+Remember: You must include exactly {num_blocks} blocks and ALL required fields (units_to_cover, pomodoro, techniques, blocks) or the system will fail."""
     
     return prompt
 
@@ -157,7 +184,7 @@ async def update_context_async(payload: dict) -> bool:
         return False
 
 def generate_gpt_plan(prompt: str, max_retries: int = 2) -> dict:
-    """Generate study plan with GPT with retries - NO VALIDATION"""
+    """Generate study plan with GPT with retries - Enhanced validation"""
     
     for attempt in range(max_retries + 1):
         try:
@@ -166,7 +193,7 @@ def generate_gpt_plan(prompt: str, max_retries: int = 2) -> dict:
             completion = openai.ChatCompletion.create(
                 model="gpt-3.5-turbo",
                 messages=[
-                    {"role": "system", "content": "You are an expert curriculum designer. Return only valid JSON with study plan blocks."},
+                    {"role": "system", "content": "You are an expert curriculum designer. You MUST return ONLY valid JSON with ALL required fields: units_to_cover, pomodoro, techniques, and blocks. Missing any field will cause system failure."},
                     {"role": "user", "content": prompt}
                 ],
                 temperature=0.3,
@@ -186,19 +213,34 @@ def generate_gpt_plan(prompt: str, max_retries: int = 2) -> dict:
             # Parse JSON
             parsed = json.loads(raw_response)
             
-            # Only validate basic structure - no content validation
-            if not all(key in parsed for key in ["blocks", "units_to_cover", "techniques"]):
-                raise ValueError("Missing required fields in GPT response")
+            # Validate ALL required fields
+            required_fields = ["blocks", "units_to_cover", "techniques", "pomodoro"]
+            missing_fields = [field for field in required_fields if field not in parsed]
+            
+            if missing_fields:
+                print(f"❌ Missing required fields: {missing_fields}")
+                print(f"📋 Available fields: {list(parsed.keys())}")
+                raise ValueError(f"Missing required fields: {missing_fields}")
             
             blocks = parsed.get("blocks", [])
             if not blocks:
                 raise ValueError("No blocks generated")
             
-            print(f"✅ GPT generated {len(blocks)} blocks - accepting all")
+            # Validate block structure
+            for i, block in enumerate(blocks):
+                required_block_fields = ["unit", "technique", "description", "duration"]
+                missing_block_fields = [field for field in required_block_fields if field not in block]
+                if missing_block_fields:
+                    raise ValueError(f"Block {i} missing fields: {missing_block_fields}")
+            
+            print(f"✅ GPT generated valid response with {len(blocks)} blocks")
+            print(f"📊 Units: {len(parsed.get('units_to_cover', []))}")
+            print(f"🔧 Techniques: {len(parsed.get('techniques', []))}")
             return parsed
             
         except json.JSONDecodeError as e:
             print(f"🔥 JSON parsing failed (attempt {attempt + 1}): {e}")
+            print(f"📝 Raw response that failed: {raw_response}")
             if attempt == max_retries:
                 raise HTTPException(status_code=500, detail="Failed to parse GPT response as JSON")
                 
