@@ -99,7 +99,6 @@ PLAN SPECIFICATIONS:
 - Each block should be {block_duration} minutes long
 
 AVAILABLE TECHNIQUES (choose what's best for each unit):
-• arlo_teaching: Interactive teaching and explanation
 • flashcards: Spaced repetition for memorization
 • feynman: Explain concepts in simple terms
 • quiz: Active recall testing
@@ -111,6 +110,7 @@ REQUIREMENTS:
 - You can use the same technique multiple times if optimal
 - You can use any combination or sequence of techniques
 - Focus on what will help the student learn THIS specific content most effectively
+- Each block must cover distinct, non redundant and non-overlapping content that builds progressively toward complete mastery of the subject
 
 CONTENT REQUIREMENTS FOR EACH BLOCK:
 Each description must be a complete self contained mini-lesson including:
@@ -135,7 +135,7 @@ REQUIRED JSON STRUCTURE - Return ONLY this JSON format:
   "blocks": [
     {{
       "unit": "Unit 1 Name",
-      "technique": "arlo_teaching",
+      "technique": "flashcards",
       "description": "Complete detailed description with key concepts, formulas, examples, and common misconceptions. Should be 100-200 words covering all relevant subtopics for this unit.",
       "duration": {block_duration}
     }},
@@ -152,11 +152,11 @@ EXAMPLE COMPLETE RESPONSE:
 {{
   "units_to_cover": ["Photosynthesis Overview", "Light Reactions", "Calvin Cycle"],
   "pomodoro": "25/5",
-  "techniques": ["arlo_teaching", "flashcards", "quiz"],
+  "techniques": ["feynman", "flashcards", "quiz"],
   "blocks": [
     {{
       "unit": "Photosynthesis Overview",
-      "technique": "arlo_teaching",
+      "technique": "feynman",
       "description": "Photosynthesis converts light energy into chemical energy through two interconnected stages. Master equation: 6CO2 + 6H2O + light energy → C6H12O6 + 6O2. Key definitions: autotrophs (self-feeding organisms), chloroplasts (organelles containing chlorophyll), thylakoids (membrane structures for light reactions), stroma (fluid space for Calvin cycle). Critical subtopics: chlorophyll a vs b absorption spectra, stomatal regulation, C3 vs C4 vs CAM pathways, photorespiration effects. Essential principles: light-dependent reactions produce ATP/NADPH, light-independent reactions fix CO2 into glucose, oxygen is a byproduct not the goal. Common errors to avoid: thinking plants don't respire (they do both photosynthesis and respiration), confusing reactants/products, assuming all plant cells photosynthesize (only those with chloroplasts). Quantitative facts: ~1-2% light conversion efficiency, 70% of atmospheric oxygen from photosynthesis, 150 billion tons CO2 fixed annually.",
       "duration": 12
     }},
