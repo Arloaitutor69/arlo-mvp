@@ -229,14 +229,11 @@ class QuestionGenerator:
         system_context = f"""
         You are an expert educational content creator specializing in adaptive learning.
         
-        Create {max_questions} high-quality quiz questions that:
+        Create exactly {max_questions} high-quality quiz questions that:
         1. Test deep understanding, not just memorization
         2. Include varying difficulty levels to challenge the student appropriately
         3. Cover multiple learning objectives (knowledge, comprehension, application, analysis)
         4. Include helpful explanations that teach additional concepts
-        5. Provide hints that guide learning without giving away answers
-        6. Identify prerequisite concepts students should know
-        7. Suggest follow-up resources for deeper learning
         
         Content Analysis:
         - Key concepts: {ContentAnalyzer.extract_key_concepts(content)}
@@ -261,7 +258,6 @@ class QuestionGenerator:
         - Question types: {[qt.value for qt in question_types]}
         - Learning objectives to cover: {[lo.value for lo in learning_objectives] if learning_objectives else 'All applicable'}
         - Focus on practical application and critical thinking
-        - Include real-world examples where possible
         - Ensure questions build upon each other progressively
         """
         
@@ -309,13 +305,13 @@ class QuestionGenerator:
             response = await asyncio.get_event_loop().run_in_executor(
                 None,
                 lambda: openai.ChatCompletion.create(
-                    model="gpt-3.5-turbo",  # Upgraded to GPT-4 for better quality
+                    model="gpt-3.5-turbo", 
                     messages=[
                         {"role": "system", "content": "You are an expert educational content creator."},
                         {"role": "user", "content": prompt}
                     ],
-                    temperature=0.7,
-                    max_tokens=3000  # Increased for more detailed responses
+                    temperature=0.5,
+                    max_tokens=4000  
                 )
             )
             
@@ -450,23 +446,6 @@ def build_adaptive_recommendations(
 # Enhanced API Routes
 # -----------------------------
 
-@router.get("/health")
-async def health_check():
-    """Enhanced health check with system status"""
-    return {
-        "status": "healthy",
-        "module": "enhanced_quiz_tutor",
-        "version": "2.0.0",
-        "features": [
-            "adaptive_difficulty",
-            "learning_gap_detection",
-            "personalized_content",
-            "advanced_analytics",
-            "prerequisite_checking"
-        ],
-        "timestamp": datetime.now().isoformat()
-    }
-
 @router.post("/generate", response_model=QuizResponse)
 async def create_enhanced_quiz(
     req: QuizRequest,
@@ -566,37 +545,3 @@ async def create_enhanced_quiz(
     
     print(f"✅ Enhanced quiz created in {total_time:.2f}s with {len(questions)} questions")
     return quiz_response
-
-@router.get("/analytics/{quiz_id}")
-async def get_quiz_analytics(quiz_id: str):
-    """Get analytics for a specific quiz"""
-    # This would typically fetch from a database
-    return {
-        "quiz_id": quiz_id,
-        "message": "Analytics endpoint ready for implementation",
-        "suggested_metrics": [
-            "completion_rate",
-            "average_score",
-            "time_spent",
-            "difficulty_progression",
-            "learning_objectives_met"
-        ]
-    }
-
-@router.post("/feedback")
-async def submit_quiz_feedback(
-    quiz_id: str,
-    feedback: Dict[str, Any],
-    user_id: Optional[str] = None
-):
-    """Submit feedback to improve future quiz generation"""
-    print(f"📝 Received feedback for quiz {quiz_id}: {feedback}")
-    
-    # Process feedback to improve recommendations
-    # This would typically update user preferences and model parameters
-    
-    return {
-        "status": "feedback_received",
-        "quiz_id": quiz_id,
-        "message": "Thank you for your feedback. This will help improve future quizzes."
-    }
