@@ -94,8 +94,8 @@ async def post_learning_event_async(user_id: str, topic: str, missed_concepts: L
         "learning_event": {
             "concept": topic,
             "phase": "blurting",
-            "confidence": 3 if len(missed_concepts) <= 2 else 1 if len(missed_concepts) >= 5 else 2,
-            "depth": "deep" if len(missed_concepts) <= 1 else "medium" if len(missed_concepts) <= 3 else "shallow",
+            "confidence": 1.0 if len(missed_concepts) <= 2 else 0.7 if len(missed_concepts) <= 4 else 0.4,
+            "depth": "deep" if len(missed_concepts) <= 1 else "intermediate" if len(missed_concepts) <= 3 else "shallow",
             "source_summary": feedback[:150],
             "repetition_count": 1,
             "review_scheduled": True
