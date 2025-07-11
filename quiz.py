@@ -183,7 +183,7 @@ Generate all {max_questions} questions now:"""
                         {"role": "user", "content": prompt}
                     ],
                     temperature=0.6,
-                    max_tokens=8000,  # Increased token limit
+                    max_tokens=4000,  # Increased token limit
                     top_p=0.9
                 )
             )
