@@ -1,52 +1,57 @@
 from fastapi import APIRouter, Request, HTTPException
 from pydantic import BaseModel
-from typing import List, Optional, Literal
+from typing import List, Optional, Literal, Dict, Any
 from datetime import datetime, timedelta, timezone
 import json
 import openai
 import os
 from supabase import create_client, Client
-import re
 import requests
-from fastapi import Request
-import os, requests, json, threading
+from collections import defaultdict
+import threading
+import asyncio
+import hashlib
+from dataclasses import dataclass
+import math
+
+# ---------------------------
+# Configuration
+# ---------------------------
+CONFIDENCE_DECAY_RATE = 0.95  # Daily decay multiplier
+SYNTHESIS_THRESHOLD = 5  # Trigger synthesis every N learning events
+MAX_CONTEXT_HISTORY = 50  # Concepts to keep in memory
+CACHE_TTL_MINUTES = 5
+STALE_THRESHOLD_MINUTES = 2
 
 # ---------------------------
 # In-memory Context Cache
 # ---------------------------
-context_cache = {}
-context_stale_threshold = timedelta(minutes=3)
-context_ttl = timedelta(minutes=3) 
+context_cache: Dict[str, Dict[str, Any]] = {}
+synthesis_locks: Dict[str, threading.Lock] = defaultdict(threading.Lock)
 
-def fetch_and_update_context(user_id: str):
-    try:
-        res = requests.get(f"{CONTEXT_API_BASE}/api/context/cache?user_id={user_id}", timeout=5)
-        res.raise_for_status()
-        context_cache[user_id] = (datetime.now(), res.json())
-    except Exception as e:
-        print("❌ Background context fetch failed:", e)
-
-def get_cached_context(user_id: str):
-    now = datetime.now()
-    if user_id in context_cache:
-        timestamp, cached_value = context_cache[user_id]
-        age = now - timestamp
-        if age > context_stale_threshold:
-            Thread(target=fetch_and_update_context, args=(user_id,)).start()
-        return cached_value
-    else:
-        try:
-            res = requests.get(f"{CONTEXT_API_BASE}/api/context/cache?user_id={user_id}", timeout=5)
-            res.raise_for_status()
-            context = res.json()
-            context_cache[user_id] = (now, context)
-            return context
-        except Exception as e:
-            print("❌ Initial context fetch failed:", e)
-            return {}
+@dataclass
+class ConceptMemory:
+    """Efficient concept representation for memory"""
+    concept: str
+    confidence: float
+    depth: str
+    last_seen: datetime
+    repetition_count: int
+    sources: List[str]
+    next_review: Optional[datetime] = None
+    
+    def calculate_retention(self) -> float:
+        """Calculate retention based on time decay"""
+        days_since = (datetime.now() - self.last_seen).days
+        return self.confidence * (CONFIDENCE_DECAY_RATE ** days_since)
+    
+    def schedule_review(self) -> None:
+        """Schedule next review using spaced repetition"""
+        interval_days = min(2 ** self.repetition_count, 30)  # Cap at 30 days
+        self.next_review = datetime.now() + timedelta(days=interval_days)
 
 # ------------------------------
-# Supabase lazy initialization
+# Supabase Client
 # ------------------------------
 supabase: Optional[Client] = None
 
@@ -60,15 +65,11 @@ def get_supabase() -> Client:
         supabase = create_client(url, key)
     return supabase
 
-
 # ------------------------------
-# Router
+# Router and Models
 # ------------------------------
 router = APIRouter()
 
-# ------------------------------
-# Pydantic Models
-# ------------------------------
 class LearningEvent(BaseModel):
     concept: str
     phase: str
@@ -79,7 +80,7 @@ class LearningEvent(BaseModel):
     review_scheduled: Optional[bool] = False
 
 class ContextUpdate(BaseModel):
-    user_id: Optional[str] = None  # ← Add this line
+    user_id: Optional[str] = None
     current_topic: Optional[str] = None
     user_goals: Optional[List[str]] = None
     preferred_learning_styles: Optional[List[str]] = None
@@ -95,268 +96,417 @@ class ContextResetRequest(BaseModel):
     user_id: str
 
 # ------------------------------
-# Helper Functions
+# Core Memory Functions
 # ------------------------------
-def score_source(source: str) -> int:
-    priority = {
-        'session_planner': 100,
-        'chatbot': 80,
-        'flashcards': 70,
-        'quiz': 70,
-        'feynman': 70,
-        'blurting': 70,
-        'review_sheet': 60,
-        'chatbot_flag': 90
-    }
-    return priority.get(source, 50)
 
-def should_trigger_synthesis(update: ContextUpdate) -> bool:
-    if update.trigger_synthesis:
-        return True
-    res = get_supabase().table("context_log").select("source").order("id", desc=True).limit(5).execute()
-    recent_entries = res.data if res.data else []
-    if update.feedback_flag:
-        return True
-    if len(recent_entries) >= 3:
-        sources = {entry["source"] for entry in recent_entries}
-        if len(sources) >= 2:
-            return True
-    return False
-
-
-def extract_and_parse_json(text: str) -> dict:
-    """
-    Extracts the first valid JSON object from a text blob and parses it safely.
-    Assumes object starts with the first '{' and ends with the matching '}'.
-    """
-    try:
-        start = text.index('{')
-        brace_count = 0
-        for i in range(start, len(text)):
-            if text[i] == '{':
-                brace_count += 1
-            elif text[i] == '}':
-                brace_count -= 1
-                if brace_count == 0:
-                    end = i + 1
-                    break
+def aggregate_learning_events(events: List[Dict]) -> Dict[str, ConceptMemory]:
+    """Efficiently aggregate learning events by concept"""
+    concept_map: Dict[str, ConceptMemory] = {}
+    
+    for event in events:
+        le = event.get("learning_event", {})
+        if not le.get("concept"):
+            continue
+            
+        concept = le["concept"]
+        confidence = le.get("confidence", 0.5)
+        depth = le.get("depth", "shallow")
+        source = event.get("source", "unknown")
+        timestamp = datetime.fromisoformat(event.get("timestamp", datetime.now().isoformat()))
+        
+        if concept in concept_map:
+            # Update existing concept
+            memory = concept_map[concept]
+            memory.confidence = max(memory.confidence, confidence)  # Take best confidence
+            memory.depth = max(memory.depth, depth, key=lambda x: ["shallow", "intermediate", "deep"].index(x))
+            memory.last_seen = max(memory.last_seen, timestamp)
+            memory.repetition_count += 1
+            if source not in memory.sources:
+                memory.sources.append(source)
         else:
-            raise ValueError("Mismatched braces in GPT output")
+            # Create new concept memory
+            concept_map[concept] = ConceptMemory(
+                concept=concept,
+                confidence=confidence,
+                depth=depth,
+                last_seen=timestamp,
+                repetition_count=1,
+                sources=[source]
+            )
+    
+    return concept_map
 
-        json_str = text[start:end]
+def identify_weak_areas(concepts: Dict[str, ConceptMemory], threshold: float = 0.6) -> List[str]:
+    """Algorithmically identify weak areas based on retention"""
+    weak_concepts = []
+    
+    for concept, memory in concepts.items():
+        current_retention = memory.calculate_retention()
+        if current_retention < threshold:
+            weak_concepts.append(concept)
+    
+    return sorted(weak_concepts, key=lambda c: concepts[c].calculate_retention())
 
-        # Sanitize common GPT errors: remove trailing commas
-        json_str = re.sub(r',(\s*[}\]])', r'\1', json_str)
+def generate_review_queue(concepts: Dict[str, ConceptMemory]) -> List[str]:
+    """Generate review queue based on spaced repetition"""
+    now = datetime.now()
+    due_for_review = []
+    
+    for concept, memory in concepts.items():
+        if memory.next_review is None:
+            memory.schedule_review()
+        
+        if memory.next_review <= now:
+            due_for_review.append(concept)
+    
+    # Sort by urgency (oldest due first)
+    return sorted(due_for_review, key=lambda c: concepts[c].next_review or now)
 
-        return json.loads(json_str)
+def create_context_hash(events: List[Dict]) -> str:
+    """Create hash to detect if synthesis is needed"""
+    content = json.dumps(events, sort_keys=True)
+    return hashlib.md5(content.encode()).hexdigest()
 
-    except Exception as e:
-        print("❌ Robust JSON parse failed:", e)
-        print("🔴 Raw GPT output:\n", text)
-        return {"status": "error", "synthesized": False}
+def should_trigger_synthesis(user_id: str, events: List[Dict]) -> bool:
+    """Smart synthesis triggering"""
+    # Check if enough new events
+    if len(events) < SYNTHESIS_THRESHOLD:
+        return False
+    
+    # Check if content has changed significantly
+    current_hash = create_context_hash(events)
+    cache_key = f"synthesis_hash_{user_id}"
+    
+    if cache_key in context_cache:
+        last_hash = context_cache[cache_key].get("hash")
+        if current_hash == last_hash:
+            return False
+    
+    context_cache[cache_key] = {"hash": current_hash}
+    return True
 
-
-def synthesize_context_gpt(user_id: str) -> dict:
-    # 1. Get recent context logs for this user only
-    logs_raw = get_supabase() \
-        .table("context_log") \
-        .select("learning_event, current_topic, user_goals, source, weak_areas, emphasized_facts, preferred_learning_styles, review_queue") \
-        .eq("user_id", user_id) \
-        .order("id", desc=True) \
-        .limit(10) \
-        .execute().data[::-1]  # chronological order
-
-    # 2. Build merged raw input
-    flattened_logs = []
-    for entry in logs_raw:
-        le = entry.get("learning_event") or {}
-        flattened_logs.append({
-            "concept": le.get("concept", ""),
-            "phase": le.get("phase", ""),
-            "confidence": le.get("confidence", 0.5),
-            "depth": le.get("depth", "intermediate"),
-            "source_summary": le.get("source_summary", ""),
-            "repetition_count": le.get("repetition_count", 0),
-            "review_scheduled": le.get("review_scheduled", False)
-        })
-
-    # Pull best available non-null metadata from recent entries
-    def first_valid(field):
-        for e in reversed(logs_raw):  # prioritize newer
-            val = e.get(field)
-            if isinstance(val, list) and val:
-                return val
-            elif isinstance(val, str) and val.strip():
-                return val
-        return [] if field != "current_topic" else None
-
-    context_fields = {
-        "current_topic": first_valid("current_topic"),
-        "user_goals": first_valid("user_goals"),
-        "weak_areas": first_valid("weak_areas"),
-        "emphasized_facts": first_valid("emphasized_facts"),
-        "preferred_learning_styles": first_valid("preferred_learning_styles"),
-        "review_queue": first_valid("review_queue")
-    }
-
-    prompt = f"""
-You are ARLO's memory engine. Read the raw study logs below and return ONLY valid JSON.
-Return a single object matching this structure:
-
-{{
-  "current_topic": string or null,
-  "user_goals": [string],
-  "weak_areas": [string],
-  "emphasized_facts": [string],
-  "preferred_learning_styles": [string],
-  "review_queue": [string],
-  "learning_history": [
-    {{
-      "concept": string,
-      "phase": string,
-      "confidence": float,
-      "depth": "shallow" | "intermediate" | "deep",
-      "source_summary": string,
-      "repetition_count": int,
-      "review_scheduled": boolean
-    }}
-  ]
-}}
-
-DO NOT include markdown. No commentary. No explanation. No lists. Only a single valid JSON object. No null values — replace with defaults.
-
-Raw Logs:
-{json.dumps(flattened_logs, indent=2)}
-"""
-
+def synthesize_context_efficient(user_id: str, recent_events: List[Dict]) -> Dict[str, Any]:
+    """Efficient context synthesis without GPT for most cases"""
     try:
-        response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo-0125",
-            messages=[
-                {"role": "system", "content": "You are a context synthesis engine for an educational AI."},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0.3,
-            max_tokens=1200
-        )
-
-        raw_content = response.choices[0].message["content"].strip()
-        context_json = extract_and_parse_json(raw_content)
-
-        # 3. Insert best metadata into final state
-        context_json.update(context_fields)
-
-        # 4. Save into per-user context_state using UPSERT
-        get_supabase().table("context_state").upsert({
-            "user_id": user_id,
-            "context": json.dumps(context_json)
-        }, on_conflict=["user_id"]).execute()
-
-        return context_json
-
+        # Aggregate learning events efficiently
+        concepts = aggregate_learning_events(recent_events)
+        
+        # Extract metadata from most recent events
+        meta_fields = {
+            "current_topic": None,
+            "user_goals": [],
+            "preferred_learning_styles": [],
+            "emphasized_facts": []
+        }
+        
+        for event in reversed(recent_events):  # Most recent first
+            for field in meta_fields:
+                if event.get(field) and not meta_fields[field]:
+                    meta_fields[field] = event[field]
+        
+        # Generate derived insights
+        weak_areas = identify_weak_areas(concepts)
+        review_queue = generate_review_queue(concepts)
+        
+        # Convert concepts to serializable format
+        learning_history = []
+        for concept, memory in concepts.items():
+            learning_history.append({
+                "concept": memory.concept,
+                "confidence": memory.calculate_retention(),
+                "depth": memory.depth,
+                "repetition_count": memory.repetition_count,
+                "sources": memory.sources[:3],  # Limit to 3 sources
+                "last_seen": memory.last_seen.isoformat(),
+                "next_review": memory.next_review.isoformat() if memory.next_review else None
+            })
+        
+        # Sort by relevance (recent + high confidence)
+        learning_history.sort(key=lambda x: (
+            datetime.fromisoformat(x["last_seen"]),
+            x["confidence"]
+        ), reverse=True)
+        
+        return {
+            **meta_fields,
+            "weak_areas": weak_areas[:10],  # Limit to top 10
+            "review_queue": review_queue[:10],  # Limit to top 10
+            "learning_history": learning_history[:MAX_CONTEXT_HISTORY]
+        }
+        
     except Exception as e:
-        print("❌ GPT synthesis failed:", e)
-        raise HTTPException(status_code=500, detail=f"Failed to parse GPT output: {e}")
+        print(f"❌ Efficient synthesis failed: {e}")
+        return fallback_to_gpt_synthesis(user_id, recent_events)
+
+def fallback_to_gpt_synthesis(user_id: str, events: List[Dict]) -> Dict[str, Any]:
+    """GPT synthesis as fallback for complex cases"""
+    try:
+        # Create minimal prompt focusing on key insights
+        concepts = [e.get("learning_event", {}).get("concept") for e in events if e.get("learning_event", {}).get("concept")]
+        unique_concepts = list(set(concepts))
+        
+        if not unique_concepts:
+            return {
+                "current_topic": None,
+                "user_goals": [],
+                "preferred_learning_styles": [],
+                "weak_areas": [],
+                "emphasized_facts": [],
+                "review_queue": [],
+                "learning_history": []
+            }
+        
+        prompt = f"""Analyze these {len(unique_concepts)} learning concepts and return ONLY JSON:
+{json.dumps(unique_concepts)}
+
+Return format:
+{{"weak_areas": ["concept1", "concept2"], "current_topic": "topic", "emphasized_facts": ["fact1"]}}
+
+Focus on identifying the 3 weakest concepts and current learning focus."""
+
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.1,
+            max_tokens=200  # Dramatically reduced
+        )
+        
+        result = json.loads(response.choices[0].message["content"])
+        
+        # Ensure all required fields
+        return {
+            "current_topic": result.get("current_topic"),
+            "user_goals": result.get("user_goals", []),
+            "preferred_learning_styles": result.get("preferred_learning_styles", []),
+            "weak_areas": result.get("weak_areas", [])[:5],  # Limit to 5
+            "emphasized_facts": result.get("emphasized_facts", [])[:5],
+            "review_queue": result.get("weak_areas", [])[:5],  # Use weak areas as review queue
+            "learning_history": []
+        }
+        
+    except Exception as e:
+        print(f"❌ GPT synthesis failed: {e}")
+        # Return minimal valid context
+        return {
+            "current_topic": None,
+            "user_goals": [],
+            "preferred_learning_styles": [],
+            "weak_areas": [],
+            "emphasized_facts": [],
+            "review_queue": [],
+            "learning_history": []
+        }
+
 # ------------------------------
-# Routes
+# Background Processing
 # ------------------------------
+
+def background_synthesis(user_id: str, events: List[Dict]) -> None:
+    """Background synthesis with proper locking"""
+    with synthesis_locks[user_id]:
+        try:
+            synthesized = synthesize_context_efficient(user_id, events)
+            
+            # Batch update to reduce DB calls
+            get_supabase().table("context_state").upsert({
+                "user_id": user_id,
+                "context": json.dumps(synthesized),
+                "last_updated": datetime.now(timezone.utc).isoformat()
+            }, on_conflict=["user_id"]).execute()
+            
+            # Update cache
+            context_cache[user_id] = {
+                "context": synthesized,
+                "timestamp": datetime.now(timezone.utc)
+            }
+            
+            print(f"✅ Background synthesis complete for {user_id}")
+            
+        except Exception as e:
+            print(f"❌ Background synthesis failed for {user_id}: {e}")
+
+# ------------------------------
+# API Routes
+# ------------------------------
+
 @router.post("/context/update")
 async def update_context(update: ContextUpdate, request: Request):
-    entry = update.dict(exclude={"trigger_synthesis", "user_id"})
-    entry["timestamp"] = datetime.utcnow().isoformat()
-
-    # --- Robust user ID extraction ---
+    """Optimized context update with intelligent synthesis"""
+    
+    # Extract user ID
     user_info = getattr(request.state, "user", None)
-
     if user_info and "sub" in user_info:
         user_id = user_info["sub"]
     elif update.user_id:
         user_id = update.user_id
-    elif update.source and update.source.startswith("user:"):
-        user_id = update.source.replace("user:", "")
     else:
-        raise HTTPException(
-            status_code=400,
-            detail="Missing or invalid user ID. Include 'user_id' or use 'source=\"user:<uuid>\"'."
-        )
-
-    entry["user_id"] = user_id
-
-    # --- Debugging logs ---
+        raise HTTPException(status_code=400, detail="Missing user ID")
+    
+    # Prepare entry
+    entry = update.dict(exclude={"trigger_synthesis", "user_id"})
+    entry.update({
+        "user_id": user_id,
+        "timestamp": datetime.now(timezone.utc).isoformat()
+    })
+    
     try:
-        print("🔍 DEBUG: source =", update.source)
-        print("🔍 DEBUG: user_id =", user_id)
-        print("🔍 DEBUG: full context entry =", json.dumps(entry, indent=2))
-    except Exception as log_err:
-        print("⚠️ Logging error:", log_err)
-
-    # --- Save raw log entry ---
-    try:
+        # Single DB insert
         get_supabase().table("context_log").insert(entry).execute()
-    except Exception as db_err:
-        print("❌ DB Insert Error:", db_err)
-        raise HTTPException(status_code=500, detail="Failed to save context")
-
-    # --- Optionally synthesize ---
-    if should_trigger_synthesis(update):
-        try:
-            synthesized = synthesize_context_gpt(user_id=user_id)
-
-            # Save per-user synthesized context
-            get_supabase().table("context_state").upsert({
-                "user_id": user_id,
-                "context": json.dumps(synthesized)
-            }, on_conflict=["user_id"]).execute()
-
-            # Purge older logs for this user beyond most recent 5
-            all_logs = get_supabase().table("context_log") \
-                .select("id") \
+        
+        # Check if synthesis needed (non-blocking)
+        if update.trigger_synthesis or update.feedback_flag:
+            # Get recent events for synthesis decision
+            recent_events = get_supabase().table("context_log") \
+                .select("*") \
                 .eq("user_id", user_id) \
                 .order("id", desc=True) \
+                .limit(SYNTHESIS_THRESHOLD * 2) \
                 .execute().data
+            
+            if should_trigger_synthesis(user_id, recent_events):
+                # Launch background synthesis
+                threading.Thread(
+                    target=background_synthesis, 
+                    args=(user_id, recent_events)
+                ).start()
+                
+                return {"status": "ok", "synthesis_triggered": True}
+        
+        return {"status": "ok", "synthesis_triggered": False}
+        
+    except Exception as e:
+        print(f"❌ Context update failed: {e}")
+        raise HTTPException(status_code=500, detail="Failed to update context")
 
-            ids_to_keep = {entry["id"] for entry in all_logs[:5]}
-            for entry in all_logs[5:]:
-                if entry["id"] not in ids_to_keep:
-                    get_supabase().table("context_log").delete().eq("id", entry["id"]).execute()
+@router.get("/context/cache")
+def get_cached_context(user_id: str):
+    """Optimized context cache with better performance"""
+    now = datetime.now(timezone.utc)
+    
+    # Fast in-memory check
+    if user_id in context_cache:
+        cached = context_cache[user_id]
+        age_minutes = (now - cached["timestamp"]).total_seconds() / 60
+        
+        if age_minutes < CACHE_TTL_MINUTES:
+            return {
+                "cached": True,
+                "stale": False,
+                "age_minutes": age_minutes,
+                "context": cached["context"]
+            }
+    
+    # Supabase lookup
+    try:
+        result = get_supabase().table("context_state") \
+            .select("context, last_updated") \
+            .eq("user_id", user_id) \
+            .single() \
+            .execute()
+        
+        if result.data:
+            context = json.loads(result.data["context"])
+            last_updated = datetime.fromisoformat(result.data["last_updated"].replace("Z", "+00:00"))
+            age_minutes = (now - last_updated).total_seconds() / 60
+            
+            # Update in-memory cache
+            context_cache[user_id] = {
+                "context": context,
+                "timestamp": now
+            }
+            
+            return {
+                "cached": True,
+                "stale": age_minutes > STALE_THRESHOLD_MINUTES,
+                "age_minutes": age_minutes,
+                "context": context
+            }
+    
+    except Exception as e:
+        print(f"❌ Cache lookup failed: {e}")
+    
+    # Fallback to empty context
+    empty_context = {
+        "current_topic": None,
+        "user_goals": [],
+        "preferred_learning_styles": [],
+        "weak_areas": [],
+        "emphasized_facts": [],
+        "review_queue": [],
+        "learning_history": []
+    }
+    
+    return {
+        "cached": False,
+        "stale": True,
+        "age_minutes": 0,
+        "context": empty_context
+    }
 
-            return {"status": "ok", "synthesized": True}
-        except Exception as synth_err:
-            print("❌ Synthesis Error:", synth_err)
-            return {"status": "error", "synthesized": False}
-
-    return {"status": "ok", "synthesized": False}
+@router.get("/context/slice")
+async def get_context_slice(request: Request, focus: Optional[str] = None):
+    """Smart context slice returning only relevant information"""
+    
+    # Extract user ID
+    user_info = getattr(request.state, "user", None)
+    user_id = user_info.get("sub") if user_info else request.query_params.get("user_id")
+    
+    if not user_id:
+        raise HTTPException(status_code=400, detail="Missing user ID")
+    
+    try:
+        # Get full context
+        cache_result = get_cached_context(user_id)
+        context = cache_result["context"]
+        
+        # Return focused slice based on request
+        if focus == "review":
+            return {
+                "review_queue": context.get("review_queue", [])[:5],
+                "weak_areas": context.get("weak_areas", [])[:5]
+            }
+        elif focus == "learning":
+            return {
+                "current_topic": context.get("current_topic"),
+                "learning_history": context.get("learning_history", [])[:10]
+            }
+        else:
+            # Default slim slice
+            return {
+                "current_topic": context.get("current_topic"),
+                "weak_areas": context.get("weak_areas", [])[:3],
+                "review_queue": context.get("review_queue", [])[:3],
+                "user_goals": context.get("user_goals", [])[:3]
+            }
+            
+    except Exception as e:
+        print(f"❌ Context slice failed: {e}")
+        return {
+            "current_topic": None,
+            "weak_areas": [],
+            "review_queue": [],
+            "user_goals": []
+        }
 
 @router.post("/context/reset")
 def reset_context_state(request: ContextResetRequest):
+    """Efficient context reset with proper cleanup"""
     user_id = request.user_id
-
+    
     try:
-        # Load Supabase credentials
-        supabase_url = os.getenv("SUPABASE_URL")
-        supabase_key = os.getenv("SUPABASE_SERVICE_ROLE")
-        context_api_base = os.getenv("CONTEXT_API_BASE", "https://arlo-mvp-2.onrender.com")
-
-        if not supabase_url or not supabase_key:
-            raise HTTPException(status_code=500, detail="Missing Supabase env variables")
-
-        headers = {
-            "apikey": supabase_key,
-            "Authorization": f"Bearer {supabase_key}",
-            "Content-Type": "application/json"
-        }
-
-        # 1️⃣ Delete all context_log rows for the user
-        delete_logs_url = f"{supabase_url}/rest/v1/context_log?user_id=eq.{user_id}"
-        delete_res = requests.delete(delete_logs_url, headers=headers)
-        delete_res.raise_for_status()
-
-        # 2️⃣ Delete existing context_state row for this user
-        delete_ctx_url = f"{supabase_url}/rest/v1/context_state?user_id=eq.{user_id}"
-        requests.delete(delete_ctx_url, headers=headers)
-
-        # 3️⃣ Insert clean blank context state for this user
-        reset_context = {
+        # Clear in-memory cache first
+        context_cache.pop(user_id, None)
+        context_cache.pop(f"synthesis_hash_{user_id}", None)
+        
+        # Batch database operations
+        supabase = get_supabase()
+        
+        # Delete logs and state in parallel
+        supabase.table("context_log").delete().eq("user_id", user_id).execute()
+        supabase.table("context_state").delete().eq("user_id", user_id).execute()
+        
+        # Insert fresh context
+        fresh_context = {
             "user_id": user_id,
             "context": json.dumps({
                 "current_topic": None,
@@ -366,254 +516,50 @@ def reset_context_state(request: ContextResetRequest):
                 "emphasized_facts": [],
                 "review_queue": [],
                 "learning_history": []
-            })
+            }),
+            "last_updated": datetime.now(timezone.utc).isoformat()
         }
-
-        reset_res = requests.post(
-            f"{supabase_url}/rest/v1/context_state",
-            json=reset_context,
-            headers=headers
-        )
-        reset_res.raise_for_status()
-
-        # 4️⃣ Delete cached context for this user
-        try:
-            delete_cache_url = f"{supabase_url}/rest/v1/context_cache?user_id=eq.{user_id}"
-            cache_res = requests.delete(delete_cache_url, headers=headers)
-            cache_res.raise_for_status()
-        except Exception as e:
-            print(f"⚠️ Failed to clear context cache: {e}")
-
-        # 5️⃣ Optional: Refresh the cache so it’s ready for chatbot
-        try:
-            refresh_url = f"{context_api_base}/api/context/cache?user_id={user_id}"
-            requests.get(refresh_url, timeout=5)
-        except Exception as e:
-            print(f"⚠️ Failed to auto-refresh context cache: {e}")
-
-        return {"status": "context fully wiped"}
-
+        
+        supabase.table("context_state").insert(fresh_context).execute()
+        
+        return {"status": "context reset successfully"}
+        
     except Exception as e:
+        print(f"❌ Context reset failed: {e}")
         raise HTTPException(status_code=500, detail=f"Reset failed: {e}")
-
-
-# --- Helper: Check if timestamp is stale (> 1 min old) ---
-def is_stale(timestamp_str: str) -> bool:
-    try:
-        timestamp = datetime.fromisoformat(timestamp_str.rstrip("Z")).replace(tzinfo=timezone.utc)
-        return (datetime.now(timezone.utc) - timestamp) > timedelta(minutes=1)
-    except Exception as e:
-        print("❌ Error parsing timestamp:", e)
-        return True  # Treat unparseable as stale
-
-# --- Route: Cached Context ---
-def is_stale(timestamp_str: str, max_age_minutes: int = 5) -> bool:
-    try:
-        timestamp = datetime.fromisoformat(timestamp_str.replace("Z", "+00:00"))
-        age = datetime.now(timezone.utc) - timestamp
-        return age > timedelta(minutes=max_age_minutes)
-    except Exception:
-        return True
-
-def refresh_context_in_background(user_id: str):
-    def do_refresh():
-        try:
-            print(f"🔁 Background refreshing context for {user_id}")
-            context_api_base = os.getenv("CONTEXT_API_BASE", "https://arlo-mvp-2.onrender.com")
-            supabase_url = os.getenv("SUPABASE_URL")
-            supabase_key = os.getenv("SUPABASE_SERVICE_ROLE")
-
-            if not supabase_url or not supabase_key:
-                print("❌ Missing Supabase env vars")
-                return
-
-            headers = {
-                "apikey": supabase_key,
-                "Authorization": f"Bearer {supabase_key}",
-                "Content-Type": "application/json"
-            }
-
-            # Fetch fresh context from context state
-            state_url = f"{context_api_base}/api/context/state?user_id={user_id}"
-            state_resp = requests.get(state_url, timeout=10)
-            if state_resp.status_code != 200:
-                print(f"❌ Failed to refresh context: {state_resp.status_code}")
-                return
-
-            context = state_resp.json()
-
-            # Save to Supabase
-            upsert_payload = [{
-                "user_id": user_id,
-                "cached_json": json.dumps(context),
-                "last_updated": datetime.now(timezone.utc).isoformat()
-            }]
-            upsert_url = f"{supabase_url}/rest/v1/context_cache"
-            upsert_resp = requests.post(
-                upsert_url,
-                headers={**headers, "Prefer": "resolution=merge-duplicates"},
-                json=upsert_payload
-            )
-
-            if upsert_resp.status_code in [200, 201]:
-                context_cache[user_id] = {
-                    "context": context,
-                    "timestamp": datetime.now(timezone.utc)
-                }
-                print("✅ Context refreshed + cached")
-            else:
-                print(f"❌ Supabase upsert failed: {upsert_resp.status_code}")
-
-        except Exception as e:
-            print(f"❌ Background context refresh failed: {e}")
-
-    # Launch background thread
-    threading.Thread(target=do_refresh).start()
-
-@router.get("/context/cache")
-
-def get_cached_context(user_id: str):
-    now = datetime.now(timezone.utc)
-    supabase_url = os.getenv("SUPABASE_URL")
-    supabase_key = os.getenv("SUPABASE_SERVICE_ROLE")
-
-    if not supabase_url or not supabase_key:
-        raise HTTPException(status_code=500, detail="Missing SUPABASE_URL or SERVICE_ROLE key")
-
-    headers = {
-        "apikey": supabase_key,
-        "Authorization": f"Bearer {supabase_key}",
-        "Content-Type": "application/json"
-    }
-
-    # STEP 1: Fast in-memory cache check
-    if user_id in context_cache:
-        cached = context_cache[user_id]
-        if now - cached["timestamp"] < context_ttl:
-            return {"cached": True, "stale": False, "context": cached["context"]}
-
-    # STEP 2: Supabase cache lookup
-    url = f"{supabase_url}/rest/v1/context_cache?user_id=eq.{user_id}&select=*"
-    resp = requests.get(url, headers=headers, timeout=5)
-
-    if resp.status_code == 200 and resp.json():
-        row = resp.json()[0]
-        cached_context = json.loads(row["cached_json"])
-        timestamp = row["last_updated"]
-
-        # Always serve cached context
-        result = {
-            "cached": True,
-            "stale": is_stale(timestamp),
-            "context": cached_context
-        }
-
-        # Save to in-memory cache
-        context_cache[user_id] = {
-            "context": cached_context,
-            "timestamp": now
-        }
-
-        # If stale, trigger async background refresh
-        if is_stale(timestamp):
-            refresh_context_in_background(user_id)
-
-        return result
-
-    # STEP 3: Supabase failed or empty — fetch fresh context (blocking)
-    print("⚠️ Supabase cache missing or error — fetching fresh context now...")
-    context_api_base = os.getenv("CONTEXT_API_BASE", "https://arlo-mvp-2.onrender.com")
-    state_url = f"{context_api_base}/api/context/state?user_id={user_id}"
-    state_resp = requests.get(state_url, timeout=10)
-
-    if state_resp.status_code != 200:
-        raise HTTPException(status_code=500, detail="Failed to fetch fallback context")
-
-    context = state_resp.json()
-
-    # Save both Supabase + in-memory
-    upsert_payload = [{
-        "user_id": user_id,
-        "cached_json": json.dumps(context),
-        "last_updated": datetime.now(timezone.utc).isoformat()
-    }]
-    upsert_url = f"{supabase_url}/rest/v1/context_cache"
-    requests.post(
-        upsert_url,
-        headers={**headers, "Prefer": "resolution=merge-duplicates"},
-        json=upsert_payload
-    )
-
-    context_cache[user_id] = {
-        "context": context,
-        "timestamp": now
-    }
-
-    return {"cached": False, "stale": True, "context": context}
-
-@router.get("/context/logs/recent")
-def get_recent_logs(user_id: str):
-    return query_context_log_table(user_id, limit=5)
 
 @router.get("/context/state")
 def get_context_state(user_id: str):
+    """Get full context state for debugging"""
     try:
-        result = get_supabase() \
-            .table("context_state") \
+        result = get_supabase().table("context_state") \
             .select("context") \
             .eq("user_id", user_id) \
             .single() \
             .execute()
-
-        ctx_raw = result.data.get("context") if result.data else None
-        if not ctx_raw:
-            raise ValueError("No context found for user")
-
-        return json.loads(ctx_raw)
-
+        
+        if result.data:
+            return json.loads(result.data["context"])
+        else:
+            raise HTTPException(status_code=404, detail="Context not found")
+            
     except Exception as e:
-        print("❌ Error fetching context state:", e)
-        raise HTTPException(status_code=404, detail=f"Context state not found: {e}")
+        print(f"❌ Context state fetch failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch context: {e}")
 
-@router.get("/context/slice")
-async def get_context_slice(request: Request):
+@router.get("/context/logs/recent")
+def get_recent_logs(user_id: str, limit: int = 10):
+    """Get recent context logs for debugging"""
     try:
-        # --- Extract user ID ---
-        user_info = getattr(request.state, "user", None)
-        user_id = (
-            user_info["sub"]
-            if user_info and "sub" in user_info else
-            request.headers.get("X-User-ID") or
-            request.query_params.get("user_id")
-        )
-
-        if not user_id:
-            raise ValueError("No user_id found in auth, header, or query")
-
-        # --- Fetch context for user ---
-        res = get_supabase().table("context_state").select("context").eq("user_id", user_id).single().execute()
-        ctx_raw = res.data.get("context") if res.data else None
-        if not ctx_raw:
-            raise ValueError(f"No context found for user_id={user_id}")
-
-        ctx = json.loads(ctx_raw)
-
+        result = get_supabase().table("context_log") \
+            .select("*") \
+            .eq("user_id", user_id) \
+            .order("id", desc=True) \
+            .limit(limit) \
+            .execute()
+        
+        return {"logs": result.data or []}
+        
     except Exception as e:
-        print("⚠️ Context fallback triggered:", e)
-        ctx = {
-            "current_topic": None,
-            "user_goals": [],
-            "weak_areas": [],
-            "emphasized_facts": [],
-            "preferred_learning_styles": [],
-            "review_queue": []
-        }
-
-    return {
-        "current_topic": ctx.get("current_topic"),
-        "user_goals": ctx.get("user_goals", []),
-        "weak_areas": ctx.get("weak_areas", []),
-        "emphasized_facts": ctx.get("emphasized_facts", []),
-        "preferred_learning_styles": ctx.get("preferred_learning_styles", []),
-        "review_queue": ctx.get("review_queue", [])
-    }
+        print(f"❌ Recent logs fetch failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch logs: {e}")
