@@ -143,9 +143,13 @@ def extract_learning_concepts(response: str) -> List[str]:
 async def update_context_async(user_id: str, context_data: Dict[str, Any]):
     """Update user context asynchronously"""
     try:
+        # Flatten the payload structure to match API expectations
         payload = {
             "user_id": user_id,
-            "context": context_data,
+            "concepts_covered": context_data.get("concepts_covered", []),
+            "last_interaction": context_data.get("last_interaction", datetime.now().isoformat()),
+            "topic": context_data.get("topic", ""),
+            "session_type": "chatbot",
             "timestamp": datetime.now().isoformat()
         }
         
@@ -153,12 +157,14 @@ async def update_context_async(user_id: str, context_data: Dict[str, Any]):
             async with session.post(
                 f"{CONTEXT_API}/api/context/update",
                 json=payload,
+                headers={"Content-Type": "application/json"},
                 timeout=aiohttp.ClientTimeout(total=5)
             ) as response:
                 if response.status == 200:
                     logger.info(f"Context updated for user {user_id}")
                 else:
-                    logger.warning(f"Context update failed with status {response.status}")
+                    response_text = await response.text()
+                    logger.warning(f"Context update failed with status {response.status}: {response_text}")
     except Exception as e:
         logger.error(f"Context update failed: {e}")
 
@@ -275,26 +281,43 @@ async def help_handler(data: HelpInput):
 # Context Save Endpoint (Enhanced)
 # ---------------------------
 @router.post("/chatbot/save")
-async def save_chat_context(payload: Dict[str, Any]):
+async def save_chat_context(request: Request, payload: Dict[str, Any]):
     """Enhanced context saving with better error handling"""
     try:
         logger.info("Saving enhanced chatbot context")
         
-        # Add timestamp
-        payload["timestamp"] = datetime.now().isoformat()
+        # Extract user_id from request or payload
+        user_id = request.headers.get("x-user-id") or payload.get("user_id")
+        if not user_id:
+            raise HTTPException(status_code=400, detail="Missing user_id")
+        
+        # Structure payload to match API expectations
+        formatted_payload = {
+            "user_id": user_id,
+            "concepts_covered": payload.get("concepts_covered", []),
+            "last_interaction": payload.get("last_interaction", datetime.now().isoformat()),
+            "topic": payload.get("topic", ""),
+            "session_type": payload.get("session_type", "chatbot"),
+            "message_history": payload.get("message_history", []),
+            "timestamp": datetime.now().isoformat()
+        }
         
         async with aiohttp.ClientSession() as session:
             async with session.post(
                 f"{CONTEXT_API}/api/context/update",
-                json=payload,
+                json=formatted_payload,
+                headers={"Content-Type": "application/json"},
                 timeout=aiohttp.ClientTimeout(total=10)
             ) as response:
                 if response.status == 200:
                     return {"status": "success", "message": "Context saved successfully"}
                 else:
-                    logger.warning(f"Context save returned status {response.status}")
-                    return {"status": "warning", "message": f"Context save returned status {response.status}"}
+                    response_text = await response.text()
+                    logger.warning(f"Context save returned status {response.status}: {response_text}")
+                    return {"status": "warning", "message": f"Context save returned status {response.status}", "details": response_text}
                     
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Context save failed: {e}")
         return {"status": "error", "detail": str(e)}
