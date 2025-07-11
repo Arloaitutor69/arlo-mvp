@@ -1,4 +1,4 @@
-# ENHANCED QUIZ MODULE WITH ADVANCED TUTORING FEATURES
+# OPTIMIZED QUIZ MODULE FOR MAXIMUM OUTPUT
 
 from fastapi import APIRouter, HTTPException, Request, BackgroundTasks
 from pydantic import BaseModel, Field, validator
@@ -23,7 +23,7 @@ CONTEXT_API = os.getenv("CONTEXT_API_BASE", "https://arlo-mvp-2.onrender.com")
 router = APIRouter()
 
 # -----------------------------
-# Enhanced Models and Enums
+# Simplified Models for Maximum Output
 # -----------------------------
 
 class DifficultyLevel(str, Enum):
@@ -36,47 +36,21 @@ class DifficultyLevel(str, Enum):
 class QuestionType(str, Enum):
     MULTIPLE_CHOICE = "multiple_choice"
     TRUE_FALSE = "true_false"
-    FILL_IN_BLANK = "fill_in_blank"
     SHORT_ANSWER = "short_answer"
-    MATCHING = "matching"
-    ORDERING = "ordering"
 
 class LearningObjective(str, Enum):
-    KNOWLEDGE = "knowledge"        # Remember facts
-    COMPREHENSION = "comprehension" # Understand concepts
-    APPLICATION = "application"    # Apply knowledge
-    ANALYSIS = "analysis"         # Break down information
-    SYNTHESIS = "synthesis"       # Create new understanding
-    EVALUATION = "evaluation"     # Make judgments
+    KNOWLEDGE = "knowledge"
+    COMPREHENSION = "comprehension"
+    APPLICATION = "application"
+    ANALYSIS = "analysis"
 
-@dataclass
-class LearningGap:
-    concept: str
-    importance: float  # 0-1 scale
-    prerequisite: bool
-    description: str
-    suggested_resources: List[str]
-
-@dataclass
-class QuizMetrics:
-    generation_time: float
-    context_fetch_time: float
-    question_count: int
-    difficulty_distribution: Dict[str, int]
-    learning_objectives_covered: List[str]
-
-# Enhanced Models
+# Streamlined Models
 class QuizRequest(BaseModel):
-    content: str = Field(..., min_length=10, description="Learning content to create quiz from")
+    content: str = Field(..., min_length=10)
     difficulty: Optional[DifficultyLevel] = DifficultyLevel.MEDIUM
     question_types: Optional[List[QuestionType]] = [QuestionType.MULTIPLE_CHOICE]
     user_id: Optional[str] = None
-    learning_objectives: Optional[List[LearningObjective]] = None
-    focus_areas: Optional[List[str]] = None
-    time_limit_minutes: Optional[int] = Field(None, ge=1, le=120)
-    adaptive_difficulty: bool = True
-    include_prerequisites: bool = True
-    max_questions: int = Field(12, ge=5, le=25)
+    max_questions: int = Field(12, ge=8, le=15)
     
     @validator('content')
     def validate_content(cls, v):
@@ -84,6 +58,7 @@ class QuizRequest(BaseModel):
             raise ValueError('Content must be at least 10 characters long')
         return v.strip()
 
+# Simplified Question Model - Only Essential Fields
 class QuizQuestion(BaseModel):
     id: int
     type: QuestionType
@@ -92,214 +67,102 @@ class QuizQuestion(BaseModel):
     correct_answer: str
     explanation: str
     difficulty: DifficultyLevel
-    learning_objective: LearningObjective
-    concept_tags: List[str]
-    estimated_time_seconds: int
-    hints: List[str] = []
-    follow_up_resources: List[str] = []
-    prerequisite_concepts: List[str] = []
 
+# Simplified Response Model
 class QuizResponse(BaseModel):
     quiz_id: str
     questions: List[QuizQuestion]
-    metadata: Dict[str, Any]
-    learning_gaps_identified: List[Dict[str, Any]]
-    estimated_completion_time: int
-    adaptive_recommendations: Dict[str, Any]
-    prerequisite_check: Dict[str, Any]
+    total_questions: int
+    estimated_time_minutes: int
 
 # -----------------------------
-# Enhanced Context Cache with Performance Improvements
+# Simplified Context Cache
 # -----------------------------
 
 class ContextCache:
     def __init__(self, ttl_minutes: int = 5):
         self.cache = {}
         self.ttl = timedelta(minutes=ttl_minutes)
-        self.last_cleanup = datetime.now()
-    
-    def _cleanup_expired(self):
-        now = datetime.now()
-        if now - self.last_cleanup > timedelta(minutes=1):
-            expired_keys = [
-                key for key, (timestamp, _) in self.cache.items()
-                if now - timestamp > self.ttl
-            ]
-            for key in expired_keys:
-                del self.cache[key]
-            self.last_cleanup = now
     
     async def get_context(self, user_id: str) -> Dict[str, Any]:
-        self._cleanup_expired()
-        now = datetime.now()
-        
-        if user_id in self.cache:
-            timestamp, cached_value = self.cache[user_id]
-            if now - timestamp < self.ttl:
-                return cached_value
+        if not user_id:
+            return {}
         
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.get(
                     f"{CONTEXT_API}/api/context/cache?user_id={user_id}",
-                    timeout=aiohttp.ClientTimeout(total=5)
+                    timeout=aiohttp.ClientTimeout(total=3)
                 ) as response:
-                    response.raise_for_status()
-                    context = await response.json()
-                    self.cache[user_id] = (now, context)
-                    return context
+                    if response.status == 200:
+                        return await response.json()
+                    return {}
         except Exception as e:
-            print(f"❌ Failed to fetch context for user {user_id}: {e}")
+            print(f"❌ Context fetch failed: {e}")
             return {}
 
 context_cache = ContextCache()
 
 # -----------------------------
-# Content Analysis and Gap Detection
-# -----------------------------
-
-class ContentAnalyzer:
-    @staticmethod
-    def extract_key_concepts(content: str) -> List[str]:
-        """Extract key concepts from content using NLP techniques"""
-        # Simple keyword extraction (can be enhanced with NLP libraries)
-        words = re.findall(r'\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b', content)
-        # Remove common words and duplicates
-        concepts = list(set([w for w in words if len(w) > 3]))
-        return concepts[:15]  # Limit to top 15 concepts
-    
-    @staticmethod
-    def identify_learning_gaps(content: str, user_context: Dict[str, Any]) -> List[LearningGap]:
-        """Identify potential learning gaps based on content and user context"""
-        gaps = []
-        
-        # Check for missing prerequisites
-        weak_areas = user_context.get('weak_areas', [])
-        concepts = ContentAnalyzer.extract_key_concepts(content)
-        
-        for concept in concepts:
-            if any(weak in concept.lower() for weak in weak_areas):
-                gaps.append(LearningGap(
-                    concept=concept,
-                    importance=0.8,
-                    prerequisite=True,
-                    description=f"Potential weakness in {concept} identified",
-                    suggested_resources=[f"Review {concept} fundamentals"]
-                ))
-        
-        return gaps
-    
-    @staticmethod
-    def estimate_content_difficulty(content: str) -> DifficultyLevel:
-        """Estimate content difficulty based on various factors"""
-        # Simple heuristics (can be enhanced with ML models)
-        word_count = len(content.split())
-        complex_words = len(re.findall(r'\b\w{10,}\b', content))
-        technical_terms = len(re.findall(r'\b[A-Z]{2,}\b', content))
-        
-        difficulty_score = (complex_words / word_count) * 100 + (technical_terms / word_count) * 50
-        
-        if difficulty_score < 5:
-            return DifficultyLevel.BEGINNER
-        elif difficulty_score < 10:
-            return DifficultyLevel.EASY
-        elif difficulty_score < 20:
-            return DifficultyLevel.MEDIUM
-        elif difficulty_score < 30:
-            return DifficultyLevel.HARD
-        else:
-            return DifficultyLevel.EXPERT
-
-# -----------------------------
-# Enhanced Question Generation
+# Optimized Question Generation
 # -----------------------------
 
 class QuestionGenerator:
     @staticmethod
-    def build_enhanced_prompt(
+    def build_optimized_prompt(
         content: str,
         difficulty: DifficultyLevel,
         question_types: List[QuestionType],
-        context: Dict[str, Any],
-        learning_objectives: List[LearningObjective],
-        max_questions: int
+        max_questions: int,
+        user_weak_areas: List[str] = None
     ) -> str:
         
-        # Enhanced system message
-        system_context = f"""
-        You are an expert educational content creator specializing in adaptive learning.
+        # Ultra-concise prompt focused on output maximization
+        question_type_str = ", ".join([qt.value for qt in question_types])
+        weak_areas_str = f" Focus extra attention on: {', '.join(user_weak_areas[:3])}" if user_weak_areas else ""
         
-        Create 7 - 12 high-quality quiz questions that:
-        1. Test deep understanding, not just memorization
-        2. Include varying difficulty levels to challenge the student appropriately
-        3. Cover multiple learning objectives (knowledge, comprehension, application, analysis)
-        4. Include helpful explanations that teach additional concepts
+        prompt = f"""Create a minumum of 7 and max 15 quiz questions from this content.
+
+CONTENT:
+{content}
+
+REQUIREMENTS:
+- Difficulty: {difficulty.value}
+- Types: {question_type_str}
+- Test understanding, not just memorization{weak_areas_str}
+
+OUTPUT FORMAT (JSON only, no markdown):
+[
+  {{
+    "id": 1,
+    "type": "multiple_choice",
+    "question": "Question text here?",
+    "options": ["A", "B", "C", "D"],
+    "correct_answer": "A",
+    "explanation": "Brief explanation why A is correct.",
+    "difficulty": "{difficulty.value}"
+  }}
+]
+
+Generate all {max_questions} questions now:""" """
         
-        Content Analysis:
-        - Key concepts: {ContentAnalyzer.extract_key_concepts(content)}
-        - Estimated difficulty: {ContentAnalyzer.estimate_content_difficulty(content)}
-        """
-        
-        # User context integration
-        user_context = f"""
-        Student Profile:
-        - Current topic: {context.get('current_topic', 'General')}
-        - Weak areas: {', '.join(context.get('weak_areas', []))}
-        - Strong areas: {', '.join(context.get('strong_areas', []))}
-        - Learning goals: {', '.join(context.get('user_goals', []))}
-        - Previous performance: {context.get('average_score', 'Unknown')}
-        - Concepts needing review: {', '.join(context.get('review_queue', []))}
-        """
-        
-        # Question specifications
-        question_specs = f"""
-        Question Requirements:
-        - Difficulty level: {difficulty.value}
-        - Question types: {[qt.value for qt in question_types]}
-        - Learning objectives to cover: {[lo.value for lo in learning_objectives] if learning_objectives else 'All applicable'}
-        - Focus on practical application and critical thinking
-        - Ensure questions build upon each other progressively
-        """
-        
-        # Output format specification
-        output_format = """
-        Return ONLY a valid JSON array with this exact structure:
-        [
-          {
-            "id": 1,
-            "type": "multiple_choice",
-            "question": "Detailed, thought-provoking question text",
-            "options": ["Option A", "Option B", "Option C", "Option D"],
-            "correct_answer": "Option A",
-            "explanation": "Comprehensive explanation that teaches additional concepts",
-            "difficulty": "medium",
-            "learning_objective": "application",
-            "concept_tags": ["concept1", "concept2"],
-            "estimated_time_seconds": 90,
-            "hints": ["Helpful hint 1", "Helpful hint 2"],
-            "follow_up_resources": ["Resource suggestion 1"],
-            "prerequisite_concepts": ["prerequisite1", "prerequisite2"]
-          }
-        ]
-        """
-        
-        return f"{system_context}\n\n{user_context}\n\n{question_specs}\n\n{output_format}"
+        return prompt
     
     @staticmethod
     async def generate_questions(
         content: str,
         difficulty: DifficultyLevel,
         question_types: List[QuestionType],
-        context: Dict[str, Any],
-        learning_objectives: List[LearningObjective],
-        max_questions: int
+        max_questions: int,
+        user_context: Dict[str, Any] = None
     ) -> List[QuizQuestion]:
         
-        start_time = datetime.now()
-        
         try:
-            prompt = QuestionGenerator.build_enhanced_prompt(
-                content, difficulty, question_types, context, learning_objectives, max_questions
+            # Extract only essential context
+            weak_areas = user_context.get('weak_areas', [])[:3] if user_context else []
+            
+            prompt = QuestionGenerator.build_optimized_prompt(
+                content, difficulty, question_types, max_questions, weak_areas
             )
             
             response = await asyncio.get_event_loop().run_in_executor(
@@ -307,104 +170,115 @@ class QuestionGenerator:
                 lambda: openai.ChatCompletion.create(
                     model="gpt-3.5-turbo", 
                     messages=[
-                        {"role": "system", "content": "You are an expert educational content creator."},
+                        {
+                            "role": "system", 
+                            "content": f"You are a quiz generator. Always create exactly {max_questions} questions. Return only valid JSON."
+                        },
                         {"role": "user", "content": prompt}
                     ],
-                    temperature=0.5,
-                    max_tokens=4000  
+                    temperature=0.6,
+                    max_tokens=8000,  # Increased token limit
+                    top_p=0.9
                 )
             )
             
             raw_content = response["choices"][0]["message"]["content"].strip()
             
-            # Clean up response
-            if raw_content.startswith("```json"):
-                raw_content = raw_content[7:-3].strip()
-            elif raw_content.startswith("```"):
-                raw_content = "\n".join(raw_content.splitlines()[1:-1])
+            # Aggressive cleaning of response
+            if raw_content.startswith("```"):
+                lines = raw_content.split('\n')
+                # Find JSON start and end
+                start_idx = 0
+                end_idx = len(lines)
+                
+                for i, line in enumerate(lines):
+                    if line.strip().startswith('['):
+                        start_idx = i
+                        break
+                
+                for i in range(len(lines) - 1, -1, -1):
+                    if lines[i].strip().endswith(']'):
+                        end_idx = i + 1
+                        break
+                
+                raw_content = '\n'.join(lines[start_idx:end_idx])
             
-            parsed_questions = json.loads(raw_content)
+            # Parse JSON
+            try:
+                parsed_questions = json.loads(raw_content)
+            except json.JSONDecodeError as e:
+                print(f"❌ JSON parse error: {e}")
+                print(f"Raw content: {raw_content[:500]}...")
+                # Try to fix common JSON issues
+                fixed_content = raw_content.replace("'", '"').replace('True', 'true').replace('False', 'false')
+                parsed_questions = json.loads(fixed_content)
             
-            # Validate and enhance questions
+            # Validate and convert to QuizQuestion objects
             questions = []
             for i, q_data in enumerate(parsed_questions):
                 try:
-                    # Ensure all required fields have defaults
+                    # Ensure required fields
                     q_data.setdefault('id', i + 1)
                     q_data.setdefault('difficulty', difficulty.value)
-                    q_data.setdefault('learning_objective', 'comprehension')
-                    q_data.setdefault('concept_tags', [])
-                    q_data.setdefault('estimated_time_seconds', 60)
-                    q_data.setdefault('hints', [])
-                    q_data.setdefault('follow_up_resources', [])
-                    q_data.setdefault('prerequisite_concepts', [])
                     
-                    # Convert boolean answers to strings
+                    # Handle boolean answers
                     if isinstance(q_data.get('correct_answer'), bool):
                         q_data['correct_answer'] = str(q_data['correct_answer'])
                     
+                    # Validate question type
+                    if q_data.get('type') not in [qt.value for qt in question_types]:
+                        q_data['type'] = question_types[0].value
+                    
                     questions.append(QuizQuestion(**q_data))
+                    
                 except Exception as e:
                     print(f"❌ Error processing question {i}: {e}")
+                    print(f"Question data: {q_data}")
                     continue
             
-            generation_time = (datetime.now() - start_time).total_seconds()
-            print(f"✅ Generated {len(questions)} questions in {generation_time:.2f}s")
+            print(f"✅ Generated {len(questions)} questions (requested: {max_questions})")
             
+            # If we didn't get enough questions, this is a generation issue
+            if len(questions) < max_questions * 0.6:  # At least 60% of requested
+                print(f"⚠️  Only got {len(questions)} questions, expected {max_questions}")
+                # Log the issue but still return what we have
+                
             return questions
             
         except Exception as e:
             print(f"❌ Question generation failed: {e}")
+            print(f"Content length: {len(content)}")
+            print(f"Max questions: {max_questions}")
             raise HTTPException(status_code=500, detail=f"Question generation failed: {str(e)}")
 
 # -----------------------------
-# Enhanced Logging and Analytics
+# Simplified Logging
 # -----------------------------
 
-class LearningAnalytics:
-    @staticmethod
-    async def log_enhanced_learning_event(
-        topic: str,
-        questions: List[QuizQuestion],
-        user_id: Optional[str],
-        metrics: QuizMetrics,
-        learning_gaps: List[LearningGap]
-    ):
-        if not user_id:
-            return
+async def log_quiz_creation(user_id: str, topic: str, question_count: int):
+    """Simplified logging"""
+    if not user_id:
+        return
+    
+    try:
+        payload = {
+            "user_id": user_id,
+            "event": "quiz_generated",
+            "topic": topic,
+            "question_count": question_count,
+            "timestamp": datetime.now().isoformat()
+        }
         
-        try:
-            payload = {
-                "source": "enhanced_quiz",
-                "user_id": user_id,
-                "current_topic": topic,
-                "timestamp": datetime.now().isoformat(),
-                "learning_event": {
-                    "concept": topic,
-                    "phase": "adaptive_quiz",
-                    "question_count": len(questions),
-                    "difficulty_distribution": metrics.difficulty_distribution,
-                    "learning_objectives": metrics.learning_objectives_covered,
-                    "estimated_time": sum(q.estimated_time_seconds for q in questions),
-                    "concepts_covered": list(set(
-                        tag for q in questions for tag in q.concept_tags
-                    )),
-                    "gaps_identified": [asdict(gap) for gap in learning_gaps],
-                    "performance_metrics": asdict(metrics)
-                }
-            }
-            
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    f"{CONTEXT_API}/api/context/update",
-                    json=payload,
-                    headers={"Content-Type": "application/json"},
-                    timeout=aiohttp.ClientTimeout(total=10)
-                ) as response:
-                    print(f"📊 Analytics logged: {response.status}")
-                    
-        except Exception as e:
-            print(f"❌ Failed to log analytics: {e}")
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{CONTEXT_API}/api/context/update",
+                json=payload,
+                timeout=aiohttp.ClientTimeout(total=5)
+            ) as response:
+                print(f"📊 Quiz logged: {response.status}")
+                
+    except Exception as e:
+        print(f"❌ Logging failed: {e}")
 
 # -----------------------------
 # Utility Functions
@@ -421,127 +295,56 @@ def extract_user_id(request: Request, req: QuizRequest) -> Optional[str]:
         return req.user_id
     return None
 
-def build_adaptive_recommendations(
-    questions: List[QuizQuestion],
-    learning_gaps: List[LearningGap],
-    user_context: Dict[str, Any]
-) -> Dict[str, Any]:
-    """Build adaptive learning recommendations"""
-    
-    difficulty_counts = {}
-    for q in questions:
-        difficulty_counts[q.difficulty.value] = difficulty_counts.get(q.difficulty.value, 0) + 1
-    
-    return {
-        "next_session_difficulty": "medium",  # Can be enhanced with ML
-        "focus_areas": [gap.concept for gap in learning_gaps if gap.importance > 0.7],
-        "study_time_recommendation": sum(q.estimated_time_seconds for q in questions) + 300,
-        "prerequisite_review_needed": any(gap.prerequisite for gap in learning_gaps),
-        "learning_path_suggestions": [
-            f"Review {gap.concept}" for gap in learning_gaps[:3]
-        ]
-    }
-
 # -----------------------------
-# Enhanced API Routes
+# Optimized API Route
 # -----------------------------
 
 @router.post("/generate", response_model=QuizResponse)
-async def create_enhanced_quiz(
+async def create_quiz(
     req: QuizRequest,
     request: Request,
     background_tasks: BackgroundTasks
 ):
-    """Generate an enhanced, personalized quiz"""
+    """Generate optimized quiz with maximum questions"""
     
-    print(f"🚀 Creating enhanced quiz for content: {req.content[:100]}...")
+    print(f"🚀 Creating quiz: {req.max_questions} questions from {len(req.content)} chars")
     start_time = datetime.now()
     
-    # Extract user identification
+    # Get user context quickly
     user_id = extract_user_id(request, req)
-    print(f"🔍 User ID: {user_id}")
-    
-    # Fetch user context with timing
-    context_start = datetime.now()
     user_context = await context_cache.get_context(user_id) if user_id else {}
-    context_fetch_time = (datetime.now() - context_start).total_seconds()
     
-    # Analyze content and detect learning gaps
-    learning_gaps = ContentAnalyzer.identify_learning_gaps(req.content, user_context)
-    content_difficulty = ContentAnalyzer.estimate_content_difficulty(req.content)
-    
-    # Adjust difficulty based on user context and content analysis
-    target_difficulty = req.difficulty
-    if req.adaptive_difficulty and user_context.get('average_score'):
-        avg_score = user_context.get('average_score', 0.5)
-        if avg_score > 0.8:
-            target_difficulty = DifficultyLevel.HARD
-        elif avg_score < 0.6:
-            target_difficulty = DifficultyLevel.EASY
-    
-    # Set default learning objectives if not provided
-    learning_objectives = req.learning_objectives or [
-        LearningObjective.COMPREHENSION,
-        LearningObjective.APPLICATION,
-        LearningObjective.ANALYSIS
-    ]
-    
-    # Generate enhanced questions
+    # Generate questions with optimized approach
     questions = await QuestionGenerator.generate_questions(
         content=req.content,
-        difficulty=target_difficulty,
+        difficulty=req.difficulty,
         question_types=req.question_types,
-        context=user_context,
-        learning_objectives=learning_objectives,
-        max_questions=req.max_questions
+        max_questions=req.max_questions,
+        user_context=user_context
     )
     
-    # Calculate metrics
-    total_time = (datetime.now() - start_time).total_seconds()
-    difficulty_distribution = {}
-    for q in questions:
-        difficulty_distribution[q.difficulty.value] = difficulty_distribution.get(q.difficulty.value, 0) + 1
-    
-    metrics = QuizMetrics(
-        generation_time=total_time,
-        context_fetch_time=context_fetch_time,
-        question_count=len(questions),
-        difficulty_distribution=difficulty_distribution,
-        learning_objectives_covered=[obj.value for obj in learning_objectives]
-    )
-    
-    # Build adaptive recommendations
-    recommendations = build_adaptive_recommendations(questions, learning_gaps, user_context)
-    
-    # Create quiz response
-    quiz_id = f"enhanced_quiz_{uuid.uuid4().hex[:8]}"
+    # Create response
+    quiz_id = f"quiz_{uuid.uuid4().hex[:8]}"
+    estimated_time = len(questions) * 90  # 90 seconds per question average
     
     quiz_response = QuizResponse(
         quiz_id=quiz_id,
         questions=questions,
-        metadata={
-            "generation_time": total_time,
-            "content_difficulty": content_difficulty.value,
-            "target_difficulty": target_difficulty.value,
-            "user_context_available": bool(user_context),
-            "adaptive_mode": req.adaptive_difficulty,
-            "creation_timestamp": datetime.now().isoformat()
-        },
-        learning_gaps_identified=[asdict(gap) for gap in learning_gaps],
-        estimated_completion_time=sum(q.estimated_time_seconds for q in questions),
-        adaptive_recommendations=recommendations,
-        prerequisite_check={
-            "required": [gap.concept for gap in learning_gaps if gap.prerequisite],
-            "recommended": [gap.concept for gap in learning_gaps if not gap.prerequisite]
-        }
+        total_questions=len(questions),
+        estimated_time_minutes=estimated_time // 60
     )
     
-    # Log analytics in background
-    current_topic = user_context.get('current_topic', 'General')
-    background_tasks.add_task(
-        LearningAnalytics.log_enhanced_learning_event,
-        current_topic, questions, user_id, metrics, learning_gaps
-    )
+    # Log in background
+    if user_id:
+        background_tasks.add_task(
+            log_quiz_creation,
+            user_id,
+            user_context.get('current_topic', 'General'),
+            len(questions)
+        )
     
-    print(f"✅ Enhanced quiz created in {total_time:.2f}s with {len(questions)} questions")
+    total_time = (datetime.now() - start_time).total_seconds()
+    print(f"✅ Quiz created in {total_time:.2f}s: {len(questions)} questions")
+    
     return quiz_response
+
