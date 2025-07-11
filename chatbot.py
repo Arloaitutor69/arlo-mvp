@@ -37,14 +37,22 @@ class ChatbotInput(BaseModel):
 
 class HelpInput(BaseModel):
     content: str
+    question_type: Optional[str] = "general"
+    topic: Optional[str] = None
 
 class ChatbotResponse(BaseModel):
     message: str
     follow_up_question: Optional[str] = None
+    context_update_required: Optional[bool] = False
+    learning_concepts_covered: Optional[List[str]] = []
+    confidence_level: Optional[str] = "medium"
 
 class HelpResponse(BaseModel):
     explanation: str
     key_concepts: List[str]
+    step_by_step: Optional[List[str]] = None
+    related_topics: Optional[List[str]] = None
+    practice_suggestions: Optional[List[str]] = None
 
 # ---------------------------
 # Enhanced Helpers
@@ -54,17 +62,15 @@ def extract_user_id(request: Request, data: ChatbotInput) -> str:
         return request.headers["x-user-id"]
     elif data.user_id:
         return data.user_id
-    elif data.source and str(data.source).startswith("user:"):
-        return data.source.replace("user:", "")
     else:
         raise HTTPException(status_code=400, detail="Missing user_id in request")
 
-def build_simple_prompt(data: ChatbotInput) -> str:
-    """Build a lean, fast prompt for tutoring"""
+def build_enhanced_prompt(data: ChatbotInput) -> str:
+    """Build an enhanced prompt for tutoring with better context"""
     
-    # Get last 3 user and GPT responses
+    # Get last 5 messages for context
     recent_history = []
-    for msg in data.message_history[-5:]:  # Last 6 messages (3 user + 3 GPT)
+    for msg in data.message_history[-5:]:
         recent_history.append(f"{msg['role']}: {msg['content']}")
     
     history = "\n".join(recent_history) if recent_history else "No previous conversation."
@@ -83,13 +89,13 @@ Provide a clear, informative response that directly answers the student's questi
 
     return prompt
 
-def build_help_prompt(content: str) -> str:
+def build_help_prompt(data: HelpInput) -> str:
     """Build simple help prompt that analyzes content type"""
     
     prompt = f"""You are Arlo, an AI tutor. Analyze the content below and explain it step by step.
 
 CONTENT TO EXPLAIN:
-{content}
+{data.content}
 
 Instructions:
 - Provide a clear, step-by-step explanation appropriate for the content type
@@ -121,8 +127,8 @@ async def call_gpt_async(prompt: str, max_tokens: int = 250) -> str:
         logger.error(f"GPT call failed: {e}")
         return "I'm having trouble right now. Please try rephrasing your question."
 
-def extract_key_concepts(response: str) -> List[str]:
-    """Quick concept extraction"""
+def extract_learning_concepts(response: str) -> List[str]:
+    """Extract key learning concepts from response"""
     concepts = []
     # Look for key terms in quotes or after colons
     quoted = re.findall(r'"([^"]*)"', response)
@@ -133,6 +139,28 @@ def extract_key_concepts(response: str) -> List[str]:
     concepts.extend([d.strip() for d in definitions if 3 < len(d.strip()) < 30])
     
     return list(set(concepts))[:3]  # Return top 3
+
+async def update_context_async(user_id: str, context_data: Dict[str, Any]):
+    """Update user context asynchronously"""
+    try:
+        payload = {
+            "user_id": user_id,
+            "context": context_data,
+            "timestamp": datetime.now().isoformat()
+        }
+        
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{CONTEXT_API}/api/context/update",
+                json=payload,
+                timeout=aiohttp.ClientTimeout(total=5)
+            ) as response:
+                if response.status == 200:
+                    logger.info(f"Context updated for user {user_id}")
+                else:
+                    logger.warning(f"Context update failed with status {response.status}")
+    except Exception as e:
+        logger.error(f"Context update failed: {e}")
 
 # ---------------------------
 # Main Chatbot Route (Enhanced)
@@ -153,7 +181,7 @@ async def chatbot_handler(request: Request, data: ChatbotInput, background_tasks
         # Generate natural follow-up question
         follow_up = None
         if "?" not in gpt_reply:  # Add follow-up if response doesn't already contain a question
-            follow_up = f"What would you like to explore further about {data.session_summary.topic}?"
+            follow_up = f"What would you like to explore further about {data.topic}?"
         
         # Determine if context update is needed
         context_update_needed = len(concepts_covered) > 0 or any(
@@ -169,7 +197,7 @@ async def chatbot_handler(request: Request, data: ChatbotInput, background_tasks
                 {
                     "concepts_covered": concepts_covered,
                     "last_interaction": datetime.now().isoformat(),
-                    "topic": data.session_summary.topic
+                    "topic": data.topic
                 }
             )
         
@@ -271,19 +299,6 @@ async def save_chat_context(payload: Dict[str, Any]):
         logger.error(f"Context save failed: {e}")
         return {"status": "error", "detail": str(e)}
 
-# ---------------------------
-# Health Check Endpoint
-# ---------------------------
-@router.get("/chatbot/health")
-async def health_check():
-    """Health check endpoint for monitoring"""
-    try:
-        # Test OpenAI API
-        await call_gpt_async("Test", max_tokens=10)
-        return {"status": "healthy", "timestamp": datetime.now().isoformat()}
-    except Exception as e:
-        logger.error(f"Health check failed: {e}")
-        return {"status": "unhealthy", "error": str(e)}
 
 # ---------------------------
 # Include in App
