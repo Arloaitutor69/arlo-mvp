@@ -52,18 +52,24 @@ def cleanup_expired_cache():
         logger.info(f"Cleaned up {len(expired_keys)} expired cache entries")
 
 async def fetch_context_async(user_id: str) -> dict:
-    """Async context fetching with timeout"""
-    try:
-        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=3)) as session:
-            async with session.get(f"{CONTEXT_API_BASE}/api/context/cache?user_id={user_id}") as response:
-                response.raise_for_status()
-                return await response.json()
-    except Exception as e:
-        logger.error(f"Async context fetch failed for user {user_id}: {e}")
-        return {}
+    """Async context fetching with timeout and retry"""
+    for attempt in range(2):
+        try:
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=5)) as session:
+                async with session.get(f"{CONTEXT_API_BASE}/api/context/cache?user_id={user_id}") as response:
+                    response.raise_for_status()
+                    return await response.json()
+        except Exception as e:
+            logger.warning(f"Async context fetch attempt {attempt + 1} failed for user {user_id}: {e}")
+            if attempt == 0:  # Only delay before second attempt
+                await asyncio.sleep(0.5)
+            continue
+    
+    logger.error(f"All async context fetch attempts failed for user {user_id}")
+    return {}
 
 def get_cached_context(user_id: str) -> dict:
-    """Get context with intelligent caching and background refresh"""
+    """Get context with intelligent caching, background refresh, and retry logic"""
     cleanup_expired_cache()
     now = datetime.now()
     
@@ -76,16 +82,24 @@ def get_cached_context(user_id: str) -> dict:
         Thread(target=lambda: asyncio.run(refresh_context_background(user_id))).start()
         return cached_value
     
-    # No cache exists, fetch synchronously for first request
-    try:
-        response = requests.get(f"{CONTEXT_API_BASE}/api/context/cache?user_id={user_id}", timeout=3)
-        response.raise_for_status()
-        context = response.json()
-        context_cache[user_id] = (now, context)
-        return context
-    except Exception as e:
-        logger.error(f"Initial context fetch failed for user {user_id}: {e}")
-        return {}
+    # No cache exists, fetch synchronously for first request with retry
+    for attempt in range(2):
+        try:
+            response = requests.get(f"{CONTEXT_API_BASE}/api/context/cache?user_id={user_id}", timeout=5)
+            response.raise_for_status()
+            context = response.json()
+            context_cache[user_id] = (now, context)
+            logger.info(f"Successfully fetched context for user {user_id} on attempt {attempt + 1}")
+            return context
+        except Exception as e:
+            logger.warning(f"Context fetch attempt {attempt + 1} failed for user {user_id}: {e}")
+            if attempt == 0:  # Only delay before second attempt
+                import time
+                time.sleep(0.5)
+            continue
+    
+    logger.error(f"All context fetch attempts failed for user {user_id}")
+    return {}
 
 async def refresh_context_background(user_id: str):
     """Background context refresh"""
