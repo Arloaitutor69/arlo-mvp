@@ -150,7 +150,7 @@ OUTPUT FORMAT (JSON only, no markdown):
   }}
 ]
 
-Generate all {max_questions} questions now:""" """
+Generate all {max_questions} questions now:""" 
         
         return prompt
     
