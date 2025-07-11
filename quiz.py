@@ -131,6 +131,12 @@ REQUIREMENTS:
 - Types: {question_type_str}
 - Test understanding, not just memorization{weak_areas_str}
 
+QUALITY OF OUTPUT: 
+1. Test deep understanding, not just memorization
+2. Include varying difficulty levels to challenge the student appropriately
+3. Cover multiple learning objectives (knowledge, comprehension, application, analysis)
+4. Include helpful explanations that teach additional concepts
+
 OUTPUT FORMAT (JSON only, no markdown):
 [
   {{
