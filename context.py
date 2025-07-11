@@ -13,6 +13,9 @@ import asyncio
 import hashlib
 from dataclasses import dataclass
 import math
+import time
+from concurrent.futures import ThreadPoolExecutor, TimeoutError
+import logging
 
 # ---------------------------
 # Configuration
@@ -23,6 +26,8 @@ MAX_CONTEXT_HISTORY = 50  # Concepts to keep in memory
 CACHE_TTL_MINUTES = 5
 STALE_THRESHOLD_MINUTES = 2
 GPT_DEBOUNCE_SECONDS = 60  # Prevent GPT spam
+SUPABASE_TIMEOUT_SECONDS = 3  # Fast timeout for cache endpoint
+BACKGROUND_REFRESH_THRESHOLD = 10  # Minutes before triggering background refresh
 
 # ---------------------------
 # In-memory Context Cache
@@ -30,6 +35,11 @@ GPT_DEBOUNCE_SECONDS = 60  # Prevent GPT spam
 context_cache: Dict[str, Dict[str, Any]] = {}
 synthesis_locks: Dict[str, threading.Lock] = defaultdict(threading.Lock)
 last_gpt_synthesis: Dict[str, datetime] = {}
+executor = ThreadPoolExecutor(max_workers=10)  # For background tasks
+
+# Setup logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 @dataclass
 class ConceptMemory:
@@ -53,7 +63,7 @@ class ConceptMemory:
         self.next_review = datetime.now() + timedelta(days=interval_days)
 
 # ------------------------------
-# Supabase Client
+# Supabase Client with Timeout
 # ------------------------------
 supabase: Optional[Client] = None
 
@@ -66,6 +76,189 @@ def get_supabase() -> Client:
             raise RuntimeError("SUPABASE_URL or SUPABASE_SERVICE_ROLE not set")
         supabase = create_client(url, key)
     return supabase
+
+def supabase_with_timeout(operation_func, timeout_seconds: int = SUPABASE_TIMEOUT_SECONDS):
+    """Execute Supabase operation with timeout"""
+    try:
+        future = executor.submit(operation_func)
+        return future.result(timeout=timeout_seconds)
+    except TimeoutError:
+        logger.warning(f"Supabase operation timed out after {timeout_seconds}s")
+        raise TimeoutError(f"Database operation timed out after {timeout_seconds}s")
+    except Exception as e:
+        logger.error(f"Supabase operation failed: {e}")
+        raise
+
+# ------------------------------
+# Fast Cache Operations
+# ------------------------------
+def get_default_context() -> Dict[str, Any]:
+    """Return default context structure"""
+    return {
+        "current_topic": None,
+        "user_goals": [],
+        "preferred_learning_styles": [],
+        "weak_areas": [],
+        "emphasized_facts": [],
+        "review_queue": [],
+        "learning_history": []
+    }
+
+def get_cached_context_fast(user_id: str) -> Dict[str, Any]:
+    """Lightning-fast cache lookup - returns immediately if cached"""
+    now = datetime.now(timezone.utc)
+    
+    # Fast in-memory check
+    if user_id in context_cache:
+        cached = context_cache[user_id]
+        age_minutes = (now - cached["timestamp"]).total_seconds() / 60
+        
+        # Return immediately if cache is fresh
+        if age_minutes < CACHE_TTL_MINUTES:
+            return {
+                "cached": True,
+                "stale": False,
+                "age_minutes": age_minutes,
+                "context": cached["context"],
+                "source": "memory_cache"
+            }
+        
+        # If stale but not too old, return it and trigger background refresh
+        if age_minutes < BACKGROUND_REFRESH_THRESHOLD:
+            # Trigger background refresh
+            executor.submit(background_refresh_context, user_id)
+            
+            return {
+                "cached": True,
+                "stale": True,
+                "age_minutes": age_minutes,
+                "context": cached["context"],
+                "source": "stale_cache_refreshing"
+            }
+    
+    # No cache or very stale - try fast DB lookup
+    try:
+        def db_lookup():
+            supabase = get_supabase()
+            result = supabase.table("context_state") \
+                .select("context, last_updated") \
+                .eq("user_id", user_id) \
+                .limit(1) \
+                .execute()
+            return result.data
+        
+        db_result = supabase_with_timeout(db_lookup, 2)  # Very fast timeout
+        
+        if db_result and db_result[0]:
+            row = db_result[0]
+            context = json.loads(row["context"])
+            
+            # Handle missing last_updated gracefully
+            if "last_updated" in row and row["last_updated"]:
+                last_updated = datetime.fromisoformat(row["last_updated"].replace("Z", "+00:00"))
+                age_minutes = (now - last_updated).total_seconds() / 60
+            else:
+                age_minutes = 999  # Force stale if no timestamp
+            
+            # Update in-memory cache
+            context_cache[user_id] = {
+                "context": context,
+                "timestamp": now
+            }
+            
+            return {
+                "cached": True,
+                "stale": age_minutes > STALE_THRESHOLD_MINUTES,
+                "age_minutes": age_minutes,
+                "context": context,
+                "source": "database_fast"
+            }
+    
+    except (TimeoutError, Exception) as e:
+        logger.warning(f"Fast DB lookup failed for {user_id}: {e}")
+        # Fall through to default
+    
+    # Fallback: return default context and trigger background creation
+    default_context = get_default_context()
+    executor.submit(ensure_user_context_exists_background, user_id)
+    
+    return {
+        "cached": False,
+        "stale": False,
+        "age_minutes": 0,
+        "context": default_context,
+        "source": "default_creating"
+    }
+
+def background_refresh_context(user_id: str) -> None:
+    """Background context refresh without blocking main thread"""
+    try:
+        logger.info(f"🔄 Background refreshing context for {user_id}")
+        
+        # Get fresh context from database
+        supabase = get_supabase()
+        result = supabase.table("context_state") \
+            .select("context, last_updated") \
+            .eq("user_id", user_id) \
+            .limit(1) \
+            .execute()
+        
+        if result.data and result.data[0]:
+            row = result.data[0]
+            context = json.loads(row["context"])
+            
+            # Update cache
+            context_cache[user_id] = {
+                "context": context,
+                "timestamp": datetime.now(timezone.utc)
+            }
+            
+            logger.info(f"✅ Background refresh complete for {user_id}")
+        else:
+            # Context doesn't exist - create it
+            ensure_user_context_exists_background(user_id)
+            
+    except Exception as e:
+        logger.error(f"❌ Background refresh failed for {user_id}: {e}")
+
+def ensure_user_context_exists_background(user_id: str) -> None:
+    """Background context creation"""
+    try:
+        logger.info(f"🔧 Creating context for {user_id} in background")
+        
+        supabase = get_supabase()
+        
+        # Check if exists first
+        result = supabase.table("context_state") \
+            .select("context") \
+            .eq("user_id", user_id) \
+            .limit(1) \
+            .execute()
+        
+        if result.data:
+            context = json.loads(result.data[0]["context"])
+        else:
+            # Create new context
+            default_context = get_default_context()
+            
+            new_row = {
+                "user_id": user_id,
+                "context": json.dumps(default_context),
+                "last_updated": datetime.now(timezone.utc).isoformat()
+            }
+            
+            supabase.table("context_state").insert(new_row).execute()
+            context = default_context
+            logger.info(f"✅ Created new context for user {user_id}")
+        
+        # Update cache
+        context_cache[user_id] = {
+            "context": context,
+            "timestamp": datetime.now(timezone.utc)
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ Background context creation failed for {user_id}: {e}")
 
 # ------------------------------
 # Schema Management
@@ -80,10 +273,10 @@ def ensure_schema_exists():
         
     except Exception as e:
         if "last_updated" in str(e):
-            print("⚠️  Missing last_updated column in context_state table")
-            print("🔧 Run this SQL in Supabase:")
-            print("ALTER TABLE context_state ADD COLUMN last_updated TIMESTAMPTZ DEFAULT NOW();")
-            print("UPDATE context_state SET last_updated = NOW() WHERE last_updated IS NULL;")
+            logger.warning("⚠️  Missing last_updated column in context_state table")
+            logger.info("🔧 Run this SQL in Supabase:")
+            logger.info("ALTER TABLE context_state ADD COLUMN last_updated TIMESTAMPTZ DEFAULT NOW();")
+            logger.info("UPDATE context_state SET last_updated = NOW() WHERE last_updated IS NULL;")
         raise e
 
 def ensure_user_context_exists(user_id: str) -> Dict[str, Any]:
@@ -98,15 +291,7 @@ def ensure_user_context_exists(user_id: str) -> Dict[str, Any]:
             return json.loads(result.data[0]["context"])
         
         # Create new context if missing
-        default_context = {
-            "current_topic": None,
-            "user_goals": [],
-            "preferred_learning_styles": [],
-            "weak_areas": [],
-            "emphasized_facts": [],
-            "review_queue": [],
-            "learning_history": []
-        }
+        default_context = get_default_context()
         
         new_row = {
             "user_id": user_id,
@@ -115,21 +300,13 @@ def ensure_user_context_exists(user_id: str) -> Dict[str, Any]:
         }
         
         supabase.table("context_state").insert(new_row).execute()
-        print(f"✅ Created new context for user {user_id}")
+        logger.info(f"✅ Created new context for user {user_id}")
         return default_context
         
     except Exception as e:
-        print(f"❌ Error ensuring user context: {e}")
+        logger.error(f"❌ Error ensuring user context: {e}")
         # Return default context as fallback
-        return {
-            "current_topic": None,
-            "user_goals": [],
-            "preferred_learning_styles": [],
-            "weak_areas": [],
-            "emphasized_facts": [],
-            "review_queue": [],
-            "learning_history": []
-        }
+        return get_default_context()
 
 # ------------------------------
 # Router and Models
@@ -285,7 +462,7 @@ def create_context_hash(events: List[Dict]) -> str:
         content = json.dumps(essential_data, sort_keys=True)
         return hashlib.md5(content.encode()).hexdigest()
     except Exception as e:
-        print(f"❌ Hash creation failed: {e}")
+        logger.error(f"❌ Hash creation failed: {e}")
         return str(hash(str(events)))
 
 def should_trigger_synthesis(user_id: str, events: List[Dict]) -> bool:
@@ -322,7 +499,7 @@ def synthesize_context_efficient(user_id: str, recent_events: List[Dict]) -> Dic
         valid_events = [e for e in valid_events if e]  # Remove None values
         
         if not valid_events:
-            print("⚠️  No valid events for synthesis")
+            logger.warning("⚠️  No valid events for synthesis")
             return ensure_user_context_exists(user_id)
         
         # Aggregate learning events efficiently
@@ -372,7 +549,7 @@ def synthesize_context_efficient(user_id: str, recent_events: List[Dict]) -> Dic
         }
         
     except Exception as e:
-        print(f"❌ Efficient synthesis failed: {e}")
+        logger.error(f"❌ Efficient synthesis failed: {e}")
         return fallback_to_gpt_synthesis(user_id, recent_events)
 
 def fallback_to_gpt_synthesis(user_id: str, events: List[Dict]) -> Dict[str, Any]:
@@ -383,7 +560,7 @@ def fallback_to_gpt_synthesis(user_id: str, events: List[Dict]) -> Dict[str, Any
         if user_id in last_gpt_synthesis:
             time_since_last = (now - last_gpt_synthesis[user_id]).total_seconds()
             if time_since_last < GPT_DEBOUNCE_SECONDS:
-                print(f"⚠️  GPT synthesis debounced for {user_id}")
+                logger.warning(f"⚠️  GPT synthesis debounced for {user_id}")
                 return ensure_user_context_exists(user_id)
         
         # Update debounce timestamp
@@ -402,7 +579,7 @@ def fallback_to_gpt_synthesis(user_id: str, events: List[Dict]) -> Dict[str, Any
         unique_concepts = list(set(concepts))
         
         if not unique_concepts:
-            print("⚠️  No concepts found for GPT synthesis")
+            logger.warning("⚠️  No concepts found for GPT synthesis")
             return ensure_user_context_exists(user_id)
         
         prompt = f"""Analyze these {len(unique_concepts)} learning concepts and return ONLY JSON:
@@ -434,7 +611,7 @@ Focus on identifying the 3 weakest concepts and current learning focus."""
         }
         
     except Exception as e:
-        print(f"❌ GPT synthesis failed: {e}")
+        logger.error(f"❌ GPT synthesis failed: {e}")
         # Return user's existing context or default
         return ensure_user_context_exists(user_id)
 
@@ -445,7 +622,7 @@ def background_synthesis(user_id: str, events: List[Dict]) -> None:
     """Background synthesis with proper locking and error handling"""
     with synthesis_locks[user_id]:
         try:
-            print(f"🔄 Starting background synthesis for {user_id}")
+            logger.info(f"🔄 Starting background synthesis for {user_id}")
             
             synthesized = synthesize_context_efficient(user_id, events)
             
@@ -463,8 +640,8 @@ def background_synthesis(user_id: str, events: List[Dict]) -> None:
                 on_conflict="user_id"
             ).execute()
             
-            print(f"✅ Background synthesis complete for {user_id}")
-            print(f"📊 Synthesis result: {len(synthesized.get('learning_history', []))} concepts")
+            logger.info(f"✅ Background synthesis complete for {user_id}")
+            logger.info(f"📊 Synthesis result: {len(synthesized.get('learning_history', []))} concepts")
             
             # Update cache
             context_cache[user_id] = {
@@ -473,7 +650,7 @@ def background_synthesis(user_id: str, events: List[Dict]) -> None:
             }
             
         except Exception as e:
-            print(f"❌ Background synthesis failed for {user_id}: {e}")
+            logger.error(f"❌ Background synthesis failed for {user_id}: {e}")
             # Ensure user has some context even if synthesis fails
             ensure_user_context_exists(user_id)
 
@@ -504,115 +681,82 @@ async def update_context(update: ContextUpdate, request: Request):
     entry = sanitize_context_update(entry_dict)
     
     try:
-        # Ensure user context exists
-        ensure_user_context_exists(user_id)
+        # Ensure user context exists (background task)
+        executor.submit(ensure_user_context_exists_background, user_id)
         
         # Insert with detailed logging
-        supabase = get_supabase()
-        result = supabase.table("context_log").insert(entry).execute()
+        def insert_log():
+            supabase = get_supabase()
+            return supabase.table("context_log").insert(entry).execute()
         
-        print(f"✅ Context log inserted for {user_id}")
-        print(f"📝 Entry: {json.dumps(entry, indent=2)}")
-        print(f"🔍 Insert result: {result}")
+        # Try to insert with timeout
+        try:
+            result = supabase_with_timeout(insert_log, 5)
+            logger.info(f"✅ Context log inserted for {user_id}")
+        except TimeoutError:
+            logger.warning(f"⚠️ Context log insert timed out for {user_id}, queuing for background")
+            # Queue for background processing
+            executor.submit(insert_log)
+            return {"status": "ok", "synthesis_triggered": False, "queued": True}
         
         # Check if synthesis needed (non-blocking)
         if update.trigger_synthesis or update.feedback_flag:
             # Get recent events for synthesis decision
-            recent_events = supabase.table("context_log") \
-                .select("*") \
-                .eq("user_id", user_id) \
-                .order("id", desc=True) \
-                .limit(SYNTHESIS_THRESHOLD * 2) \
-                .execute().data
+            def get_recent_events():
+                supabase = get_supabase()
+                return supabase.table("context_log") \
+                    .select("*") \
+                    .eq("user_id", user_id) \
+                    .order("id", desc=True) \
+                    .limit(SYNTHESIS_THRESHOLD * 2) \
+                    .execute().data
             
-            if should_trigger_synthesis(user_id, recent_events):
-                # Launch background synthesis
-                threading.Thread(
-                    target=background_synthesis, 
-                    args=(user_id, recent_events)
-                ).start()
+            try:
+                recent_events = supabase_with_timeout(get_recent_events, 3)
                 
-                return {"status": "ok", "synthesis_triggered": True}
+                if should_trigger_synthesis(user_id, recent_events):
+                    # Launch background synthesis
+                    executor.submit(background_synthesis, user_id, recent_events)
+                    return {"status": "ok", "synthesis_triggered": True}
+            except TimeoutError:
+                logger.warning(f"⚠️ Recent events query timed out for {user_id}")
+                # Still return success, synthesis will happen later
         
         return {"status": "ok", "synthesis_triggered": False}
         
     except Exception as e:
-        print(f"❌ Context update failed: {e}")
-        print(f"🔴 Failed entry: {json.dumps(entry, indent=2)}")
+        logger.error(f"❌ Context update failed: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to update context: {str(e)}")
 
 @router.get("/context/cache")
-def get_cached_context(user_id: str):
-    """Optimized context cache with schema validation"""
-    try:
-        # Ensure schema exists
-        ensure_schema_exists()
-        
-        now = datetime.now(timezone.utc)
-        
-        # Fast in-memory check
-        if user_id in context_cache:
-            cached = context_cache[user_id]
-            age_minutes = (now - cached["timestamp"]).total_seconds() / 60
-            
-            if age_minutes < CACHE_TTL_MINUTES:
-                return {
-                    "cached": True,
-                    "stale": False,
-                    "age_minutes": age_minutes,
-                    "context": cached["context"]
-                }
-        
-        # Supabase lookup with fallback
-        supabase = get_supabase()
-        result = supabase.table("context_state") \
-            .select("context, last_updated") \
-            .eq("user_id", user_id) \
-            .execute()
-        
-        if result.data:
-            row = result.data[0]
-            context = json.loads(row["context"])
-            
-            # Handle missing last_updated gracefully
-            if "last_updated" in row and row["last_updated"]:
-                last_updated = datetime.fromisoformat(row["last_updated"].replace("Z", "+00:00"))
-                age_minutes = (now - last_updated).total_seconds() / 60
-            else:
-                age_minutes = 999  # Force stale if no timestamp
-            
-            # Update in-memory cache
-            context_cache[user_id] = {
-                "context": context,
-                "timestamp": now
-            }
-            
-            return {
-                "cached": True,
-                "stale": age_minutes > STALE_THRESHOLD_MINUTES,
-                "age_minutes": age_minutes,
-                "context": context
-            }
-        
-        # No existing context - create one
-        context = ensure_user_context_exists(user_id)
-        return {
-            "cached": False,
-            "stale": False,
-            "age_minutes": 0,
-            "context": context
-        }
+def get_context_cache(user_id: str):
+    """Ultra-fast context cache - optimized for speed"""
+    start_time = time.time()
     
-    except Exception as e:
-        print(f"❌ Cache lookup failed: {e}")
+    try:
+        result = get_cached_context_fast(user_id)
         
-        # Fallback to ensure user has context
-        context = ensure_user_context_exists(user_id)
+        # Add timing info
+        elapsed_ms = (time.time() - start_time) * 1000
+        result["response_time_ms"] = round(elapsed_ms, 2)
+        
+        logger.info(f"📊 Context cache for {user_id}: {result['source']} in {elapsed_ms:.2f}ms")
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"❌ Context cache failed for {user_id}: {e}")
+        
+        # Emergency fallback
+        elapsed_ms = (time.time() - start_time) * 1000
         return {
             "cached": False,
             "stale": True,
             "age_minutes": 0,
-            "context": context
+            "context": get_default_context(),
+            "source": "emergency_fallback",
+            "response_time_ms": round(elapsed_ms, 2),
+            "error": str(e)
         }
 
 @router.get("/context/slice")
@@ -627,8 +771,8 @@ async def get_context_slice(request: Request, focus: Optional[str] = None):
         raise HTTPException(status_code=400, detail="Missing user ID")
     
     try:
-        # Get full context
-        cache_result = get_cached_context(user_id)
+        # Get full context using fast cache
+        cache_result = get_cached_context_fast(user_id)
         context = cache_result["context"]
         
         # Return focused slice based on request
@@ -652,107 +796,6 @@ async def get_context_slice(request: Request, focus: Optional[str] = None):
             }
             
     except Exception as e:
-        print(f"❌ Context slice failed: {e}")
+        logger.error(f"❌ Context slice failed: {e}")
         return {
-            "current_topic": None,
-            "weak_areas": [],
-            "review_queue": [],
-            "user_goals": []
-        }
-
-@router.post("/context/reset")
-def reset_context_state(request: ContextResetRequest):
-    """Robust context reset with proper error handling"""
-    user_id = request.user_id
-    
-    try:
-        # Clear in-memory cache first
-        context_cache.pop(user_id, None)
-        context_cache.pop(f"synthesis_hash_{user_id}", None)
-        last_gpt_synthesis.pop(user_id, None)
-        
-        supabase = get_supabase()
-        
-        # Delete existing data
-        supabase.table("context_log").delete().eq("user_id", user_id).execute()
-        supabase.table("context_state").delete().eq("user_id", user_id).execute()
-        
-        # Create fresh context
-        fresh_context = {
-            "current_topic": None,
-            "user_goals": [],
-            "preferred_learning_styles": [],
-            "weak_areas": [],
-            "emphasized_facts": [],
-            "review_queue": [],
-            "learning_history": []
-        }
-        
-        fresh_row = {
-            "user_id": user_id,
-            "context": json.dumps(fresh_context),
-            "last_updated": datetime.now(timezone.utc).isoformat()
-        }
-        
-        result = supabase.table("context_state").insert(fresh_row).execute()
-        
-        print(f"✅ Context reset successful for {user_id}")
-        print(f"📊 Reset result: {result}")
-        
-        return {"status": "context reset successfully"}
-        
-    except Exception as e:
-        print(f"❌ Context reset failed: {e}")
-        
-        # Fallback: ensure user has basic context
-        try:
-            ensure_user_context_exists(user_id)
-            return {"status": "context reset with fallback"}
-        except Exception as fallback_error:
-            print(f"❌ Fallback also failed: {fallback_error}")
-            raise HTTPException(status_code=500, detail=f"Reset failed: {e}")
-
-@router.get("/context/state")
-def get_context_state(user_id: str):
-    """Get full context state with proper error handling"""
-    try:
-        # Ensure user context exists
-        context = ensure_user_context_exists(user_id)
-        return context
-            
-    except Exception as e:
-        print(f"❌ Context state fetch failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to fetch context: {e}")
-
-@router.get("/context/logs/recent")
-def get_recent_logs(user_id: str, limit: int = 10):
-    """Get recent context logs with validation"""
-    try:
-        supabase = get_supabase()
-        result = supabase.table("context_log") \
-            .select("*") \
-            .eq("user_id", user_id) \
-            .order("id", desc=True) \
-            .limit(limit) \
-            .execute()
-        
-        logs = result.data or []
-        print(f"📊 Found {len(logs)} recent logs for {user_id}")
-        
-        return {"logs": logs}
-        
-    except Exception as e:
-        print(f"❌ Recent logs fetch failed: {e}")
-        return {"logs": []}
-
-# ------------------------------
-# Schema Migration Helper
-# ------------------------------
-@router.post("/context/migrate")
-def migrate_schema():
-    """Helper endpoint to run schema migrations"""
-    try:
-        ensure_schema_exists()
-        return {"status": "schema migration complete"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Migration failed: {e}")
+            "current
