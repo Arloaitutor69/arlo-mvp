@@ -12,7 +12,7 @@ import asyncio
 import logging
 
 # CRITICAL FIX: Import context function directly instead of HTTP calls
-from backend.routers.context import get_cached_context_fast
+from context import get_cached_context_fast  # ✅ correct
 
 # ---------------------------
 # Setup
