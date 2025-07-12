@@ -798,4 +798,4 @@ async def get_context_slice(request: Request, focus: Optional[str] = None):
     except Exception as e:
         logger.error(f"❌ Context slice failed: {e}")
         return {
-            "current
+            "current"
