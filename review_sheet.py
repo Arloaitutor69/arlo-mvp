@@ -1,4 +1,4 @@
-# OPTIMIZED REVIEW SHEET MODULE WITH PERFORMANCE IMPROVEMENTS
+# FIXED REVIEW SHEET MODULE - NO MORE HTTP TIMEOUTS
 
 from fastapi import APIRouter, FastAPI, HTTPException, Request
 from pydantic import BaseModel
@@ -6,19 +6,18 @@ from typing import List, Optional, Dict, Any
 import openai
 import os
 import json
-import requests
-from datetime import datetime, timedelta
-from threading import Thread
-import asyncio
-import aiohttp
+from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
+import asyncio
 import logging
+
+# CRITICAL FIX: Import context function directly instead of HTTP calls
+from backend.routers.context import get_cached_context_fast
 
 # ---------------------------
 # Setup
 # ---------------------------
 openai.api_key = os.getenv("OPENAI_API_KEY")
-CONTEXT_API_BASE = os.getenv("CONTEXT_API_BASE", "https://arlo-mvp-2.onrender.com")
 
 app = FastAPI()
 router = APIRouter()
@@ -31,83 +30,6 @@ logger = logging.getLogger(__name__)
 executor = ThreadPoolExecutor(max_workers=4)
 
 # ---------------------------
-# Enhanced In-memory Context Cache
-# ---------------------------
-context_cache = {}
-context_ttl = timedelta(minutes=8)  # Slightly longer TTL for better cache hits
-last_cleanup = datetime.now()
-
-def cleanup_expired_cache():
-    """Remove expired entries from cache"""
-    global last_cleanup
-    now = datetime.now()
-    if now - last_cleanup > timedelta(minutes=10):
-        expired_keys = [
-            key for key, (timestamp, _) in context_cache.items()
-            if now - timestamp > context_ttl
-        ]
-        for key in expired_keys:
-            del context_cache[key]
-        last_cleanup = now
-        logger.info(f"Cleaned up {len(expired_keys)} expired cache entries")
-
-async def fetch_context_async(user_id: str) -> dict:
-    """Async context fetching with timeout and retry"""
-    for attempt in range(2):
-        try:
-            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=5)) as session:
-                async with session.get(f"{CONTEXT_API_BASE}/api/context/cache?user_id={user_id}") as response:
-                    response.raise_for_status()
-                    return await response.json()
-        except Exception as e:
-            logger.warning(f"Async context fetch attempt {attempt + 1} failed for user {user_id}: {e}")
-            if attempt == 0:  # Only delay before second attempt
-                await asyncio.sleep(0.5)
-            continue
-    
-    logger.error(f"All async context fetch attempts failed for user {user_id}")
-    return {}
-
-def get_cached_context(user_id: str) -> dict:
-    """Get context with intelligent caching, background refresh, and retry logic"""
-    cleanup_expired_cache()
-    now = datetime.now()
-    
-    if user_id in context_cache:
-        timestamp, cached_value = context_cache[user_id]
-        # If data is still fresh, return immediately
-        if now - timestamp <= context_ttl:
-            return cached_value
-        # If data is stale but exists, return it and refresh in background
-        Thread(target=lambda: asyncio.run(refresh_context_background(user_id))).start()
-        return cached_value
-    
-    # No cache exists, fetch synchronously for first request with retry
-    for attempt in range(2):
-        try:
-            response = requests.get(f"{CONTEXT_API_BASE}/api/context/cache?user_id={user_id}", timeout=5)
-            response.raise_for_status()
-            context = response.json()
-            context_cache[user_id] = (now, context)
-            logger.info(f"Successfully fetched context for user {user_id} on attempt {attempt + 1}")
-            return context
-        except Exception as e:
-            logger.warning(f"Context fetch attempt {attempt + 1} failed for user {user_id}: {e}")
-            if attempt == 0:  # Only delay before second attempt
-                import time
-                time.sleep(0.5)
-            continue
-    
-    logger.error(f"All context fetch attempts failed for user {user_id}")
-    return {}
-
-async def refresh_context_background(user_id: str):
-    """Background context refresh"""
-    context = await fetch_context_async(user_id)
-    if context:
-        context_cache[user_id] = (datetime.now(), context)
-
-# ---------------------------
 # Pydantic Models
 # ---------------------------
 class ReviewRequest(BaseModel):
@@ -118,7 +40,7 @@ class ReviewSheet(BaseModel):
     memorization_facts: List[str]
     weak_areas: List[str]
     major_topics: List[str]
-    study_tips: List[str]  # New field for personalized tips
+    study_tips: List[str]
 
 # ---------------------------
 # Extract user_id (optimized)
@@ -138,7 +60,7 @@ def extract_user_id(request: Request, data: ReviewRequest) -> str:
     raise HTTPException(status_code=400, detail="Missing user_id in request")
 
 # ---------------------------
-# Context Processing (NEW)
+# Context Processing (UNCHANGED)
 # ---------------------------
 def process_context_for_review(context: dict) -> dict:
     """Pre-process context to extract key information for review generation"""
@@ -193,7 +115,7 @@ def process_context_for_review(context: dict) -> dict:
     return processed
 
 # ---------------------------
-# Optimized GPT API Call
+# Optimized GPT API Call (UNCHANGED)
 # ---------------------------
 def call_gpt_optimized(prompt: str) -> str:
     """Optimized GPT call with better parameters for review generation"""
@@ -219,7 +141,7 @@ def call_gpt_optimized(prompt: str) -> str:
         raise HTTPException(status_code=500, detail="AI service temporarily unavailable")
 
 # ---------------------------
-# Enhanced Prompt Generator
+# Enhanced Prompt Generator (UNCHANGED)
 # ---------------------------
 def build_optimized_review_prompt(processed_context: dict) -> str:
     """Build a focused, optimized prompt for better review generation"""
@@ -258,40 +180,23 @@ Respond in JSON format:
     return prompt
 
 # ---------------------------
-# Fallback Response Generator
-# ---------------------------
-def generate_fallback_response() -> ReviewSheet:
-    """Generate a basic review sheet when context is unavailable"""
-    return ReviewSheet(
-        summary="You've completed a productive study session today. Great work staying committed to your learning goals!",
-        memorization_facts=[
-            "Consistent daily review improves long-term retention by 60%",
-            "Sleep consolidation helps transfer information from short-term to long-term memory"
-        ],
-        major_topics=["General study session completed"],
-        weak_areas=["Consider tracking specific topics for more detailed feedback"],
-        study_tips=[
-            "Review these facts again tomorrow morning",
-            "Focus on active recall techniques in your next session"
-        ]
-    )
-
-# ---------------------------
-# Main Endpoint (Optimized)
+# Main Endpoint (FIXED - NO MORE HTTP CALLS)
 # ---------------------------
 @router.post("/review-sheet", response_model=ReviewSheet)
 async def generate_review_sheet(request: Request, data: ReviewRequest):
-    """Generate optimized review sheet with enhanced caching and processing"""
+    """Generate optimized review sheet with direct context import - NO MORE TIMEOUTS"""
     
     try:
         user_id = extract_user_id(request, data)
         
-        # Get context (with intelligent caching)
-        context = get_cached_context(user_id)
+        # CRITICAL FIX: Direct function call instead of HTTP request
+        context_result = get_cached_context_fast(user_id)
+        context = context_result.get("context", {})
         
-        if not context:
-            logger.warning(f"No context available for user {user_id}, using fallback")
-            return generate_fallback_response()
+        # Log context source for debugging
+        logger.info(f"Using context from: {context_result.get('source')}, "
+                   f"age: {context_result.get('age_minutes', 0)} min, "
+                   f"user: {user_id}")
         
         # Process context for optimal review generation
         processed_context = process_context_for_review(context)
@@ -323,13 +228,34 @@ async def generate_review_sheet(request: Request, data: ReviewRequest):
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse GPT response: {e}")
             logger.error(f"Raw GPT output: {raw_output}")
-            return generate_fallback_response()
+            
+            # Fallback response (context function handles empty context internally)
+            return ReviewSheet(
+                summary="You've completed a productive study session today. Great work staying committed to your learning goals!",
+                memorization_facts=[
+                    "Consistent daily review improves long-term retention by 60%",
+                    "Sleep consolidation helps transfer information from short-term to long-term memory"
+                ],
+                major_topics=["General study session completed"],
+                weak_areas=["Consider tracking specific topics for more detailed feedback"],
+                study_tips=[
+                    "Review these facts again tomorrow morning",
+                    "Focus on active recall techniques in your next session"
+                ]
+            )
             
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Unexpected error generating review sheet: {e}")
-        return generate_fallback_response()
+        # Return basic fallback - never fail completely
+        return ReviewSheet(
+            summary="Study session completed successfully.",
+            memorization_facts=["Continue your consistent learning habits"],
+            major_topics=["General study session"],
+            weak_areas=["No specific areas identified"],
+            study_tips=["Keep up the great work!"]
+        )
 
 # ---------------------------
 # Health Check Endpoint
@@ -339,7 +265,6 @@ async def health_check():
     """Health check endpoint for monitoring"""
     return {
         "status": "healthy",
-        "cache_size": len(context_cache),
         "timestamp": datetime.now().isoformat()
     }
 
