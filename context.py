@@ -799,3 +799,4 @@ async def get_context_slice(request: Request, focus: Optional[str] = None):
         logger.error(f"❌ Context slice failed: {e}")
         return {
             "current"
+        }
