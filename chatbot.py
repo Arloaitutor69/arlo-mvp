@@ -93,10 +93,8 @@ CONTENT TO EXPLAIN:
 {content}
 
 Instructions:
-- Provide a concise, step-by-step breakdown
-- Use simple language and clear explanations
-- Focus on helping the student understand the key concepts
-- Be thorough but not overwhelming
+- Provide a concise and clear explenaion of content current is currently learning 
+- Use simple language and be more clear than the original content to help student understand better
 - Use examples when helpful
 
 Your step-by-step explanation:"""
@@ -219,7 +217,7 @@ async def chatbot_handler(request: Request, data: ChatbotInput, background_tasks
 # ---------------------------
 @router.post("/chatbot/help", response_model=HelpResponse)
 async def help_handler(request: Request, data: HelpInput):
-    """Simplified help endpoint - just breaks down content step by step"""
+    """Simplified help endpoint - just explains the content"""
     logger.info("Help request received")
     try:
         prompt = build_help_prompt(data.content)
