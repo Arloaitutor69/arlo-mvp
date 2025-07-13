@@ -797,7 +797,23 @@ async def get_context_slice(request: Request, focus: Optional[str] = None):
             return {
                 "current_topic": context.get("current_topic"),
                 "weak_areas": context.get("weak_areas", [])[:3],
-                "review_queue": context.get("review_queue
+                "review_queue": context.get("review_queue", [])[:3],
+                "emphasized_facts": context.get("emphasized_facts", [])[:3]
+            }
+        
+        # Add cache metadata for debugging
+        return {
+            **slice_data,
+            "_cache_info": {
+                "source": cache_result.get("source"),
+                "age_minutes": cache_result.get("age_minutes"),
+                "stale": cache_result.get("stale", False)
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ Context slice failed for {user_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get context slice: {str(e)}")
 
 @router.post("/context/reset")
 async def reset_context_state(request: ContextResetRequest):
