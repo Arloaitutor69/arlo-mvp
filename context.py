@@ -104,6 +104,12 @@ def get_default_context() -> Dict[str, Any]:
         "learning_history": []
     }
 
+def clear_user_cache(user_id: str) -> None:
+    """Clear user's in-memory cache"""
+    if user_id in context_cache:
+        del context_cache[user_id]
+        logger.info(f"🗑️ Cleared in-memory cache for {user_id}")
+
 def get_cached_context_fast(user_id: str) -> Dict[str, Any]:
     """Lightning-fast cache lookup - returns immediately if cached"""
     now = datetime.now(timezone.utc)
@@ -791,12 +797,114 @@ async def get_context_slice(request: Request, focus: Optional[str] = None):
             return {
                 "current_topic": context.get("current_topic"),
                 "weak_areas": context.get("weak_areas", [])[:3],
-                "review_queue": context.get("review_queue", [])[:3],
-                "user_goals": context.get("user_goals", [])[:3]
-            }
-            
-    except Exception as e:
-        logger.error(f"❌ Context slice failed: {e}")
-        return {
-            "current"
+                "review_queue": context.get("review_queue
+
+@router.post("/context/reset")
+async def reset_context_state(request: ContextResetRequest):
+    """Reset user's context state with proper error handling and cache integration"""
+    user_id = request.user_id
+    
+    try:
+        logger.info(f"🔄 Starting context reset for {user_id}")
+        
+        # Load environment variables
+        supabase_url = os.getenv("SUPABASE_URL")
+        supabase_key = os.getenv("SUPABASE_SERVICE_ROLE")
+        context_api_base = os.getenv("CONTEXT_API_BASE", "https://arlo-mvp-2.onrender.com")
+        
+        if not supabase_url or not supabase_key:
+            raise HTTPException(status_code=500, detail="Missing Supabase environment variables")
+        
+        # Prepare headers for direct API calls
+        headers = {
+            "apikey": supabase_key,
+            "Authorization": f"Bearer {supabase_key}",
+            "Content-Type": "application/json"
         }
+        
+        # 1️⃣ Clear in-memory cache first
+        clear_user_cache(user_id)
+        
+        # 2️⃣ Delete all context_log rows for the user
+        try:
+            delete_logs_url = f"{supabase_url}/rest/v1/context_log?user_id=eq.{user_id}"
+            delete_res = requests.delete(delete_logs_url, headers=headers, timeout=10)
+            delete_res.raise_for_status()
+            logger.info(f"✅ Deleted context_log entries for {user_id}")
+        except Exception as e:
+            logger.error(f"❌ Failed to delete context_log for {user_id}: {e}")
+            # Continue with reset even if logs deletion fails
+        
+        # 3️⃣ Delete existing context_state row for this user
+        try:
+            delete_ctx_url = f"{supabase_url}/rest/v1/context_state?user_id=eq.{user_id}"
+            delete_ctx_res = requests.delete(delete_ctx_url, headers=headers, timeout=10)
+            delete_ctx_res.raise_for_status()
+            logger.info(f"✅ Deleted context_state for {user_id}")
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to delete context_state for {user_id}: {e}")
+            # Continue with reset
+        
+        # 4️⃣ Insert clean blank context state for this user
+        reset_context = {
+            "user_id": user_id,
+            "context": json.dumps(get_default_context()),
+            "last_updated": datetime.now(timezone.utc).isoformat()
+        }
+        
+        reset_res = requests.post(
+            f"{supabase_url}/rest/v1/context_state",
+            json=reset_context,
+            headers=headers,
+            timeout=10
+        )
+        reset_res.raise_for_status()
+        logger.info(f"✅ Created fresh context_state for {user_id}")
+        
+        # 5️⃣ Clear synthesis locks and debounce data
+        if user_id in synthesis_locks:
+            del synthesis_locks[user_id]
+        if user_id in last_gpt_synthesis:
+            del last_gpt_synthesis[user_id]
+        
+        # 6️⃣ Try to delete cached context (optional table)
+        try:
+            delete_cache_url = f"{supabase_url}/rest/v1/context_cache?user_id=eq.{user_id}"
+            cache_res = requests.delete(delete_cache_url, headers=headers, timeout=5)
+            cache_res.raise_for_status()
+            logger.info(f"✅ Cleared context_cache for {user_id}")
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to clear context_cache (may not exist): {e}")
+        
+        # 7️⃣ Update in-memory cache with fresh context
+        context_cache[user_id] = {
+            "context": get_default_context(),
+            "timestamp": datetime.now(timezone.utc)
+        }
+        
+        # 8️⃣ Optional: Pre-warm the cache (background task)
+        def refresh_cache():
+            try:
+                refresh_url = f"{context_api_base}/api/context/cache?user_id={user_id}"
+                requests.get(refresh_url, timeout=5)
+                logger.info(f"✅ Pre-warmed cache for {user_id}")
+            except Exception as e:
+                logger.warning(f"⚠️ Failed to pre-warm context cache: {e}")
+        
+        executor.submit(refresh_cache)
+        
+        logger.info(f"🎉 Context reset complete for {user_id}")
+        
+        return {
+            "status": "context fully reset",
+            "user_id": user_id,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "message": "All context data cleared and reset to default state"
+        }
+        
+    except requests.exceptions.RequestException as e:
+        logger.error(f"❌ HTTP request failed during reset for {user_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Database operation failed: {str(e)}")
+    except Exception as e:
+        logger.error(f"❌ Context reset failed for {user_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Reset failed: {str(e)}")
