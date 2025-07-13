@@ -41,6 +41,8 @@ CORE TEACHING PRINCIPLES:
 2. COMPREHENSIVE COVERAGE: Cover all information relevant to that study block in its entirety. 
 3. CLARITY & EFFICIENCY: Clear explanations without unnecessary fluff
 4. Never include any informamtion that wouldn't be relevant to a class or test
+5. Always ensure that the content builds logically from foundational principles to advanced applications, mirroring how expert tutors scaffold complex material.
+
 
 CONTENT STRUCTURE REQUIREMENTS:
 - Breakdown all information into digestible lessons that thourougly cover abolutely ALL info student might need to know for their class
@@ -50,28 +52,6 @@ CONTENT QUALITY STANDARDS:
 - Each section should be substantial (200-300 words minimum)
 - Focus on understanding AND memorization where both are needed
 - ensure teaching style is not overly intimidating and inaccesible, keep it clear and easy to understand
-
-OUTPUT FORMAT:
-Return comprehensive JSON with these block types:
-- "overview": Strategic summary of what students need to know for tests
-- "key_concepts": Essential definitions and core principles
-- "detailed_explanation": In-depth coverage of complex topics
-- "examples": Multiple worked examples showing different approaches
-- "test_strategies": Specific tactics for test success
-- "practice_questions": Sample questions with explanations
-- "memory_aids": Mnemonics, acronyms, visualization techniques
-- "common_mistakes": Pitfalls to avoid and how to prevent them
-
-OUTPUT FORMAT:
-Return comprehensive JSON with these block types:
-- "overview": Strategic summary of what students need to know for tests
-- "key_concepts": Essential definitions and core principles
-- "detailed_explanation": In-depth coverage of complex topics
-- "examples": Multiple worked examples showing different approaches
-- "test_strategies": Specific tactics for test success
-- "practice_questions": Sample questions with explanations
-- "memory_aids": Mnemonics, acronyms, visualization techniques
-- "common_mistakes": Pitfalls to avoid and how to prevent them
 
 RESPONSE STRUCTURE:
 {
