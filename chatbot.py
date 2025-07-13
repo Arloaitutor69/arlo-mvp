@@ -37,8 +37,7 @@ class ChatbotInput(BaseModel):
 
 class HelpInput(BaseModel):
     content: str
-    question_type: Optional[str] = "general"
-    topic: Optional[str] = None
+    user_id: Optional[str] = None
 
 class ChatbotResponse(BaseModel):
     message: str
@@ -49,10 +48,6 @@ class ChatbotResponse(BaseModel):
 
 class HelpResponse(BaseModel):
     explanation: str
-    key_concepts: List[str]
-    step_by_step: Optional[List[str]] = None
-    related_topics: Optional[List[str]] = None
-    practice_suggestions: Optional[List[str]] = None
 
 # ---------------------------
 # Enhanced Helpers
@@ -89,23 +84,22 @@ Provide a clear, informative response that directly answers the student's questi
 
     return prompt
 
-def build_help_prompt(data: HelpInput) -> str:
-    """Build simple help prompt that analyzes content type"""
+def build_help_prompt(content: str) -> str:
+    """Build simplified help prompt that breaks down content step by step"""
     
-    prompt = f"""You are Arlo, an AI tutor. Analyze the content below and explain it step by step.
+    prompt = f"""You are Arlo, an AI tutor. Break down the following content into a clear, step-by-step explanation that helps the student understand it better.
 
 CONTENT TO EXPLAIN:
-{data.content}
+{content}
 
 Instructions:
-- Provide a clear, step-by-step explanation appropriate for the content type
-- For quiz questions: explain the correct approach and key concepts
-- For flashcards: break down the concept thoroughly
-- For complex topics: use simple analogies and examples
-- Be concise but comprehensive
-- Focus on understanding, not just memorization
+- Provide a concise, step-by-step breakdown
+- Use simple language and clear explanations
+- Focus on helping the student understand the key concepts
+- Be thorough but not overwhelming
+- Use examples when helpful
 
-Your explanation:"""
+Your step-by-step explanation:"""
 
     return prompt
 
@@ -143,9 +137,10 @@ def extract_learning_concepts(response: str) -> List[str]:
 async def update_context_async(user_id: str, context_data: Dict[str, Any]):
     """Update user context asynchronously"""
     try:
-        # Flatten the payload structure to match API expectations
+        # Fixed payload structure with required 'source' field
         payload = {
             "user_id": user_id,
+            "source": "chatbot",  # Added required source field
             "concepts_covered": context_data.get("concepts_covered", []),
             "last_interaction": context_data.get("last_interaction", datetime.now().isoformat()),
             "topic": context_data.get("topic", ""),
@@ -220,58 +215,19 @@ async def chatbot_handler(request: Request, data: ChatbotInput, background_tasks
         raise HTTPException(status_code=500, detail="I'm having trouble right now. Please try again.")
 
 # ---------------------------
-# New Help Router
+# Simplified Help Router
 # ---------------------------
 @router.post("/chatbot/help", response_model=HelpResponse)
-async def help_handler(data: HelpInput):
-    """Handle specific help requests for quiz questions, flashcards, feynman or blurting study technique."""
-    logger.info(f"Help request received for {data.question_type}")
+async def help_handler(request: Request, data: HelpInput):
+    """Simplified help endpoint - just breaks down content step by step"""
+    logger.info("Help request received")
     try:
-        prompt = build_help_prompt(data)
+        prompt = build_help_prompt(data.content)
         
         # Use higher token limit for detailed explanations
-        response = await call_gpt_async(prompt, max_tokens=500)
+        response = await call_gpt_async(prompt, max_tokens=400)
         
-        # Extract key concepts
-        key_concepts = extract_learning_concepts(response)
-        
-        # Generate step-by-step breakdown if it's a process-oriented question
-        steps = []
-        if data.question_type in ["quiz", "feynman"] and any(word in response.lower() for word in ["first", "then", "next", "finally", "step"]):
-            # Simple step extraction
-            step_matches = re.findall(r'(?:Step \d+|First|Then|Next|Finally)[:\-]?\s*([^.!?]*[.!?])', response)
-            steps = [step.strip() for step in step_matches if step.strip()]
-        
-        # Generate related topics
-        related_topics = []
-        if data.topic:
-            # This would ideally use a knowledge graph or curriculum mapping
-            topic_lower = data.topic.lower()
-            if "math" in topic_lower:
-                related_topics = ["algebra", "geometry", "calculus", "statistics"]
-            elif "science" in topic_lower:
-                related_topics = ["physics", "chemistry", "biology", "scientific method"]
-            elif "history" in topic_lower:
-                related_topics = ["historical analysis", "primary sources", "timelines", "cause and effect"]
-            
-            # Filter to relevant topics
-            related_topics = [t for t in related_topics if t != data.topic.lower()][:3]
-        
-        # Practice suggestions based on question type
-        practice_suggestions = {
-            "quiz": ["Review similar questions", "Create your own practice questions", "Explain the concept to someone else"],
-            "flashcard": ["Use spaced repetition", "Create related flashcards", "Practice active recall"],
-            "feynman": ["Try explaining without looking", "Use analogies", "Test your understanding with examples"],
-            "blurting": ["Practice timed recall", "Organize information hierarchically", "Create concept maps"]
-        }
-        
-        return HelpResponse(
-            explanation=response,
-            key_concepts=key_concepts,
-            step_by_step=steps if steps else None,
-            related_topics=related_topics if related_topics else None,
-            practice_suggestions=practice_suggestions.get(data.question_type, [])
-        )
+        return HelpResponse(explanation=response)
         
     except Exception as e:
         logger.error(f"Help handler failed: {e}")
@@ -291,9 +247,10 @@ async def save_chat_context(request: Request, payload: Dict[str, Any]):
         if not user_id:
             raise HTTPException(status_code=400, detail="Missing user_id")
         
-        # Structure payload to match API expectations
+        # Structure payload to match API expectations with required 'source' field
         formatted_payload = {
             "user_id": user_id,
+            "source": "chatbot",  # Added required source field
             "concepts_covered": payload.get("concepts_covered", []),
             "last_interaction": payload.get("last_interaction", datetime.now().isoformat()),
             "topic": payload.get("topic", ""),
