@@ -47,6 +47,7 @@ CORE TEACHING PRINCIPLES:
 CONTENT STRUCTURE REQUIREMENTS:
 - Breakdown all information into digestible lessons that thourougly cover abolutely ALL info student might need to know for their class
 - incorperate helpful examples, memory aids throughout (mnemonics, acronyms, visual associations but only when helpful relevant, otherwise avoid. 
+- break down into 8 - 15 blocks which each explain a topic or set of related subtopics. By the end of all blocks, student should know all relevant info. 
 
 CONTENT QUALITY STANDARDS:
 - Each section should be substantial (200-300 words minimum)
