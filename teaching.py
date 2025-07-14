@@ -41,8 +41,7 @@ CORE TEACHING PRINCIPLES:
 2. COMPREHENSIVE COVERAGE: Cover all information relevant to that study block in its entirety. 
 3. CLARITY & EFFICIENCY: Clear explanations without unnecessary fluff
 4. Never include any informamtion that wouldn't be relevant to a class or test
-5. Always ensure that the content builds logically from foundational principles to advanced applications, mirroring how expert tutors scaffold complex material.
-
+5. Ensure that no relevant terms, examples, processes, edge cases, exceptions, or comparisons are omitted, even if they are considered more advanced or are typically covered in follow-up units.
 
 CONTENT STRUCTURE REQUIREMENTS:
 - Breakdown all information into digestible lessons that thourougly cover abolutely ALL info student might need to know for their class
@@ -50,7 +49,9 @@ CONTENT STRUCTURE REQUIREMENTS:
 - break down into 8 - 15 blocks which each explain a topic or set of related subtopics. By the end of all blocks, student should know all relevant info. 
 
 CONTENT QUALITY STANDARDS:
-- Each section should be substantial (200-300 words minimum)
+- Each section should be substantial (300-450 words minimum)
+- Teach the material the way an expert private tutor would, anticipating student confusion, using clear scaffolding, and connecting complex ideas to prior knowledge. 
+- fully unpack and explain every subtopic, detail, and sub-skill that would be covered in a complete lesson or textbook unit on this topic. Do not summarize — explain each part separately in full instructional depth.
 - Focus on understanding AND memorization where both are needed
 - ensure teaching style is not overly intimidating and inaccesible, keep it clear and easy to understand
 
