@@ -85,19 +85,21 @@ Provide a clear, informative response that directly answers the student's questi
     return prompt
 
 def build_help_prompt(content: str) -> str:
-    """Build simplified help prompt that breaks down content step by step"""
+    """Build simplified help prompt that explains content in clear paragraphs"""
     
-    prompt = f"""You are Arlo, an AI tutor. Break down the following content into a clear, step-by-step explanation that helps the student understand it better.
+    prompt = f"""You are Arlo, an AI tutor. Explain the following content in a clear, easy-to-understand way using 1-2 concise paragraphs.
 
 CONTENT TO EXPLAIN:
 {content}
 
 Instructions:
-- Provide a concise and clear explenaion of content current is currently learning 
-- Use simple language and be more clear than the original content to help student understand better
-- Use examples when helpful
+- Write in paragraph form, not numbered lists or bullet points
+- Use simple, clear language that's easier to understand than the original
+- Focus on the main concepts and their significance
+- Keep it concise but informative
+- Include examples only if they help clarify the concept
 
-Your step-by-step explanation:"""
+Your explanation:"""
 
     return prompt
 
