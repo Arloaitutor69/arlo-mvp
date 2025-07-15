@@ -106,7 +106,7 @@ Create exactly 8-12 comprehensive teaching blocks that cover ALL aspects of this
         ]
 
         response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
+            "model": "gpt-4-turbo",
             messages=messages,
             temperature=0.2,  # Lower temperature for more consistent output
             max_tokens=4000,  # Increased for longer content
