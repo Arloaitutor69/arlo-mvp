@@ -136,13 +136,13 @@ REQUIRED JSON STRUCTURE - Return ONLY this JSON format:
   "blocks": [
     {{
       "unit": "Unit 1 Name",
-      "techniques": ["flashcards", "feynman"],
+      "techniques": ["quiz", "blurting", "flashcards"],
       "description": "Complete detailed description with key concepts, formulas, examples, and common misconceptions. Should be 100-200 words covering all relevant subtopics for this unit.",
       "duration": {block_duration}
     }},
     {{
       "unit": "Unit 2 Name", 
-      "techniques": ["quiz", "blurting", "flashcards"],
+      "techniques": ["flashcards", "feynman"],
       "description": "Complete detailed description with key concepts, formulas, examples, and common misconceptions. Should be 100-200 words covering all relevant subtopics for this unit.",
       "duration": {block_duration}
     }}
