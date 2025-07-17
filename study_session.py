@@ -25,7 +25,8 @@ class StudyPlanRequest(BaseModel):
 class StudyBlock(BaseModel):
     id: str
     unit: str
-    technique: str
+    technique: str  # Primary technique for backward compatibility
+    techniques: List[str]  # New field for multiple techniques
     phase: str
     tool: str
     lovable_component: str
@@ -99,7 +100,7 @@ PLAN SPECIFICATIONS:
 - Create exactly {num_blocks} learning blocks  
 - Each block should be {block_duration} minutes long
 
-AVAILABLE TECHNIQUES (choose what's best for each unit):
+AVAILABLE TECHNIQUES (choose 1-3 per block based on what's best for each unit):
 • flashcards: Spaced repetition for memorization
 • feynman: Explain concepts in simple terms
 • quiz: Active recall testing
@@ -107,9 +108,9 @@ AVAILABLE TECHNIQUES (choose what's best for each unit):
 
 REQUIREMENTS:
 - Each block needs a clear unit/topic name
-- Choose the BEST technique for each specific unit/topic
-- You can use the same technique multiple times if optimal
-- You can use any combination or sequence of techniques
+- Choose 1-3 BEST techniques for each specific unit/topic
+- You can use the same techniques multiple times across blocks if optimal
+- You can use any combination or sequence of techniques within a block
 - Focus on what will help the student learn THIS specific content most effectively
 - Each block must cover distinct, non redundant and non-overlapping content that builds progressively toward complete mastery of the subject
 
@@ -136,13 +137,13 @@ REQUIRED JSON STRUCTURE - Return ONLY this JSON format:
   "blocks": [
     {{
       "unit": "Unit 1 Name",
-      "technique": "flashcards",
+      "techniques": ["flashcards", "feynman"],
       "description": "Complete detailed description with key concepts, formulas, examples, and common misconceptions. Should be 100-200 words covering all relevant subtopics for this unit.",
       "duration": {block_duration}
     }},
     {{
       "unit": "Unit 2 Name", 
-      "technique": "quiz",
+      "techniques": ["quiz", "blurting", "flashcards"],
       "description": "Complete detailed description with key concepts, formulas, examples, and common misconceptions. Should be 100-200 words covering all relevant subtopics for this unit.",
       "duration": {block_duration}
     }}
@@ -153,24 +154,24 @@ EXAMPLE COMPLETE RESPONSE:
 {{
   "units_to_cover": ["Photosynthesis Overview", "Light Reactions", "Calvin Cycle"],
   "pomodoro": "25/5",
-  "techniques": ["feynman", "flashcards", "quiz"],
+  "techniques": ["feynman", "flashcards", "quiz", "blurting"],
   "blocks": [
     {{
       "unit": "Photosynthesis Overview",
-      "technique": "feynman",
+      "techniques": ["feynman", "flashcards"],
       "description": "Photosynthesis converts light energy into chemical energy through two interconnected stages. Master equation: 6CO2 + 6H2O + light energy → C6H12O6 + 6O2. Key definitions: autotrophs (self-feeding organisms), chloroplasts (organelles containing chlorophyll), thylakoids (membrane structures for light reactions), stroma (fluid space for Calvin cycle). Critical subtopics: chlorophyll a vs b absorption spectra, stomatal regulation, C3 vs C4 vs CAM pathways, photorespiration effects. Essential principles: light-dependent reactions produce ATP/NADPH, light-independent reactions fix CO2 into glucose, oxygen is a byproduct not the goal. Common errors to avoid: thinking plants don't respire (they do both photosynthesis and respiration), confusing reactants/products, assuming all plant cells photosynthesize (only those with chloroplasts). Quantitative facts: ~1-2% light conversion efficiency, 70% of atmospheric oxygen from photosynthesis, 150 billion tons CO2 fixed annually.",
       "duration": 12
     }},
     {{
       "unit": "Light Reactions",
-      "technique": "flashcards",
+      "techniques": ["flashcards", "quiz"],
       "description": "Light reactions occur in thylakoid membranes converting light energy to chemical energy. Key equation: 2H2O + 2NADP+ + 3ADP + 3Pi + light → O2 + 2NADPH + 3ATP. Critical components: Photosystem II (P680 reaction center), Photosystem I (P700 reaction center), cytochrome b6f complex, ATP synthase. Essential processes: water splitting (oxygen evolution), electron transport chain, proton pumping, chemiosmosis. Important facts: cyclic vs non-cyclic electron flow, Z-scheme energy diagram, plastoquinone and plastocyanin carriers. Common misconceptions: thinking ATP is made directly by light (it's made by chemiosmosis), confusing photosystems I and II order. Quantitative details: 8 photons needed per O2 molecule, proton gradient of 3-4 pH units, ATP:NADPH ratio of 3:2.",
       "duration": 12
     }}
   ]
 }}
 
-Remember: You must include exactly {num_blocks} blocks and ALL required fields (units_to_cover, pomodoro, techniques, blocks) or the system will fail."""
+Remember: You must include exactly {num_blocks} blocks and ALL required fields (units_to_cover, pomodoro, techniques, blocks) or the system will fail. Each block must have a "techniques" array with 1-3 techniques."""
     
     return prompt
 
@@ -199,7 +200,7 @@ def generate_gpt_plan(prompt: str, max_retries: int = 2) -> dict:
                 completion = client.chat.completions.create(
                     model="gpt-3.5-turbo",
                     messages=[
-                        {"role": "system", "content": "You are an expert curriculum designer. You MUST return ONLY valid JSON with ALL required fields: units_to_cover, pomodoro, techniques, and blocks. Missing any field will cause system failure."},
+                        {"role": "system", "content": "You are an expert curriculum designer. You MUST return ONLY valid JSON with ALL required fields: units_to_cover, pomodoro, techniques, and blocks. Each block must have a 'techniques' array with 1-3 techniques. Missing any field will cause system failure."},
                         {"role": "user", "content": prompt}
                     ],
                     temperature=0.3,
@@ -212,7 +213,7 @@ def generate_gpt_plan(prompt: str, max_retries: int = 2) -> dict:
                 completion = openai.ChatCompletion.create(
                     model="gpt-3.5-turbo",
                     messages=[
-                        {"role": "system", "content": "You are an expert curriculum designer. You MUST return ONLY valid JSON with ALL required fields: units_to_cover, pomodoro, techniques, and blocks. Missing any field will cause system failure."},
+                        {"role": "system", "content": "You are an expert curriculum designer. You MUST return ONLY valid JSON with ALL required fields: units_to_cover, pomodoro, techniques, and blocks. Each block must have a 'techniques' array with 1-3 techniques. Missing any field will cause system failure."},
                         {"role": "user", "content": prompt}
                     ],
                     temperature=0.3,
@@ -253,11 +254,17 @@ def generate_gpt_plan(prompt: str, max_retries: int = 2) -> dict:
             
             # Validate block structure
             for i, block in enumerate(blocks):
-                required_block_fields = ["unit", "technique", "description", "duration"]
+                required_block_fields = ["unit", "techniques", "description", "duration"]
                 missing_block_fields = [field for field in required_block_fields if field not in block]
                 if missing_block_fields:
                     print(f"❌ Block {i} missing fields: {missing_block_fields}")
                     raise ValueError(f"Block {i} missing fields: {missing_block_fields}")
+                
+                # Validate techniques array
+                techniques = block.get("techniques", [])
+                if not isinstance(techniques, list) or len(techniques) == 0 or len(techniques) > 3:
+                    print(f"❌ Block {i} invalid techniques: {techniques}")
+                    raise ValueError(f"Block {i} must have 1-3 techniques in array format")
             
             print(f"✅ GPT generated valid response with {len(blocks)} blocks")
             print(f"📊 Units: {len(parsed.get('units_to_cover', []))}")
@@ -313,18 +320,20 @@ async def generate_plan(data: StudyPlanRequest, request: Request):
         for idx, item in enumerate(blocks_json):
             try:
                 unit = item.get("unit", f"Unit {idx + 1}")
-                technique = item.get("technique", "feynman")
+                techniques_list = item.get("techniques", ["feynman"])
+                primary_technique = techniques_list[0] if techniques_list else "feynman"
                 description = item.get("description", "Study the assigned material")
                 duration = item.get("duration", 12)
                 block_id = f"block_{uuid.uuid4().hex[:8]}"
                 
-                # Create study block
+                # Create study block with both single technique (backward compatibility) and multiple techniques
                 study_block = StudyBlock(
                     id=block_id,
                     unit=unit,
-                    technique=technique,
-                    phase=technique,
-                    tool=technique,
+                    technique=primary_technique,  # Primary technique for backward compatibility
+                    techniques=techniques_list,   # New field for multiple techniques
+                    phase=primary_technique,
+                    tool=primary_technique,
                     lovable_component="text-block",
                     duration=duration,
                     description=description,
@@ -334,20 +343,20 @@ async def generate_plan(data: StudyPlanRequest, request: Request):
                 blocks.append(study_block)
                 total_time += duration
                 
-                print(f"✅ Block {idx + 1}: {unit} - {technique} ({duration}min)")
+                print(f"✅ Block {idx + 1}: {unit} - {techniques_list} ({duration}min)")
                 print(f"   Description: {description[:100]}...")
                 
-                # Prepare context update (async)
+                # Prepare context update (async) - use primary technique
                 context_payload = {
                     "source": "session_planner",
                     "user_id": user_id,
-                    "current_topic": f"{unit} — {technique}",
+                    "current_topic": f"{unit} — {primary_technique}",
                     "learning_event": {
                         "concept": unit,
-                        "phase": technique,
+                        "phase": primary_technique,
                         "confidence": None,
                         "depth": None,
-                        "source_summary": f"Planned {technique} session: {description[:200]}...",
+                        "source_summary": f"Planned {' + '.join(techniques_list)} session: {description[:200]}...",
                         "repetition_count": 0,
                         "review_scheduled": False
                     }
