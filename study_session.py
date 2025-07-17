@@ -109,7 +109,6 @@ AVAILABLE TECHNIQUES (choose 1-3 per block based on what's best for each unit):
 REQUIREMENTS:
 - Each block needs a clear unit/topic name
 - Choose 1-3 BEST techniques for each specific unit/topic
-- You can use the same techniques multiple times across blocks if optimal
 - You can use any combination or sequence of techniques within a block
 - Focus on what will help the student learn THIS specific content most effectively
 - Each block must cover distinct, non redundant and non-overlapping content that builds progressively toward complete mastery of the subject
