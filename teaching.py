@@ -6,6 +6,7 @@ from typing import List, Literal, Union, Optional
 import openai
 import os
 import json
+import re
 
 # Load OpenAI key from environment
 openai.api_key = os.getenv("OPENAI_API_KEY")
@@ -53,28 +54,28 @@ EXAMPLE OVERVIEW BLOCK:
 {
   "type": "overview",
   "title": "What Are We Going to Learn?",
-  "content": "**Main Questions:**\n\n* What is a cell?\n* What are its key parts?\n* How do cells divide and why does that matter?\n\n**By the end of this session, the learner should be able to:**\n\n* Explain what a eukaryotic cell is and what's inside it\n* Describe the major organelles and their functions\n* Understand the steps of mitosis and its importance"
+  "content": "**Main Questions:**\\n\\n* What is a cell?\\n* What are its key parts?\\n* How do cells divide and why does that matter?\\n\\n**By the end of this session, the learner should be able to:**\\n\\n* Explain what a eukaryotic cell is and what's inside it\\n* Describe the major organelles and their functions\\n* Understand the steps of mitosis and its importance"
 }
 
 EXAMPLE KEY CONCEPTS BLOCK:
 {
   "type": "key_concepts",
   "title": "What Is a Cell, Really?",
-  "content": "A **cell** is the smallest unit of life that can perform all life processes: growth, energy use, reproduction, and response to the environment.\n\n* Some organisms, like bacteria, are made of just **one** cell\n* Others, like humans, are made of **trillions**, all working together\n* Every cell comes from a **pre-existing cell** — a core idea called the **cell theory**\n\nThere are two main categories of cells:\n\n* **Prokaryotic cells** — Simple, small, and lack a nucleus (example: bacteria)\n* **Eukaryotic cells** — Larger and more complex, with a defined nucleus and internal compartments (examples: human, plant, and fungal cells)\n\n> **Analogy:** Think of a eukaryotic cell as a **tiny, self-sustaining city**, where each part of the city (called an organelle) has a specific job — from managing energy to protecting the borders."
+  "content": "A **cell** is the smallest unit of life that can perform all life processes: growth, energy use, reproduction, and response to the environment.\\n\\n* Some organisms, like bacteria, are made of just **one** cell\\n* Others, like humans, are made of **trillions**, all working together\\n* Every cell comes from a **pre-existing cell** — a core idea called the **cell theory**\\n\\nThere are two main categories of cells:\\n\\n* **Prokaryotic cells** — Simple, small, and lack a nucleus (example: bacteria)\\n* **Eukaryotic cells** — Larger and more complex, with a defined nucleus and internal compartments (examples: human, plant, and fungal cells)\\n\\n> **Analogy:** Think of a eukaryotic cell as a **tiny, self-sustaining city**, where each part of the city (called an organelle) has a specific job — from managing energy to protecting the borders."
 }
 
 EXAMPLE DETAILED EXPLANATION BLOCK:
 {
   "type": "detailed_explanation",
   "title": "What's the Difference Between Prokaryotic and Eukaryotic Cells?",
-  "content": "**Key Question:** How do simpler cells like bacteria compare to the complex cells found in humans?\n\nLet's break it down:\n\n**Prokaryotic Cells:**\n\n* No nucleus — DNA floats freely in the cytoplasm\n* Lack membrane-bound organelles\n* Smaller in size, structurally simpler\n* Example: Bacteria\n\n**Eukaryotic Cells:**\n\n* Contain a nucleus where DNA is stored\n* Have membrane-bound organelles that carry out specific functions\n* Larger and more organized internally\n* Examples: Animal cells, plant cells, fungi, protists\n\n> **Helpful mnemonic:** *\"Pro = No (nucleus), Eu = True (nucleus)\"*\n> This simple phrase reminds students that **prokaryotes** do **not** have a nucleus, but **eukaryotes** do.\n\nUnderstanding this distinction is critical: nearly all cells studied in introductory biology are **eukaryotic** — so from here on, we'll focus on them."
+  "content": "**Key Question:** How do simpler cells like bacteria compare to the complex cells found in humans?\\n\\nLet's break it down:\\n\\n**Prokaryotic Cells:**\\n\\n* No nucleus — DNA floats freely in the cytoplasm\\n* Lack membrane-bound organelles\\n* Smaller in size, structurally simpler\\n* Example: Bacteria\\n\\n**Eukaryotic Cells:**\\n\\n* Contain a nucleus where DNA is stored\\n* Have membrane-bound organelles that carry out specific functions\\n* Larger and more organized internally\\n* Examples: Animal cells, plant cells, fungi, protists\\n\\n> **Helpful mnemonic:** *\\\"Pro = No (nucleus), Eu = True (nucleus)\\\"*\\n> This simple phrase reminds students that **prokaryotes** do **not** have a nucleus, but **eukaryotes** do.\\n\\nUnderstanding this distinction is critical: nearly all cells studied in introductory biology are **eukaryotic** — so from here on, we'll focus on them."
 }
 
 EXAMPLE COMPLEX DETAILED EXPLANATION BLOCK:
 {
   "type": "detailed_explanation",
   "title": "How Does a Cell Make and Move Proteins?",
-  "content": "**Key Question:** How are proteins made inside a cell, and how do they reach their destination?\n\nProteins are essential to life — they make up muscles, enzymes, hormones, and more. The cell uses a coordinated network of organelles to produce, process, and transport them:\n\n1. **Ribosomes**\n\n   * These are the builders. They take instructions from the nucleus and link together amino acids to form proteins.\n   * Ribosomes are either floating freely or attached to the rough ER.\n\n2. **Rough Endoplasmic Reticulum (Rough ER)**\n\n   * The rough ER is a folded membrane system dotted with ribosomes.\n   * It helps fold and process proteins after they're made and prepares them for shipment.\n\n3. **Golgi Apparatus**\n\n   * Once proteins leave the ER, they head to the Golgi.\n   * This organelle modifies the proteins, adds molecular \"tags,\" and ships them where they need to go — inside or outside the cell.\n\n> **Analogy:**\n>\n> * Ribosomes = factory workers\n> * Rough ER = the production line\n> * Golgi apparatus = the packaging and shipping department\n\nIf any step in this chain is disrupted, the cell can't function properly — proteins won't be delivered where they're needed, leading to dysfunction and even disease."
+  "content": "**Key Question:** How are proteins made inside a cell, and how do they reach their destination?\\n\\nProteins are essential to life — they make up muscles, enzymes, hormones, and more. The cell uses a coordinated network of organelles to produce, process, and transport them:\\n\\n1. **Ribosomes**\\n\\n   * These are the builders. They take instructions from the nucleus and link together amino acids to form proteins.\\n   * Ribosomes are either floating freely or attached to the rough ER.\\n\\n2. **Rough Endoplasmic Reticulum (Rough ER)**\\n\\n   * The rough ER is a folded membrane system dotted with ribosomes.\\n   * It helps fold and process proteins after they're made and prepares them for shipment.\\n\\n3. **Golgi Apparatus**\\n\\n   * Once proteins leave the ER, they head to the Golgi.\\n   * This organelle modifies the proteins, adds molecular \\\"tags,\\\" and ships them where they need to go — inside or outside the cell.\\n\\n> **Analogy:**\\n>\\n> * Ribosomes = factory workers\\n> * Rough ER = the production line\\n> * Golgi apparatus = the packaging and shipping department\\n\\nIf any step in this chain is disrupted, the cell can't function properly — proteins won't be delivered where they're needed, leading to dysfunction and even disease."
 }
 
 KEY FORMATTING RULES:
@@ -113,7 +114,22 @@ IMPORTANT:
 - Each block must contain substantial and accurate educational content
 - Cover the topic so thoroughly that a student would master it completely
 - Use the same markdown formatting, bullet points, and structure as the examples
+- ESCAPE ALL SPECIAL CHARACTERS: Use \\n for newlines, \\\" for quotes, \\\\ for backslashes
 """
+
+def clean_json_string(text):
+    """Clean and sanitize JSON string to prevent parsing errors"""
+    # Remove any potential control characters
+    text = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', text)
+    
+    # Replace problematic characters that might break JSON
+    text = text.replace('\n', '\\n')
+    text = text.replace('\r', '\\r')
+    text = text.replace('\t', '\\t')
+    text = text.replace('"', '\\"')
+    text = text.replace('\\', '\\\\')
+    
+    return text
 
 @router.post("/teaching", response_model=TeachingResponse)
 def generate_teaching_content(req: TeachingRequest):
@@ -137,7 +153,9 @@ Use the exact formatting patterns from the examples in the system prompt, includ
 - Bullet points (*) for lists
 - Clear visual hierarchy and structure
 
-Follow the proven teaching format demonstrated in the examples."""
+Follow the proven teaching format demonstrated in the examples.
+
+CRITICAL: Ensure all special characters are properly escaped in the JSON response. Use \\n for newlines, \\\" for quotes, etc."""
 
         messages = [
             {"role": "system", "content": GPT_SYSTEM_PROMPT},
@@ -160,7 +178,29 @@ Follow the proven teaching format demonstrated in the examples."""
         elif raw_output.startswith("```"):
             raw_output = raw_output[3:-3]
         
-        parsed_output = json.loads(raw_output)
+        # Additional cleaning for control characters
+        raw_output = clean_json_string(raw_output)
+        
+        # Try to parse JSON with better error handling
+        try:
+            parsed_output = json.loads(raw_output)
+        except json.JSONDecodeError as e:
+            # If JSON parsing fails, try to fix common issues
+            print(f"JSON parsing error: {e}")
+            print(f"Raw output: {raw_output[:500]}...")  # Log first 500 chars for debugging
+            
+            # Try to fix by removing any remaining control characters
+            raw_output = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', raw_output)
+            
+            # Try parsing again
+            try:
+                parsed_output = json.loads(raw_output)
+            except json.JSONDecodeError:
+                # If it still fails, create a fallback response
+                raise HTTPException(
+                    status_code=500, 
+                    detail="Failed to parse AI response. The AI generated malformed JSON."
+                )
 
         # Validate and clean lesson blocks
         lesson_blocks = parsed_output.get("lesson", [])
