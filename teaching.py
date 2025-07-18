@@ -117,15 +117,11 @@ IMPORTANT:
 
 def clean_json_string(text):
     """Clean and sanitize JSON string to prevent parsing errors"""
-    # Remove any potential control characters
-    text = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', text)
+    # Remove any potential control characters that might break JSON parsing
+    text = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]', '', text)
     
-    # Replace problematic characters that might break JSON
-    text = text.replace('\n', '\\n')
-    text = text.replace('\r', '\\r')
-    text = text.replace('\t', '\\t')
-    text = text.replace('"', '\\"')
-    text = text.replace('\\', '\\\\')
+    # Only clean up actual newlines and carriage returns if they're not already escaped
+    # Don't double-escape quotes - GPT should already handle this
     
     return text
 
@@ -167,7 +163,7 @@ CRITICAL: Ensure all special characters are properly escaped in the JSON respons
         elif raw_output.startswith("```"):
             raw_output = raw_output[3:-3]
         
-        # Additional cleaning for control characters
+        # Only remove control characters, don't double-escape
         raw_output = clean_json_string(raw_output)
         
         # Try to parse JSON with better error handling
@@ -178,8 +174,8 @@ CRITICAL: Ensure all special characters are properly escaped in the JSON respons
             print(f"JSON parsing error: {e}")
             print(f"Raw output: {raw_output[:500]}...")  # Log first 500 chars for debugging
             
-            # Try to fix by removing any remaining control characters
-            raw_output = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', raw_output)
+            # Try to fix by removing any remaining problematic characters
+            raw_output = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]', '', raw_output)
             
             # Try parsing again
             try:
