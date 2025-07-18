@@ -28,32 +28,61 @@ class TeachingBlock(BaseModel):
 class TeachingResponse(BaseModel):
     lesson: List[TeachingBlock]
 
-# --- Enhanced GPT Prompt --- #
+# --- Enhanced GPT Prompt with Examples --- #
 GPT_SYSTEM_PROMPT = """
 You are an expert tutor creating comprehensive learning content. Your goal is to create exactly 8-12 teaching blocks that thoroughly cover ALL aspects of the requested topic.
 
 CRITICAL REQUIREMENTS:
-1. Create EXACTLY 8-12 teaching blocks - no more, no less
-2. Each block must be substantial (200-300 words of teaching content)
-3. Cover 100% of the topic comprehensively - leave nothing out
+1. Create EXACTLY 8-14 teaching blocks - no more, no less
 4. Focus ONLY on teaching content - no metadata, tips, or study time estimates
 
 TEACHING BLOCK STRUCTURE:
-- Block 1: Always "overview" - comprehensive introduction to the entire topic
-- Blocks 2-5: "key_concepts" - give introduction to key concepts, basic definitions and intro that will be unpacked later
-- Blocks 6-10: "detailed_explanation" - unpack the concepts in comprehensive depth
-- Blocks 11-12: "summary" - summarize all content with active recall, memory aids like mneumonics or memory palace
+- Block 1: overview of what student is going to learn, with main questions that will be answered etc
+- Last Block: summary of what was learned
 
 CONTENT QUALITY STANDARDS:
-- Each detailed_explanation block should be 200-300 words
 - Explain concepts as if teaching a complete lesson
-- Include all relevant subtopics, processes, exceptions
 - Use clear scaffolding and connect to prior knowledge
-- Make content accessible but thorough
-- Reference earlier blocks where helpful to build coherence and reinforce learning
-- Use evidence-based cognitive strategies such as analogies, metaphors, chunking, and dual coding ONLY when helpful and appropriate
+- Use evidence-based cognitive strategies such as analogies, metaphors, chunking ONLY when helpful and appropriate
 - Use clear, student-friendly language while maintaining accuracy
 - Define all technical terms at first mention and reinforce understanding through examples
+
+FORMATTING EXAMPLES - Follow these patterns:
+
+EXAMPLE OVERVIEW BLOCK:
+{
+  "type": "overview",
+  "title": "What Are We Going to Learn?",
+  "content": "**Main Questions:**\n\n* What is a cell?\n* What are its key parts?\n* How do cells divide and why does that matter?\n\n**By the end of this session, the learner should be able to:**\n\n* Explain what a eukaryotic cell is and what's inside it\n* Describe the major organelles and their functions\n* Understand the steps of mitosis and its importance"
+}
+
+EXAMPLE KEY CONCEPTS BLOCK:
+{
+  "type": "key_concepts",
+  "title": "What Is a Cell, Really?",
+  "content": "A **cell** is the smallest unit of life that can perform all life processes: growth, energy use, reproduction, and response to the environment.\n\n* Some organisms, like bacteria, are made of just **one** cell\n* Others, like humans, are made of **trillions**, all working together\n* Every cell comes from a **pre-existing cell** — a core idea called the **cell theory**\n\nThere are two main categories of cells:\n\n* **Prokaryotic cells** — Simple, small, and lack a nucleus (example: bacteria)\n* **Eukaryotic cells** — Larger and more complex, with a defined nucleus and internal compartments (examples: human, plant, and fungal cells)\n\n> **Analogy:** Think of a eukaryotic cell as a **tiny, self-sustaining city**, where each part of the city (called an organelle) has a specific job — from managing energy to protecting the borders."
+}
+
+EXAMPLE DETAILED EXPLANATION BLOCK:
+{
+  "type": "detailed_explanation",
+  "title": "What's the Difference Between Prokaryotic and Eukaryotic Cells?",
+  "content": "**Key Question:** How do simpler cells like bacteria compare to the complex cells found in humans?\n\nLet's break it down:\n\n**Prokaryotic Cells:**\n\n* No nucleus — DNA floats freely in the cytoplasm\n* Lack membrane-bound organelles\n* Smaller in size, structurally simpler\n* Example: Bacteria\n\n**Eukaryotic Cells:**\n\n* Contain a nucleus where DNA is stored\n* Have membrane-bound organelles that carry out specific functions\n* Larger and more organized internally\n* Examples: Animal cells, plant cells, fungi, protists\n\n> **Helpful mnemonic:** *\"Pro = No (nucleus), Eu = True (nucleus)\"*\n> This simple phrase reminds students that **prokaryotes** do **not** have a nucleus, but **eukaryotes** do.\n\nUnderstanding this distinction is critical: nearly all cells studied in introductory biology are **eukaryotic** — so from here on, we'll focus on them."
+}
+
+EXAMPLE COMPLEX DETAILED EXPLANATION BLOCK:
+{
+  "type": "detailed_explanation",
+  "title": "How Does a Cell Make and Move Proteins?",
+  "content": "**Key Question:** How are proteins made inside a cell, and how do they reach their destination?\n\nProteins are essential to life — they make up muscles, enzymes, hormones, and more. The cell uses a coordinated network of organelles to produce, process, and transport them:\n\n1. **Ribosomes**\n\n   * These are the builders. They take instructions from the nucleus and link together amino acids to form proteins.\n   * Ribosomes are either floating freely or attached to the rough ER.\n\n2. **Rough Endoplasmic Reticulum (Rough ER)**\n\n   * The rough ER is a folded membrane system dotted with ribosomes.\n   * It helps fold and process proteins after they're made and prepares them for shipment.\n\n3. **Golgi Apparatus**\n\n   * Once proteins leave the ER, they head to the Golgi.\n   * This organelle modifies the proteins, adds molecular \"tags,\" and ships them where they need to go — inside or outside the cell.\n\n> **Analogy:**\n>\n> * Ribosomes = factory workers\n> * Rough ER = the production line\n> * Golgi apparatus = the packaging and shipping department\n\nIf any step in this chain is disrupted, the cell can't function properly — proteins won't be delivered where they're needed, leading to dysfunction and even disease."
+}
+
+KEY FORMATTING RULES:
+- Use **bold** for emphasis and key terms
+- Use bullet points (*) for lists
+- Use numbered lists (1., 2., 3.) for sequential processes
+- Include clear section breaks and visual hierarchy
+- Maintain consistent indentation for nested bullet points
 
 RESPONSE FORMAT (JSON only):
 {
@@ -61,26 +90,29 @@ RESPONSE FORMAT (JSON only):
     {
       "type": "overview",
       "title": "Complete Overview of [Topic]",
-      "content": "Comprehensive 400-600 word explanation covering the entire scope..."
+      "content": "Follow the formatting examples above with **Main Questions:** and learning objectives..."
     },
     {
       "type": "key_concepts", 
       "title": "Fundamental Concepts",
-      "content": ["Concept 1: Full definition and explanation", "Concept 2: Full definition and explanation"]
+      "content": "Use bullet points, bold key terms, and analogies as shown in examples..."
     },
     {
       "type": "detailed_explanation",
       "title": "Subtopic 1 Deep Dive",
-      "content": "200-300 words of comprehensive explanation..."
+      "content": "Follow the detailed explanation format with **Key Question:** and structured content..."
     }
   ]
 }
 
 IMPORTANT: 
+- mimick teaching style of example content
 - Output ONLY the JSON response - no additional text
 - Ensure exactly 8-12 blocks total
+- Follow the exact formatting patterns from the examples
 - Each block must contain substantial and accurate educational content
 - Cover the topic so thoroughly that a student would master it completely
+- Use the same markdown formatting, bullet points, and structure as the examples
 """
 
 @router.post("/teaching", response_model=TeachingResponse)
@@ -98,7 +130,14 @@ def generate_teaching_content(req: TeachingRequest):
         user_prompt = f"""{context_info}
 Topic to teach: {req.description}
 
-Create exactly 8-12 comprehensive teaching blocks that cover ALL aspects of this topic. Each block should be substantial and educational. Focus on complete mastery of the subject matter."""
+Create exactly 8-12 comprehensive teaching blocks that cover ALL aspects of this topic. Each block should be substantial and educational. Focus on complete mastery of the subject matter. 
+
+Use the exact formatting patterns from the examples in the system prompt, including:
+- **Bold** for key terms and emphasis
+- Bullet points (*) for lists
+- Clear visual hierarchy and structure
+
+Follow the proven teaching format demonstrated in the examples."""
 
         messages = [
             {"role": "system", "content": GPT_SYSTEM_PROMPT},
@@ -147,18 +186,20 @@ Create exactly 8-12 comprehensive teaching blocks that cover ALL aspects of this
             if not block.get("title"):
                 block["title"] = f"Teaching Block {i+1}"
 
-            # Clean up content
+            # Clean up content - preserve formatting for all content types
             content = block.get("content", "")
             
             # Handle list content for key_concepts and similar types
             if block["type"] in ["key_concepts", "practice_questions", "memory_aids"]:
                 if not isinstance(content, list):
-                    # Convert string to list if needed
+                    # Keep as string to preserve formatting
                     if isinstance(content, str):
-                        content = [item.strip() for item in content.split('\n') if item.strip()]
+                        block["content"] = content
                     else:
-                        content = [str(content)]
-                block["content"] = content
+                        block["content"] = str(content)
+                else:
+                    # Convert list back to formatted string
+                    block["content"] = "\n\n".join([str(item) for item in content])
             else:
                 # Ensure string content for other types
                 if isinstance(content, list):
@@ -173,48 +214,3 @@ Create exactly 8-12 comprehensive teaching blocks that cover ALL aspects of this
         raise HTTPException(status_code=500, detail=f"Failed to parse AI response: {str(e)}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error generating teaching content: {str(e)}")
-
-# --- Additional endpoint for quick concept review --- #
-@router.post("/quick-review")
-def generate_quick_review(req: TeachingRequest):
-    """Generate condensed review content for last-minute studying"""
-    try:
-        quick_prompt = f"""
-        Create exactly 6-8 condensed review blocks for: {req.description}
-        
-        Focus on:
-        - Key facts and formulas
-        - Most likely test questions
-        - Critical concepts to remember
-        - Quick memory aids
-        
-        Each block should be 200-300 words. Return in same JSON format.
-        """
-
-        messages = [
-            {"role": "system", "content": GPT_SYSTEM_PROMPT},
-            {"role": "user", "content": quick_prompt}
-        ]
-
-        response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
-            messages=messages,
-            temperature=0.2,
-            max_tokens=3000,
-        )
-
-        raw_output = response["choices"][0]["message"]["content"]
-        
-        # Clean up response
-        raw_output = raw_output.strip()
-        if raw_output.startswith("```json"):
-            raw_output = raw_output[7:-3]
-        elif raw_output.startswith("```"):
-            raw_output = raw_output[3:-3]
-            
-        parsed_output = json.loads(raw_output)
-        
-        return {"lesson": parsed_output.get("lesson", [])}
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
