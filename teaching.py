@@ -34,7 +34,7 @@ GPT_SYSTEM_PROMPT = """
 You are an expert tutor creating comprehensive learning content. Your goal is to create exactly 8-12 teaching blocks that thoroughly cover ALL aspects of the requested topic.
 
 CRITICAL REQUIREMENTS:
-1. Create EXACTLY 8-14 teaching blocks - no more, no less
+1. Create EXACTLY 10-14 teaching blocks - no more, no less
 4. Focus ONLY on teaching content - no metadata, tips, or study time estimates
 
 TEACHING BLOCK STRUCTURE:
@@ -108,7 +108,6 @@ RESPONSE FORMAT (JSON only):
 
 IMPORTANT: 
 - mimick teaching style of example content and Follow the exact formatting patterns from the examples
-- each block should be no more than 150 words
 - Output ONLY the JSON response - no additional text
 - Ensure exactly 8-12 blocks total
 - Each block must contain substantial and accurate educational content
