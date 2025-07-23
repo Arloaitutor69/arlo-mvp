@@ -1,5 +1,3 @@
-# ENHANCED FEYNMAN MODULE - OPTIMIZED FOR TEACHING EXCELLENCE
-
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 from typing import Optional, List, Dict
@@ -19,7 +17,7 @@ load_dotenv()
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("feynman_feedback")
+logger = logging.getLogger("feynman_teaching")
 
 # OpenAI and Context API configuration
 openai.api_key = os.getenv("OPENAI_API_KEY")
@@ -28,10 +26,10 @@ CONTEXT_BASE = os.getenv("CONTEXT_API_BASE", "https://arlo-mvp-2.onrender.com")
 router = APIRouter()
 
 # -----------------------------
-# Enhanced Context Cache with Compression
+# Context Cache
 # -----------------------------
 context_cache = {}
-context_ttl = timedelta(minutes=10)  # Extended for better performance
+context_ttl = timedelta(minutes=10)
 
 def get_cached_context(user_id: str):
     """Optimized context retrieval with intelligent caching"""
@@ -54,70 +52,29 @@ def get_cached_context(user_id: str):
         return {}
 
 # -----------------------------
-# Enhanced Pydantic Models
+# Pydantic Models
 # -----------------------------
-class FeynmanRequest(BaseModel):
-    concept: str
-    user_explanation: str
-    personalized_context: Optional[str] = None
-    user_id: Optional[str] = None
-    difficulty_level: Optional[str] = "intermediate"  # beginner, intermediate, advanced
-    subject_area: Optional[str] = None  # biology, chemistry, physics, etc.
-
-class FeynmanResponse(BaseModel):
-    message: str
-    follow_up_question: Optional[str]
-    action_suggestion: Optional[str] = "stay_in_phase"
-    concept_mastery_score: Optional[int] = None  # 1-100 scale
-    key_gaps: Optional[List[str]] = None
-    strengths: Optional[List[str]] = None
-
 class FeynmanExerciseRequest(BaseModel):
-    concept: str
-    teaching_block: str
+    topic: str
+    teaching_content: str
     user_id: Optional[str] = None
     difficulty_level: Optional[str] = "intermediate"
     subject_area: Optional[str] = None
-    focus_areas: Optional[List[str]] = None  # specific areas to emphasize
 
 class FeynmanExerciseResponse(BaseModel):
-    exercise_1: dict
-    exercise_2: dict
-    bonus_challenge: Optional[dict] = None
+    topic: str
+    questions: List[str]
 
-# -----------------------------
-# Teaching Enhancement Functions
-# -----------------------------
-def extract_key_concepts(text: str) -> List[str]:
-    """Extract key concepts from teaching content"""
-    # Simple keyword extraction - could be enhanced with NLP
-    concepts = re.findall(r'\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b', text)
-    return list(set(concepts))[:5]  # Top 5 concepts
+class FeynmanAssessmentRequest(BaseModel):
+    topic: str
+    question: str
+    user_explanation: str
+    user_id: Optional[str] = None
 
-def generate_context_hash(user_id: str, concept: str) -> str:
-    """Generate hash for context caching"""
-    return hashlib.md5(f"{user_id}_{concept}".encode()).hexdigest()[:8]
-
-def build_enhanced_context(context: dict, concept: str, subject_area: str = None) -> str:
-    """Build rich context for better AI responses"""
-    context_parts = []
-    
-    # Core learning profile
-    if context.get("current_topic"):
-        context_parts.append(f"📚 Current Topic: {context['current_topic']}")
-    if context.get("user_goals"):
-        context_parts.append(f"🎯 Goals: {', '.join(context['user_goals'][:3])}")
-    if context.get("weak_areas"):
-        context_parts.append(f"⚠️ Challenge Areas: {', '.join(context['weak_areas'][:3])}")
-    if context.get("preferred_learning_styles"):
-        style = context['preferred_learning_styles'][0] if context['preferred_learning_styles'] else "visual"
-        context_parts.append(f"🧠 Learning Style: {style}")
-    
-    # Subject-specific context
-    if subject_area:
-        context_parts.append(f"📖 Subject: {subject_area}")
-    
-    return "\n".join(context_parts)
+class FeynmanAssessmentResponse(BaseModel):
+    mastery_score: int
+    what_went_well: List[str]
+    gaps_in_understanding: List[str]
 
 # -----------------------------
 # User ID extraction helper
@@ -134,170 +91,76 @@ def extract_user_id(request: Request, data) -> str:
         raise HTTPException(status_code=400, detail="Missing user_id in request")
 
 # -----------------------------
-# Enhanced Feynman Feedback Endpoint
-# -----------------------------
-@router.post("/feynman", response_model=FeynmanResponse)
-def run_feynman_phase(request: Request, payload: FeynmanRequest):
-    logger.info("🎓 Feynman feedback for: %s", payload.concept)
-
-    user_id = extract_user_id(request, payload)
-    context = get_cached_context(user_id)
-    
-    # Build enhanced context
-    enhanced_context = build_enhanced_context(context, payload.concept, payload.subject_area)
-    
-    # Construct optimized prompt for better teaching
-    prompt = f"""You are Arlo, an expert AI tutor specializing in deep conceptual understanding. A student is learning "{payload.concept}" and just attempted to explain it.
-
-STUDENT'S EXPLANATION:
-"{payload.user_explanation}"
-
-LEARNING CONTEXT:
-{payload.personalized_context or enhanced_context}
-
-DIFFICULTY LEVEL: {payload.difficulty_level}
-
-YOUR TEACHING MISSION:
-1. **Immediate Affirmation** (1 sentence): Highlight what they understood correctly
-2. **Gap Analysis** (2-3 bullet points): Identify specific misconceptions or missing pieces
-3. **Conceptual Clarification** (2-3 sentences): Explain the gaps using analogies or simpler terms
-4. **Mastery Check** (1 question): Ask a follow-up that tests deeper understanding
-
-TEACHING PRINCIPLES:
-- Be encouraging but precise
-- Use analogies relevant to their learning style
-- Focus on "why" and "how" rather than just "what"
-- Connect to real-world applications
-- Identify test-relevant gaps
-
-Provide a mastery score (1-100) based on their explanation completeness and accuracy."""
-
-    logger.info("📝 Constructed enhanced prompt")
-
-    try:
-        response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": "system", "content": "You are an expert AI tutor focused on deep conceptual understanding and test preparation."},
-                {"role": "user", "content": prompt},
-            ],
-            temperature=0.5,  # Slightly lower for more consistent feedback
-            max_tokens=600,   # Increased for richer feedback
-            request_timeout=10
-        )
-
-        raw_reply = response["choices"][0]["message"]["content"].strip()
-        logger.info("✅ OpenAI response received")
-
-        # Parse the response for structured feedback
-        lines = raw_reply.split("\n")
-        follow_up = next((line.strip() for line in lines if "?" in line and len(line.strip()) > 10), None)
-        
-        # Extract mastery score
-        score_match = re.search(r'(\d+)(?:/100|%)', raw_reply)
-        mastery_score = int(score_match.group(1)) if score_match else None
-        
-        # Extract key gaps and strengths
-        gaps = []
-        strengths = []
-        
-        for line in lines:
-            if any(word in line.lower() for word in ['gap', 'missing', 'unclear', 'incorrect']):
-                gaps.append(line.strip())
-            elif any(word in line.lower() for word in ['correct', 'good', 'well', 'accurate']):
-                strengths.append(line.strip())
-
-        return FeynmanResponse(
-            message=raw_reply,
-            follow_up_question=follow_up,
-            action_suggestion="stay_in_phase",
-            concept_mastery_score=mastery_score,
-            key_gaps=gaps[:3],  # Top 3 gaps
-            strengths=strengths[:2]  # Top 2 strengths
-        )
-
-    except Exception as e:
-        logger.exception("❌ Feynman GPT call failed: %s", str(e))
-        raise HTTPException(status_code=500, detail="AI tutoring service temporarily unavailable")
-
-# -----------------------------
 # Enhanced Feynman Exercise Generator
 # -----------------------------
 @router.post("/feynman/exercises", response_model=FeynmanExerciseResponse)
 def generate_feynman_exercises(request: Request, payload: FeynmanExerciseRequest):
-    logger.info("🎯 Generating test-relevant exercises for: %s", payload.concept)
+    logger.info("🎯 Generating Feynman exercises for: %s", payload.topic)
 
     user_id = extract_user_id(request, payload)
     context = get_cached_context(user_id)
     
-    # Extract key concepts for targeted exercises
-    key_concepts = extract_key_concepts(payload.teaching_block)
-    
-    prompt = f"""You are an expert AI tutor creating Feynman-style exercises for deep conceptual understanding.
-
-CONCEPT: "{payload.concept}"
-DIFFICULTY: {payload.difficulty_level}
-SUBJECT: {payload.subject_area or "general"}
+    prompt = f"""You are an expert AI tutor creating Feynman-style teaching exercises for conceptual mastery.
 
 TEACHING CONTENT:
-"{payload.teaching_block}"
+"{payload.teaching_content}"
 
-KEY CONCEPTS IDENTIFIED: {', '.join(key_concepts)}
+YOUR TASK:
+Create exactly 3 conceptual teaching questions relevant to teaching material and what a student might see on a test:
+- Test deep understanding, not memorization
+- Use the format: *Question text ending with question mark?*
+- align your output formatting and the qaulity with style of example below 
 
-EXERCISE DESIGN CRITERIA:
-- Target common test question patterns
-- Require explanation, not just memorization
-- Include real-world applications
-- Test causal relationships and mechanisms
-- Encourage teaching to others
+EXAMPLE FORMAT 
+Content: The Age of Exploration was a period between the 15th and 17th centuries when European powers expanded across the globe through sea voyages, driven by economic motives, technological advances, and cultural imperatives like spreading Christianity.
 
-Create 2 exercises + 1 bonus challenge that would help students ace both conceptual and application-based test questions.
+Expected Output:
+1. *Why did European exploration expand so rapidly in the late 15th century, and what made this timing significant compared to earlier periods?*
+2. *How did the principles of mercantilism influence the goals and outcomes of European exploration and colonization?*
+3. *How did the Columbian Exchange fundamentally transform both European and non-European societies — economically, culturally, and biologically?*
 
-RESPOND ONLY IN VALID JSON:
-{{
-  "exercise_1": {{
-    "prompt": "Teaching scenario that tests core understanding",
-    "focus": "specific learning objective",
-    "test_relevance": "how this connects to typical exam questions"
-  }},
-  "exercise_2": {{
-    "prompt": "Application scenario requiring deeper thinking",
-    "focus": "conceptual gap this addresses",
-    "test_relevance": "exam skill this develops"
-  }},
-  "bonus_challenge": {{
-    "prompt": "Advanced synthesis question",
-    "focus": "high-level connection or application",
-    "test_relevance": "advanced test question type"
-  }}
-}}"""
+Respond with ONLY the 3 questions in the exact format shown above, numbered 1-3."""
 
     try:
         response = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
             messages=[
-                {"role": "system", "content": "You are an expert AI tutor specializing in test preparation and conceptual mastery."},
+                {"role": "system", "content": "You are an expert AI tutor specializing in creating Feynman-style conceptual teaching questions."},
                 {"role": "user", "content": prompt}
             ],
-            temperature=0.7,  # Higher creativity for exercise variety
-            max_tokens=700,   # More tokens for richer exercises
+            temperature=0.7,
+            max_tokens=400,
             request_timeout=10
         )
 
         content = response["choices"][0]["message"]["content"].strip()
         logger.info("✅ Exercise generation completed")
 
-        # Clean JSON response
-        json_match = re.search(r'\{.*\}', content, re.DOTALL)
-        if json_match:
-            exercises = json.loads(json_match.group())
-        else:
-            exercises = json.loads(content)
+        # Extract questions from response
+        questions = []
+        lines = content.split('\n')
+        for line in lines:
+            # Look for numbered questions with asterisks
+            if re.match(r'^\d+\.\s*\*.*\*\s*$', line.strip()):
+                question_text = re.sub(r'^\d+\.\s*\*(.*)\*\s*$', r'\1', line.strip())
+                questions.append(question_text)
+
+        if len(questions) != 3:
+            # Fallback parsing if format doesn't match exactly
+            questions = []
+            for line in lines:
+                if '?' in line and len(line.strip()) > 10:
+                    clean_question = re.sub(r'^\d+\.\s*[\*]*\s*', '', line.strip())
+                    clean_question = clean_question.replace('*', '').strip()
+                    if clean_question:
+                        questions.append(clean_question)
+
+        # Ensure we have exactly 3 questions
+        questions = questions[:3]
 
         return FeynmanExerciseResponse(
-            exercise_1=exercises["exercise_1"],
-            exercise_2=exercises["exercise_2"],
-            bonus_challenge=exercises.get("bonus_challenge")
+            topic=payload.topic,
+            questions=questions
         )
 
     except Exception as e:
@@ -305,31 +168,116 @@ RESPOND ONLY IN VALID JSON:
         raise HTTPException(status_code=500, detail="Exercise generation service temporarily unavailable")
 
 # -----------------------------
-# New: Quick Concept Assessment
+# Enhanced Feynman Assessment
 # -----------------------------
-@router.post("/feynman/quick-assess")
-def quick_concept_assessment(request: Request, concept: str, user_explanation: str):
-    """Fast concept assessment for immediate feedback"""
+@router.post("/feynman/assess", response_model=FeynmanAssessmentResponse)
+def assess_feynman_teaching(request: Request, payload: FeynmanAssessmentRequest):
+    logger.info("🎓 Assessing Feynman teaching for: %s", payload.topic)
+
+    user_id = extract_user_id(request, payload)
+    context = get_cached_context(user_id)
+    
+    prompt = f"""You are an expert AI tutor assessing a student's conceptual explanation using the Feynman Technique.
+    
+QUESTION: "{payload.question}"
+
+STUDENT'S EXPLANATION:
+"{payload.user_explanation}"
+
+EXAMPLE ASSESSMENT (based on Age of Exploration):
+Question: Why did European exploration expand so rapidly in the late 15th century?
+Student Answer: "Exploration happened because countries wanted land and they found new places and took them. They had ships and went far and people got rich."
+
+Expected Assessment:
+Mastery Score: 48/100
+
+What You Did Well:
+* ✅ Recognized that European nations were seeking new land and wealth
+* ✅ Noted that ships were a key factor in enabling exploration
+
+Gaps in Understanding:
+* ❌ No mention of historical context — why the 15th century was a turning point (e.g., Fall of Constantinople, Renaissance thought, Ottoman control of land routes)
+* ❌ Oversimplified motivations — didn't explain religious motives, competition among European powers, or desire for direct access to Asian trade
+* ❌ Vague use of terms like "people got rich" without referring to the Columbian Exchange, mercantilism, or monarchial sponsorship
+* ❌ No recognition of the impact on indigenous societies or the idea of cultural imperialism
+
+YOUR TASK:
+Assess the student's explanation and provide:
+
+1. A mastery score out of 100 (be precise and fair)
+2. What they did well (bullet points using * ✅ format)
+3. Gaps in understanding (bullet points using * ❌ format)
+
+Focus on:
+- Conceptual accuracy and depth
+- Use of appropriate terminology
+- Recognition of complexity and nuance
+- Ability to connect ideas
+
+Format your response EXACTLY as:
+Mastery Score: [X]/100
+
+What You Did Well:
+* ✅ [specific strength]
+* ✅ [specific strength]
+
+Gaps in Understanding:
+* ❌ [specific gap with explanation]
+* ❌ [specific gap with explanation]
+* ❌ [specific gap with explanation]"""
+
     try:
-        prompt = f"""Rate this explanation of "{concept}" on a scale of 1-10:
-"{user_explanation}"
-
-Respond in this exact format:
-Score: X/10
-One thing they got right: [specific strength]
-One thing to improve: [specific gap]
-Quick tip: [actionable advice]"""
-
         response = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.3,
-            max_tokens=200,
-            request_timeout=5
+            messages=[
+                {"role": "system", "content": "You are an expert AI tutor specializing in conceptual mastery assessment using the Feynman Technique."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.3,  # Lower temperature for consistent assessment
+            max_tokens=600,
+            request_timeout=10
         )
 
-        return {"quick_feedback": response["choices"][0]["message"]["content"].strip()}
+        content = response["choices"][0]["message"]["content"].strip()
+        logger.info("✅ Assessment completed")
+
+        # Parse the response
+        mastery_score = 0
+        what_went_well = []
+        gaps = []
+
+        # Extract mastery score
+        score_match = re.search(r'Mastery Score:\s*(\d+)(?:/100)?', content)
+        if score_match:
+            mastery_score = int(score_match.group(1))
+
+        # Extract what went well
+        well_section = re.search(r'What You Did Well:(.*?)(?=Gaps in Understanding:|$)', content, re.DOTALL)
+        if well_section:
+            well_lines = well_section.group(1).split('\n')
+            for line in well_lines:
+                if '✅' in line:
+                    clean_line = re.sub(r'^\s*\*\s*✅\s*', '', line.strip())
+                    if clean_line:
+                        what_went_well.append(clean_line)
+
+        # Extract gaps
+        gaps_section = re.search(r'Gaps in Understanding:(.*?)$', content, re.DOTALL)
+        if gaps_section:
+            gap_lines = gaps_section.group(1).split('\n')
+            for line in gap_lines:
+                if '❌' in line:
+                    clean_line = re.sub(r'^\s*\*\s*❌\s*', '', line.strip())
+                    if clean_line:
+                        gaps.append(clean_line)
+
+        return FeynmanAssessmentResponse(
+            mastery_score=mastery_score,
+            what_went_well=what_went_well,
+            gaps_in_understanding=gaps
+        )
 
     except Exception as e:
-        logger.exception("❌ Quick assessment failed: %s", str(e))
-        raise HTTPException(status_code=500, detail="Quick assessment unavailable")
+        logger.exception("❌ Assessment failed: %s", str(e))
+        raise HTTPException(status_code=500, detail="Assessment service temporarily unavailable")
+
