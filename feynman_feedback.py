@@ -156,7 +156,6 @@ Respond with ONLY the 3 questions in the exact format shown above, numbered 1-3.
         questions = questions[:3]
 
         return FeynmanExerciseResponse(
-            topic=payload.topic,
             questions=questions
         )
 
