@@ -55,18 +55,15 @@ def get_cached_context(user_id: str):
 # Pydantic Models
 # -----------------------------
 class FeynmanExerciseRequest(BaseModel):
-    topic: str
     teaching_content: str
     user_id: Optional[str] = None
     difficulty_level: Optional[str] = "intermediate"
     subject_area: Optional[str] = None
 
 class FeynmanExerciseResponse(BaseModel):
-    topic: str
     questions: List[str]
 
 class FeynmanAssessmentRequest(BaseModel):
-    topic: str
     question: str
     user_explanation: str
     user_id: Optional[str] = None
