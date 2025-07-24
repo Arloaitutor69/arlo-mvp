@@ -92,7 +92,7 @@ def extract_user_id(request: Request, data) -> str:
 # -----------------------------
 @router.post("/feynman/exercises", response_model=FeynmanExerciseResponse)
 def generate_feynman_exercises(request: Request, payload: FeynmanExerciseRequest):
-    logger.info("🎯 Generating Feynman exercises for: %s", payload.topic)
+    logger.info("🎯 Generating Feynman exercises for: %s")
 
     user_id = extract_user_id(request, payload)
     context = get_cached_context(user_id)
@@ -168,7 +168,7 @@ Respond with ONLY the 3 questions in the exact format shown above, numbered 1-3.
 # -----------------------------
 @router.post("/feynman/assess", response_model=FeynmanAssessmentResponse)
 def assess_feynman_teaching(request: Request, payload: FeynmanAssessmentRequest):
-    logger.info("🎓 Assessing Feynman teaching for: %s", payload.topic)
+    logger.info("🎓 Assessing Feynman teaching for: %s")
 
     user_id = extract_user_id(request, payload)
     context = get_cached_context(user_id)
