@@ -60,7 +60,7 @@ class BlurtingExerciseResponse(BaseModel):
     key_concepts: List[str]  # Added to track concepts for evaluation
 
 class BlurtingFeedbackRequest(BaseModel):
-    teaching_content: str
+    exercise_question: str  # Changed from teaching_content to exercise_question
     blurted_response: str
     user_id: Optional[str] = None
 
@@ -86,10 +86,10 @@ def extract_user_id(request: Request, data) -> str:
         raise HTTPException(status_code=400, detail="Missing user_id in request")
 
 # ------------------- ASYNC CONTEXT POSTING -------------------
-async def post_learning_event_async(user_id: str, teaching_content: str, missed_concepts: List[str], feedback: str, score_fraction: str):
+async def post_learning_event_async(user_id: str, exercise_question: str, missed_concepts: List[str], feedback: str, score_fraction: str):
     """Async context posting with timeout protection"""
-    # Extract topic from teaching content (first sentence or key phrase)
-    topic = teaching_content.split('.')[0][:100] if teaching_content else "Blurting Exercise"
+    # Extract topic from exercise question (first sentence or key phrase)
+    topic = exercise_question.split('.')[0][:100] if exercise_question else "Blurting Exercise"
     
     # Calculate confidence based on score
     mentioned_count = int(score_fraction.split('/')[0]) if '/' in score_fraction else 0
@@ -189,64 +189,61 @@ EXERCISE 3: Focus on conceptual understanding (relationships, comparisons, expla
 
 Return JSON format exactly like the example above. Make prompts specific and actionable. The key_concepts array should be comprehensive - include every important term, process, fact, or concept from the teaching content."""
 
-def generate_evaluation_prompt(teaching_content: str, blurted_response: str, context_prompt: Optional[str]) -> str:
-    """Enhanced prompt following the structured feedback format with examples"""
+def generate_evaluation_prompt(exercise_question: str, blurted_response: str, context_prompt: Optional[str]) -> str:
+    """Enhanced prompt for evaluating student response against the specific exercise question"""
     context_section = f"\n\nStudent's learning context (weak areas to focus on):\n{context_prompt}" if context_prompt else ""
     
     return f"""You are an expert educational assessor evaluating a student's blurting exercise response.
 
-TEACHING CONTENT (Key concepts to evaluate against):
-{teaching_content[:1200]}
+EXERCISE QUESTION (what the student was asked to recall):
+{exercise_question}
 
 STUDENT'S BLURTED RESPONSE:
 {blurted_response[:800]}
 {context_section}
 
 EVALUATION TASK:
-Analyze the student's response and categorize their recall into three groups:
+Analyze how well the student answered the specific exercise question. Based on what the question was asking for, categorize their response into three groups:
 
-1. **MENTIONED**: Concepts they recalled correctly (exact matches, synonyms, or clearly understood concepts)
-2. **PARTIAL MENTIONS**: Concepts they mentioned but got partially wrong, misused, or explained vaguely  
-3. **MISSED**: Important concepts from the teaching content that they didn't mention at all
+1. **MENTIONED**: Key points/concepts they recalled correctly that directly answer the question
+2. **PARTIAL MENTIONS**: Points they mentioned but got partially wrong, incomplete, or explained vaguely  
+3. **MISSED**: Important points/concepts that should have been included in a complete answer to this question
 
 EXAMPLE INPUT:
-Teaching Content: "DNA replication is the process by which a cell copies its DNA before cell division. It occurs during the S-phase of the cell cycle, inside the nucleus in eukaryotic cells. The process is semi-conservative, meaning each daughter strand retains one original strand. Replication begins at multiple origins of replication. Helicase unwinds the DNA, while topoisomerase relieves torsional strain. Primase lays down RNA primers to initiate synthesis. DNA Polymerase III extends new strands in the 5' to 3' direction. DNA is synthesized continuously on the leading strand and in short segments (Okazaki fragments) on the lagging strand. DNA Polymerase I replaces RNA primers with DNA, and DNA Ligase seals the fragments. The strands are antiparallel, and the replication fork progresses bidirectionally."
+Exercise Question: "List all the enzymes involved in DNA replication and describe what each one does."
 
-Student Response: "Dna replication happens in nuclease, semi conservative, DNA polymerase does it, topoisomerase relieves tension while helices builds. can have many origins of replication, Okazaki fragments occur on leading strand, that's all I remember."
+Student Response: "DNA polymerase extends the new strand, helicase unwinds DNA, topoisomerase relieves tension. There's also primase that makes primers. I think ligase does something too but I'm not sure what."
 
 EXAMPLE OUTPUT:
 {{
   "mentioned": [
-    "Nucleus (as 'nuclease', likely typo)",
-    "Semi-conservative replication",
-    "DNA Polymerase",
-    "Topoisomerase",
-    "Helicase",
-    "Origins of replication"
+    "DNA polymerase - extends new strand",
+    "Helicase - unwinds DNA", 
+    "Topoisomerase - relieves tension",
+    "Primase - makes primers"
   ],
   "partial_mentions": [
-    "Okazaki fragments (mentioned, but incorrect strand)",
-    "Replication directionality (implied but not stated)"
+    "DNA Ligase (mentioned but function unclear)"
   ],
   "missed": [
-    "Primase",
-    "RNA primers",
-    "DNA Ligase",
-    "Lagging strand",
-    "Leading strand (technically misused)",
-    "S-phase",
-    "5' to 3' direction",
-    "Antiparallel strands",
-    "Replication fork",
-    "DNA Polymerase I"
+    "DNA Polymerase I vs III distinction",
+    "Ligase function (seals DNA fragments)",
+    "Specific primer details (RNA primers)"
   ],
-  "mentioned_count": 6,
-  "total_key_concepts": 16,
-  "score_fraction": "6/16",
-  "feedback": "Nice recall of major enzymes like DNA polymerase, helicase, and topoisomerase! You also remembered that replication is semi-conservative and starts at multiple origins. Be careful though — Okazaki fragments occur on the *lagging* strand, not the leading strand. Try reviewing the sequence of events and strand directionality to deepen your understanding."
+  "mentioned_count": 4,
+  "total_key_concepts": 7,
+  "score_fraction": "4/7",
+  "feedback": "Great job recalling the major enzymes! You correctly identified DNA polymerase, helicase, topoisomerase, and primase with their basic functions. You mentioned ligase but weren't sure about its function - it seals DNA fragments together. Try to be more specific about DNA polymerase types (I vs III) and remember that primers are specifically RNA primers."
 }}
 
-Return a JSON object with this exact structure for the current student response. Be thorough in identifying all key concepts from the teaching content. Count partial mentions separately from full mentions. Provide encouraging but specific feedback that acknowledges what they got right and points out key areas to review."""
+Important Guidelines:
+- Focus ONLY on what the specific exercise question was asking for
+- Don't penalize for information not relevant to the question
+- Credit partial knowledge appropriately
+- Give encouraging feedback that acknowledges what they got right
+- Point out key missing elements specific to answering this question
+
+Return a JSON object with this exact structure for the current student response."""
 
 # ------------------- OPTIMIZED OPENAI CALLS -------------------
 async def call_openai_async(messages: List[dict], max_tokens: int = 500, temperature: float = 0.3) -> str:
@@ -317,7 +314,7 @@ async def generate_blurting_exercises(request: Request, data: BlurtingExerciseRe
 # ------------------- FEEDBACK EVALUATION ENDPOINT -------------------
 @router.post("/blurting/feedback", response_model=BlurtingFeedbackResponse)
 async def evaluate_blurting_feedback(request: Request, data: BlurtingFeedbackRequest):
-    """Evaluate blurting response with structured feedback"""
+    """Evaluate blurting response against the specific exercise question"""
     try:
         user_id = extract_user_id(request, data)
         
@@ -328,9 +325,9 @@ async def evaluate_blurting_feedback(request: Request, data: BlurtingFeedbackReq
             weak_areas = context_result["context"].get("weak_areas", [])
             context_prompt = f"Focus on these concepts: {', '.join(weak_areas[:3])}" if weak_areas else None
 
-        # Generate evaluation prompt
+        # Generate evaluation prompt using exercise question instead of teaching content
         prompt = generate_evaluation_prompt(
-            data.teaching_content,
+            data.exercise_question,  # Changed from data.teaching_content
             data.blurted_response,
             context_prompt
         )
@@ -358,10 +355,10 @@ async def evaluate_blurting_feedback(request: Request, data: BlurtingFeedbackReq
         if not all(key in parsed for key in required_keys):
             raise ValueError(f"Invalid response structure. Missing keys: {[k for k in required_keys if k not in parsed]}")
 
-        # Fire-and-forget context logging
+        # Fire-and-forget context logging (using exercise question for topic)
         asyncio.create_task(post_learning_event_async(
             user_id,
-            data.teaching_content,
+            data.exercise_question,  # Changed from data.teaching_content
             parsed["missed"],
             parsed["feedback"],
             parsed["score_fraction"]
