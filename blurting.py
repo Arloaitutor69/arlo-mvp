@@ -1,4 +1,3 @@
-# ENHANCED BLURTING MODULE WITH STRUCTURED FEEDBACK
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
@@ -57,10 +56,9 @@ class BlurtingExerciseResponse(BaseModel):
     exercise_1: dict
     exercise_2: dict
     exercise_3: dict
-    key_concepts: List[str]  # Added to track concepts for evaluation
 
 class BlurtingFeedbackRequest(BaseModel):
-    exercise_question: str  # Changed from teaching_content to exercise_question
+    exercise_question: str
     blurted_response: str
     user_id: Optional[str] = None
 
@@ -126,7 +124,7 @@ async def post_learning_event_async(user_id: str, exercise_question: str, missed
 
 # ------------------- ENHANCED PROMPT GENERATORS -------------------
 def generate_exercise_prompt(teaching_block: str, context: dict) -> str:
-    """Enhanced prompt for better exercise generation with key concept extraction"""
+    """Enhanced prompt for exercise generation without key concept extraction"""
     weak_areas = context.get("weak_areas", [])
     weak_areas_text = f"\n\nSTUDENT'S WEAK AREAS (prioritize these): {', '.join(weak_areas)}" if weak_areas else ""
     
@@ -158,39 +156,20 @@ EXAMPLE OUTPUT:
   "exercise_3": {{
     "prompt": "Explain the differences between leading and lagging strand synthesis, including why Okazaki fragments form.",
     "focus": "Conceptual understanding of directional synthesis differences"
-  }},
-  "key_concepts": [
-    "DNA replication",
-    "S-phase",
-    "Nucleus",
-    "Semi-conservative",
-    "Origins of replication",
-    "Helicase",
-    "Topoisomerase",
-    "Primase",
-    "RNA primers",
-    "DNA Polymerase III",
-    "5' to 3' direction",
-    "Leading strand",
-    "Lagging strand",
-    "Okazaki fragments",
-    "DNA Polymerase I",
-    "DNA Ligase"
-  ]
+  }}
 }}
 
 Your task:
-1. Extract ALL key concepts from the teaching content that students should remember
-2. Create 3 distinct exercises targeting different memory retrieval patterns
+Create 3 distinct exercises targeting different memory retrieval patterns:
 
 EXERCISE 1: Focus on detailed recall (facts, definitions, specific examples)
 EXERCISE 2: Focus on process/sequence recall (steps, cause-effect, chronology)  
 EXERCISE 3: Focus on conceptual understanding (relationships, comparisons, explanations)
 
-Return JSON format exactly like the example above. Make prompts specific and actionable. The key_concepts array should be comprehensive - include every important term, process, fact, or concept from the teaching content."""
+Return JSON format exactly like the example above. Make prompts specific and actionable."""
 
 def generate_evaluation_prompt(exercise_question: str, blurted_response: str, context_prompt: Optional[str]) -> str:
-    """Enhanced prompt for evaluating student response against the specific exercise question"""
+    """Enhanced prompt for evaluating student response with key concept extraction from the question"""
     context_section = f"\n\nStudent's learning context (weak areas to focus on):\n{context_prompt}" if context_prompt else ""
     
     return f"""You are an expert educational assessor evaluating a student's blurting exercise response.
@@ -203,14 +182,24 @@ STUDENT'S BLURTED RESPONSE:
 {context_section}
 
 EVALUATION TASK:
-Analyze how well the student answered the specific exercise question. Based on what the question was asking for, categorize their response into three groups:
+1. **FIRST**: Analyze the exercise question to identify ALL key concepts/points that should be included in a complete answer
+2. **SECOND**: Compare the student's response against these key concepts
+3. **THIRD**: Categorize their performance into three groups:
 
-1. **MENTIONED**: Key points/concepts they recalled correctly that directly answer the question
-2. **PARTIAL MENTIONS**: Points they mentioned but got partially wrong, incomplete, or explained vaguely  
-3. **MISSED**: Important points/concepts that should have been included in a complete answer to this question
+- **MENTIONED**: Key concepts they recalled correctly and completely
+- **PARTIAL MENTIONS**: Concepts they mentioned but got partially wrong, incomplete, or explained vaguely  
+- **MISSED**: Important concepts that should have been included but were completely absent
 
 EXAMPLE INPUT:
 Exercise Question: "List all the enzymes involved in DNA replication and describe what each one does."
+
+Key concepts that should be mentioned for this question:
+- Helicase (unwinds DNA)
+- Topoisomerase (relieves torsional strain)
+- Primase (synthesizes RNA primers)
+- DNA Polymerase III (extends new strands)
+- DNA Polymerase I (replaces RNA primers with DNA)
+- DNA Ligase (seals DNA fragments)
 
 Student Response: "DNA polymerase extends the new strand, helicase unwinds DNA, topoisomerase relieves tension. There's also primase that makes primers. I think ligase does something too but I'm not sure what."
 
@@ -227,19 +216,21 @@ EXAMPLE OUTPUT:
   ],
   "missed": [
     "DNA Polymerase I vs III distinction",
-    "Ligase function (seals DNA fragments)",
-    "Specific primer details (RNA primers)"
+    "Ligase specific function (seals DNA fragments)",
+    "RNA primer specification"
   ],
   "mentioned_count": 4,
-  "total_key_concepts": 7,
-  "score_fraction": "4/7",
+  "total_key_concepts": 6,
+  "score_fraction": "4/6",
   "feedback": "Great job recalling the major enzymes! You correctly identified DNA polymerase, helicase, topoisomerase, and primase with their basic functions. You mentioned ligase but weren't sure about its function - it seals DNA fragments together. Try to be more specific about DNA polymerase types (I vs III) and remember that primers are specifically RNA primers."
 }}
 
-Important Guidelines:
-- Focus ONLY on what the specific exercise question was asking for
+CRITICAL INSTRUCTIONS:
+- Extract key concepts ONLY from what the specific exercise question is asking for
+- Count mentioned_count as the number of fully correct key concepts
+- total_key_concepts should be the total number of key concepts that should be mentioned for this specific question
 - Don't penalize for information not relevant to the question
-- Credit partial knowledge appropriately
+- Credit partial knowledge appropriately in partial_mentions
 - Give encouraging feedback that acknowledges what they got right
 - Point out key missing elements specific to answering this question
 
@@ -297,14 +288,13 @@ async def generate_blurting_exercises(request: Request, data: BlurtingExerciseRe
             cleaned = content.strip().replace("```json", "").replace("```", "")
             parsed = json.loads(cleaned)
 
-        if not all(key in parsed for key in ["exercise_1", "exercise_2", "exercise_3", "key_concepts"]):
+        if not all(key in parsed for key in ["exercise_1", "exercise_2", "exercise_3"]):
             raise ValueError("Invalid exercise structure")
 
         return BlurtingExerciseResponse(
             exercise_1=parsed["exercise_1"],
             exercise_2=parsed["exercise_2"],
-            exercise_3=parsed["exercise_3"],
-            key_concepts=parsed.get("key_concepts", [])
+            exercise_3=parsed["exercise_3"]
         )
         
     except Exception as e:
@@ -314,7 +304,7 @@ async def generate_blurting_exercises(request: Request, data: BlurtingExerciseRe
 # ------------------- FEEDBACK EVALUATION ENDPOINT -------------------
 @router.post("/blurting/feedback", response_model=BlurtingFeedbackResponse)
 async def evaluate_blurting_feedback(request: Request, data: BlurtingFeedbackRequest):
-    """Evaluate blurting response against the specific exercise question"""
+    """Evaluate blurting response against the specific exercise question with key concept extraction"""
     try:
         user_id = extract_user_id(request, data)
         
@@ -325,9 +315,9 @@ async def evaluate_blurting_feedback(request: Request, data: BlurtingFeedbackReq
             weak_areas = context_result["context"].get("weak_areas", [])
             context_prompt = f"Focus on these concepts: {', '.join(weak_areas[:3])}" if weak_areas else None
 
-        # Generate evaluation prompt using exercise question instead of teaching content
+        # Generate evaluation prompt that extracts key concepts from the question
         prompt = generate_evaluation_prompt(
-            data.exercise_question,  # Changed from data.teaching_content
+            data.exercise_question,
             data.blurted_response,
             context_prompt
         )
@@ -335,10 +325,10 @@ async def evaluate_blurting_feedback(request: Request, data: BlurtingFeedbackReq
         # Async OpenAI call
         start_time = time.time()
         messages = [
-            {"role": "system", "content": "You are an expert educational assessor specializing in memory recall evaluation and structured feedback."},
+            {"role": "system", "content": "You are an expert educational assessor specializing in memory recall evaluation. You extract key concepts from questions and provide structured feedback based on comprehensive analysis."},
             {"role": "user", "content": prompt}
         ]
-        content = await call_openai_async(messages, max_tokens=600, temperature=0.2)
+        content = await call_openai_async(messages, max_tokens=700, temperature=0.2)
         print(f"⏱️ OpenAI feedback call: {time.time() - start_time:.2f}s")
 
         # Parse response
@@ -355,10 +345,16 @@ async def evaluate_blurting_feedback(request: Request, data: BlurtingFeedbackReq
         if not all(key in parsed for key in required_keys):
             raise ValueError(f"Invalid response structure. Missing keys: {[k for k in required_keys if k not in parsed]}")
 
-        # Fire-and-forget context logging (using exercise question for topic)
+        # Ensure counts are consistent
+        if parsed["mentioned_count"] != len(parsed["mentioned"]):
+            print(f"⚠️ Mentioned count mismatch: {parsed['mentioned_count']} vs {len(parsed['mentioned'])}")
+            parsed["mentioned_count"] = len(parsed["mentioned"])
+            parsed["score_fraction"] = f"{parsed['mentioned_count']}/{parsed['total_key_concepts']}"
+
+        # Fire-and-forget context logging
         asyncio.create_task(post_learning_event_async(
             user_id,
-            data.exercise_question,  # Changed from data.teaching_content
+            data.exercise_question,
             parsed["missed"],
             parsed["feedback"],
             parsed["score_fraction"]
