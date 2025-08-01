@@ -223,7 +223,7 @@ Generate all {max_questions} questions matching the example quality now:"""
                         {"role": "user", "content": prompt}
                     ],
                     temperature=0.7,  # Slightly higher for creativity
-                    max_tokens=5000,  # Increased token limit for better responses
+                    max_tokens=4000,  # Increased token limit for better responses
                     top_p=0.9,
                     frequency_penalty=0.3,  # Reduce repetition
                     presence_penalty=0.2    # Encourage diverse topics
