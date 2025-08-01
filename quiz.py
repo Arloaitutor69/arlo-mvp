@@ -35,7 +35,6 @@ class DifficultyLevel(str, Enum):
 
 class QuestionType(str, Enum):
     MULTIPLE_CHOICE = "multiple_choice"
-    TRUE_FALSE = "true_false"
     SHORT_ANSWER = "short_answer"
 
 class LearningObjective(str, Enum):
@@ -92,7 +91,7 @@ class ContextCache:
             async with aiohttp.ClientSession() as session:
                 async with session.get(
                     f"{CONTEXT_API}/api/context/cache?user_id={user_id}",
-                    timeout=aiohttp.ClientTimeout(total=3)
+                    timeout=aiohttp.ClientTimeout(total=2)  # Reduced timeout for speed
                 ) as response:
                     if response.status == 200:
                         return await response.json()
@@ -121,36 +120,54 @@ class QuestionGenerator:
         question_type_str = ", ".join([qt.value for qt in question_types])
         weak_areas_str = f" Focus extra attention on: {', '.join(user_weak_areas[:3])}" if user_weak_areas else ""
         
-        prompt = f"""Create a minumum of 7 and max 15 quiz questions from this content.
+        prompt = f"""Create exactly {max_questions} quiz questions directly from this content.
 
 CONTENT:
 {content}
 
 REQUIREMENTS:
-- Difficulty: {difficulty.value}
-- Types: {question_type_str}
-- Test understanding, not just memorization{weak_areas_str}
+- Test understanding, not just memorization based on teaching content and weak areas {weak_areas_str}
 
-QUALITY OF OUTPUT: 
-1. Test deep understanding, not just memorization
-2. Include varying difficulty levels to challenge the student appropriately
+MODEL YOUR QUESTIONS LIKE THIS EXAMPLE:
+
+EXAMPLE QUESTIONS:
+{{
+  "id": 1,
+  "type": "multiple_choice",
+  "question": "Which of the following correctly describes the role of the Electron Transport Chain in cellular respiration?",
+  "options": ["It breaks down glucose into pyruvate in the cytoplasm", "It generates oxygen for use in the Krebs Cycle", "It transfers electrons to pump protons and produce ATP", "It converts carbon dioxide into glucose for energy"],
+  "correct_answer": "It transfers electrons to pump protons and produce ATP",
+  "explanation": "The Electron Transport Chain uses electrons from NADH and FADH₂ to pump protons across the membrane, creating a gradient that drives ATP synthesis.",
+  "difficulty": "medium"
+}},
+{{
+  "id": 2,
+  "type": "multiple_choice",
+  "question": "What happens to the Electron Transport Chain when oxygen is unavailable in the cell?",
+  "options": ["It continues functioning using carbon dioxide as the final electron acceptor", "It stops functioning and the cell must rely on glycolysis alone for ATP production", "It switches to using glucose directly as an electron acceptor", "It increases its rate to compensate for the lack of oxygen"],
+  "correct_answer": "It stops functioning and the cell must rely on glycolysis alone for ATP production",
+  "explanation": "Oxygen acts as the final electron acceptor in the ETC. Without it, the ETC halts because electrons cannot be passed along the chain, forcing the cell to shift to anaerobic processes like glycolysis for energy production.",
+  "difficulty": "hard"
+}},
+{{
+  "id": 3,
+  "type": "multiple_choice",
+  "question": "A poison disables enzymes in the Krebs Cycle. What is the most likely consequence for ATP production in the cell?",
+  "options": ["The cell will produce more ATP through glycolysis to compensate", "The cell's total ATP production will decrease significantly", "The Electron Transport Chain will function normally using glucose alone", "The cell will increase carbon dioxide output due to faster glucose breakdown"],
+  "correct_answer": "The cell's total ATP production will decrease significantly",
+  "explanation": "The Krebs Cycle is a key source of NADH and FADH₂, which fuel the Electron Transport Chain. Disabling it reduces the input to ETC, lowering total ATP output.",
+  "difficulty": "expert"
+}}
+
+QUALITY STANDARDS: 
+1. Test deep understanding and conceptual reasoning as well as some active recall questions 
+2. Include varying difficulty levels within the specified range
 3. Cover multiple learning objectives (knowledge, comprehension, application, analysis)
-4. Include helpful explanations that teach additional concepts
+4. Write clear, detailed explanations that teach additional concepts
+5. For multiple choice: provide 4 distinct, plausible options that test understanding
+6. Focus on application and analysis rather than simple memorization
 
-OUTPUT FORMAT (JSON only, no markdown):
-[
-  {{
-    "id": 1,
-    "type": "multiple_choice",
-    "question": "Question text here?",
-    "options": ["A", "B", "C", "D"],
-    "correct_answer": "A",
-    "explanation": "Brief explanation why A is correct.",
-    "difficulty": "{difficulty.value}"
-  }}
-]
-
-Generate all {max_questions} questions now:""" 
+""" 
         
         return prompt
     
@@ -171,6 +188,7 @@ Generate all {max_questions} questions now:"""
                 content, difficulty, question_types, max_questions, weak_areas
             )
             
+            # Speed optimizations for GPT-3.5-turbo
             response = await asyncio.get_event_loop().run_in_executor(
                 None,
                 lambda: openai.ChatCompletion.create(
@@ -178,76 +196,68 @@ Generate all {max_questions} questions now:"""
                     messages=[
                         {
                             "role": "system", 
-                            "content": f"You are a quiz generator. Always create exactly {max_questions} questions. Return only valid JSON."
+                            "content": f"You are an expert quiz generator. Create exactly {max_questions} high-quality multiple-choice questions optimized for active recall. Output only valid JSON array, no markdown formatting."
                         },
                         {"role": "user", "content": prompt}
                     ],
-                    temperature=0.6,
-                    max_tokens=4000,  # Increased token limit
-                    top_p=0.9
+                    temperature=0.4,  # Reduced for more consistent output
+                    max_tokens=3500,  # Optimized token limit
+                    top_p=0.8,        # Reduced for faster generation
+                    frequency_penalty=0.1,  # Slight penalty to avoid repetition
+                    presence_penalty=0.1    # Encourage variety
                 )
             )
             
             raw_content = response["choices"][0]["message"]["content"].strip()
             
-            # Aggressive cleaning of response
+            # Aggressive cleaning of response for speed
             if raw_content.startswith("```"):
-                lines = raw_content.split('\n')
-                # Find JSON start and end
-                start_idx = 0
-                end_idx = len(lines)
-                
-                for i, line in enumerate(lines):
-                    if line.strip().startswith('['):
-                        start_idx = i
-                        break
-                
-                for i in range(len(lines) - 1, -1, -1):
-                    if lines[i].strip().endswith(']'):
-                        end_idx = i + 1
-                        break
-                
-                raw_content = '\n'.join(lines[start_idx:end_idx])
+                # Fast regex-based cleaning
+                raw_content = re.sub(r'^```[a-z]*\n', '', raw_content)
+                raw_content = re.sub(r'\n```$', '', raw_content)
             
-            # Parse JSON
+            # Parse JSON with error handling
             try:
                 parsed_questions = json.loads(raw_content)
             except json.JSONDecodeError as e:
                 print(f"❌ JSON parse error: {e}")
-                print(f"Raw content: {raw_content[:500]}...")
-                # Try to fix common JSON issues
-                fixed_content = raw_content.replace("'", '"').replace('True', 'true').replace('False', 'false')
+                print(f"Raw content preview: {raw_content[:200]}...")
+                # Quick fix common JSON issues
+                fixed_content = (raw_content
+                    .replace("'", '"')
+                    .replace('True', 'true')
+                    .replace('False', 'false')
+                    .replace('None', 'null'))
                 parsed_questions = json.loads(fixed_content)
             
-            # Validate and convert to QuizQuestion objects
+            # Fast validation and conversion to QuizQuestion objects
             questions = []
-            for i, q_data in enumerate(parsed_questions):
+            for i, q_data in enumerate(parsed_questions[:max_questions]):  # Limit to requested count
                 try:
-                    # Ensure required fields
+                    # Ensure required fields exist
                     q_data.setdefault('id', i + 1)
                     q_data.setdefault('difficulty', difficulty.value)
                     
-                    # Handle boolean answers
-                    if isinstance(q_data.get('correct_answer'), bool):
-                        q_data['correct_answer'] = str(q_data['correct_answer'])
-                    
-                    # Validate question type
+                    # Validate question type - only MCQ and short answer allowed
                     if q_data.get('type') not in [qt.value for qt in question_types]:
-                        q_data['type'] = question_types[0].value
+                        q_data['type'] = QuestionType.MULTIPLE_CHOICE.value
+                    
+                    # Ensure MCQ questions have options
+                    if q_data.get('type') == 'multiple_choice' and not q_data.get('options'):
+                        print(f"⚠️  MCQ question {i} missing options, skipping")
+                        continue
                     
                     questions.append(QuizQuestion(**q_data))
                     
                 except Exception as e:
                     print(f"❌ Error processing question {i}: {e}")
-                    print(f"Question data: {q_data}")
                     continue
             
             print(f"✅ Generated {len(questions)} questions (requested: {max_questions})")
             
-            # If we didn't get enough questions, this is a generation issue
-            if len(questions) < max_questions * 0.6:  # At least 60% of requested
+            # Quality check
+            if len(questions) < max_questions * 0.7:  # At least 70% of requested
                 print(f"⚠️  Only got {len(questions)} questions, expected {max_questions}")
-                # Log the issue but still return what we have
                 
             return questions
             
@@ -262,7 +272,7 @@ Generate all {max_questions} questions now:"""
 # -----------------------------
 
 async def log_quiz_creation(user_id: str, topic: str, question_count: int):
-    """Simplified logging"""
+    """Simplified logging with reduced timeout"""
     if not user_id:
         return
     
@@ -279,7 +289,7 @@ async def log_quiz_creation(user_id: str, topic: str, question_count: int):
             async with session.post(
                 f"{CONTEXT_API}/api/context/update",
                 json=payload,
-                timeout=aiohttp.ClientTimeout(total=5)
+                timeout=aiohttp.ClientTimeout(total=3)  # Reduced timeout
             ) as response:
                 print(f"📊 Quiz logged: {response.status}")
                 
@@ -316,9 +326,13 @@ async def create_quiz(
     print(f"🚀 Creating quiz: {req.max_questions} questions from {len(req.content)} chars")
     start_time = datetime.now()
     
-    # Get user context quickly
+    # Get user context quickly with reduced timeout
     user_id = extract_user_id(request, req)
-    user_context = await context_cache.get_context(user_id) if user_id else {}
+    
+    # Run context fetch and question generation concurrently for speed
+    context_task = context_cache.get_context(user_id) if user_id else asyncio.sleep(0)
+    
+    user_context = await context_task if user_id else {}
     
     # Generate questions with optimized approach
     questions = await QuestionGenerator.generate_questions(
@@ -340,7 +354,7 @@ async def create_quiz(
         estimated_time_minutes=estimated_time // 60
     )
     
-    # Log in background
+    # Log in background (non-blocking)
     if user_id:
         background_tasks.add_task(
             log_quiz_creation,
@@ -350,7 +364,6 @@ async def create_quiz(
         )
     
     total_time = (datetime.now() - start_time).total_seconds()
-    print(f"✅ Quiz created in {total_time:.2f}s: {len(questions)} questions")
+    print(f"✅ Quiz created in {len(questions)} questions")
     
     return quiz_response
-
