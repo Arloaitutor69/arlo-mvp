@@ -109,6 +109,332 @@ context_cache = ContextCache()
 
 class QuestionGenerator:
     @staticmethod
+    def _parse_ai_response(raw_content: str) -> Optional[List[dict]]:
+        """Robust AI response parsing with multiple strategies"""
+        print(f"🔍 Parsing AI response ({len(raw_content)} chars)")
+        
+        # Strategy 1: Direct JSON parsing
+        try:
+            parsed = json.loads(raw_content.strip())
+            if isinstance(parsed, list):
+                print("✅ Direct JSON parse successful")
+                return parsed
+        except:
+            pass
+        
+        # Strategy 2: Extract JSON from markdown
+        json_content = QuestionGenerator._extract_json_from_text(raw_content)
+        if json_content:
+            try:
+                parsed = json.loads(json_content)
+                if isinstance(parsed, list):
+                    print("✅ Markdown extraction successful")
+                    return parsed
+            except:
+                pass
+        
+        # Strategy 3: Progressive JSON fixing
+        for strategy_num, fixed_content in enumerate(QuestionGenerator._apply_json_fixes(json_content or raw_content), 1):
+            try:
+                parsed = json.loads(fixed_content)
+                if isinstance(parsed, list):
+                    print(f"✅ JSON fix strategy {strategy_num} successful")
+                    return parsed
+            except Exception as e:
+                print(f"❌ Fix strategy {strategy_num} failed: {e}")
+                continue
+        
+        # Strategy 4: Manual parsing as last resort
+        try:
+            manual_parsed = QuestionGenerator._manual_json_parse(raw_content)
+            if manual_parsed:
+                print("✅ Manual parsing successful")
+                return manual_parsed
+        except Exception as e:
+            print(f"❌ Manual parsing failed: {e}")
+        
+        print("❌ All parsing strategies failed")
+        return None
+    
+    @staticmethod
+    def _extract_json_from_text(text: str) -> Optional[str]:
+        """Extract JSON content from various text formats"""
+        text = text.strip()
+        
+        # Remove markdown code blocks
+        if "```" in text:
+            # Find content between code blocks
+            parts = text.split("```")
+            for part in parts:
+                part = part.strip()
+                if part.startswith("json"):
+                    part = part[4:].strip()
+                if part.startswith("[") and part.endswith("]"):
+                    return part
+        
+        # Find JSON array boundaries
+        start_idx = text.find("[")
+        if start_idx == -1:
+            return None
+            
+        # Find matching closing bracket
+        bracket_count = 0
+        end_idx = -1
+        
+        for i in range(start_idx, len(text)):
+            if text[i] == "[":
+                bracket_count += 1
+            elif text[i] == "]":
+                bracket_count -= 1
+                if bracket_count == 0:
+                    end_idx = i + 1
+                    break
+        
+        if end_idx > start_idx:
+            return text[start_idx:end_idx]
+        
+        return None
+    
+    @staticmethod
+    def _apply_json_fixes(content: str) -> List[str]:
+        """Generate multiple fixed versions of JSON content"""
+        fixes = []
+        
+        # Original content
+        fixes.append(content)
+        
+        # Fix 1: Basic character replacements
+        fix1 = content.replace("'", '"').replace('True', 'true').replace('False', 'false')
+        fixes.append(fix1)
+        
+        # Fix 2: Remove trailing commas
+        fix2 = re.sub(r',(\s*[}\]])', r'\1', fix1)
+        fixes.append(fix2)
+        
+        # Fix 3: Fix unquoted keys
+        fix3 = re.sub(r'([{,]\s*)([a-zA-Z_][a-zA-Z0-9_]*)\s*:', r'\1"\2":', fix2)
+        fixes.append(fix3)
+        
+        # Fix 4: Escape internal quotes
+        fix4 = re.sub(r'(?<!\\)"(?=[^,:}\]]*[,:}\]])', r'\\"', fix3)
+        fixes.append(fix4)
+        
+        # Fix 5: Remove newlines in strings
+        fix5 = fix4.replace('\n', '\\n').replace('\r', '\\r').replace('\t', '\\t')
+        fixes.append(fix5)
+        
+        return fixes
+    
+    @staticmethod
+    def _manual_json_parse(text: str) -> Optional[List[dict]]:
+        """Manual parsing for severely malformed JSON"""
+        try:
+            # Look for question patterns
+            questions = []
+            
+            # Split by common question separators
+            parts = re.split(r'(?:^|\n)\s*[{]', text)
+            
+            for i, part in enumerate(parts[1:], 1):  # Skip first empty part
+                try:
+                    # Try to extract question data manually
+                    question_data = QuestionGenerator._extract_question_data(part)
+                    if question_data:
+                        question_data['id'] = i
+                        questions.append(question_data)
+                except:
+                    continue
+            
+            return questions if questions else None
+            
+        except Exception as e:
+            print(f"❌ Manual parsing error: {e}")
+            return None
+    
+    @staticmethod
+    def _extract_question_data(text: str) -> Optional[dict]:
+        """Extract question data from text fragment"""
+        try:
+            data = {}
+            
+            # Extract type
+            type_match = re.search(r'"type":\s*"([^"]+)"', text)
+            data['type'] = type_match.group(1) if type_match else 'multiple_choice'
+            
+            # Extract question
+            question_match = re.search(r'"question":\s*"([^"]+(?:\\.[^"]*)*)"', text)
+            if not question_match:
+                return None
+            data['question'] = question_match.group(1).replace('\\"', '"')
+            
+            # Extract options (if multiple choice)
+            options_match = re.search(r'"options":\s*\[(.*?)\]', text, re.DOTALL)
+            if options_match:
+                options_text = options_match.group(1)
+                options = re.findall(r'"([^"]+(?:\\.[^"]*)*)"', options_text)
+                data['options'] = [opt.replace('\\"', '"') for opt in options]
+            
+            # Extract correct answer
+            answer_match = re.search(r'"correct_answer":\s*"([^"]+(?:\\.[^"]*)*)"', text)
+            if not answer_match:
+                return None
+            data['correct_answer'] = answer_match.group(1).replace('\\"', '"')
+            
+            # Extract explanation
+            explanation_match = re.search(r'"explanation":\s*"([^"]+(?:\\.[^"]*)*)"', text)
+            data['explanation'] = explanation_match.group(1).replace('\\"', '"') if explanation_match else "Explanation not available."
+            
+            # Extract difficulty
+            difficulty_match = re.search(r'"difficulty":\s*"([^"]+)"', text)
+            data['difficulty'] = difficulty_match.group(1) if difficulty_match else 'medium'
+            
+            return data
+            
+        except Exception as e:
+            print(f"❌ Question data extraction failed: {e}")
+            return None
+
+    @staticmethod
+    def _extract_and_clean_json(raw_content: str) -> str:
+        """Enhanced JSON extraction and cleaning"""
+        content = raw_content.strip()
+        
+        # Remove markdown code blocks
+        if content.startswith("```"):
+            lines = content.split('\n')
+            # Find actual JSON start/end
+            json_start = -1
+            json_end = -1
+            
+            for i, line in enumerate(lines):
+                stripped = line.strip()
+                if stripped.startswith('[') and json_start == -1:
+                    json_start = i
+                if stripped.endswith(']') and json_start != -1:
+                    json_end = i + 1
+                    break
+            
+            if json_start != -1 and json_end != -1:
+                content = '\n'.join(lines[json_start:json_end])
+        
+        # Find JSON array boundaries if no markdown
+        if not content.startswith('['):
+            start = content.find('[')
+            end = content.rfind(']') + 1
+            if start != -1 and end > start:
+                content = content[start:end]
+        
+        # Basic cleaning
+        content = content.strip()
+        
+        return content
+    
+    @staticmethod
+    def _attempt_json_fixes(content: str) -> Optional[List[dict]]:
+        """Try multiple JSON fix strategies"""
+        fixes = [
+            # Fix 1: Basic quote and boolean fixes
+            lambda x: x.replace("'", '"').replace('True', 'true').replace('False', 'false'),
+            
+            # Fix 2: Remove trailing commas
+            lambda x: re.sub(r',(\s*[}\]])', r'\1', x),
+            
+            # Fix 3: Fix unescaped quotes in strings
+            lambda x: re.sub(r'(?<!\\)"(?=[^,}\]:]*[,}\]])(?![^{[]*:)', r'\\"', x),
+            
+            # Fix 4: Add missing quotes to keys
+            lambda x: re.sub(r'(\w+):', r'"\1":', x),
+            
+            # Fix 5: Fix newlines in strings
+            lambda x: x.replace('\n', '\\n').replace('\r', '\\r'),
+        ]
+        
+        for i, fix in enumerate(fixes):
+            try:
+                fixed_content = fix(content)
+                parsed = json.loads(fixed_content)
+                if isinstance(parsed, list):
+                    print(f"✅ JSON fixed with strategy {i+1}")
+                    return parsed
+            except Exception as e:
+                print(f"❌ Fix {i+1} failed: {e}")
+                continue
+        
+        return None
+    
+    @staticmethod
+    def _generate_fallback_questions(
+        content: str, 
+        difficulty: DifficultyLevel, 
+        question_types: List[QuestionType], 
+        max_questions: int
+    ) -> List[QuizQuestion]:
+        """Generate reliable fallback questions when AI fails"""
+        print("🔧 Generating fallback questions...")
+        
+        questions = []
+        question_type = question_types[0]
+        
+        # Simple template-based questions
+        templates = [
+            {
+                "question": "What is the main topic discussed in the provided content?",
+                "options": ["The primary subject matter", "An unrelated topic", "Multiple unconnected topics", "No clear topic"] if question_type == QuestionType.MULTIPLE_CHOICE else None,
+                "correct_answer": "The primary subject matter",
+                "explanation": "The question tests basic comprehension of the main content topic."
+            },
+            {
+                "question": "Based on the content, which approach best describes the material?",
+                "options": ["Educational and informative", "Purely theoretical", "Completely practical", "Unstructured information"] if question_type == QuestionType.MULTIPLE_CHOICE else None,
+                "correct_answer": "Educational and informative",
+                "explanation": "The content is designed to be educational and provide useful information."
+            },
+            {
+                "question": "What type of learning objective does this content primarily address?",
+                "options": ["Knowledge and understanding", "Physical skills only", "Emotional responses", "No clear objective"] if question_type == QuestionType.MULTIPLE_CHOICE else None,
+                "correct_answer": "Knowledge and understanding",
+                "explanation": "Educational content typically focuses on building knowledge and understanding."
+            }
+        ]
+        
+        # Create questions from templates
+        for i, template in enumerate(templates[:max_questions]):
+            try:
+                question = QuizQuestion(
+                    id=i + 1,
+                    type=question_type,
+                    question=template["question"],
+                    options=template["options"],
+                    correct_answer=template["correct_answer"],
+                    explanation=template["explanation"],
+                    difficulty=difficulty
+                )
+                questions.append(question)
+            except Exception as e:
+                print(f"❌ Fallback question {i} failed: {e}")
+                continue
+        
+        # Fill remaining spots with generic questions
+        while len(questions) < max_questions:
+            try:
+                question = QuizQuestion(
+                    id=len(questions) + 1,
+                    type=question_type,
+                    question=f"Question {len(questions) + 1}: What can be learned from this educational content?",
+                    options=["Valuable information and concepts", "Nothing useful", "Only basic facts", "Contradictory information"] if question_type == QuestionType.MULTIPLE_CHOICE else None,
+                    correct_answer="Valuable information and concepts",
+                    explanation="Educational content is designed to provide valuable learning opportunities.",
+                    difficulty=difficulty
+                )
+                questions.append(question)
+            except Exception as e:
+                print(f"❌ Generic question failed: {e}")
+                break
+        
+        print(f"🔧 Generated {len(questions)} fallback questions")
+        return questions
+
+    @staticmethod
     def build_optimized_prompt(
         content: str,
         difficulty: DifficultyLevel,
@@ -121,73 +447,15 @@ class QuestionGenerator:
         question_type_str = ", ".join([qt.value for qt in question_types])
         weak_areas_str = f" Focus extra attention on: {', '.join(user_weak_areas[:3])}" if user_weak_areas else ""
         
-        prompt = f"""You are a MASTER QUIZ MAKER TUTOR. Create exactly {max_questions} high-quality quiz questions from the provided content.
+        # Shorter, more focused prompt to avoid token issues
+        prompt = f"""Create exactly {max_questions} quiz questions from this content:
 
-CONTENT TO ANALYZE:
-{content}
+{content[:2000]}...
 
-REQUIREMENTS:
-- Difficulty: {difficulty.value}
-- Types: {question_type_str}
-- Match the depth and quality of these EXAMPLES{weak_areas_str}
+Requirements: {difficulty.value} difficulty, {question_type_str} questions{weak_areas_str}
 
-QUALITY EXAMPLES (MATCH THIS STANDARD):
-
-EXAMPLE 1 - Comprehension Level:
-{{
-  "id": 1,
-  "type": "multiple_choice",
-  "question": "Which of the following correctly describes the role of the Electron Transport Chain in cellular respiration?",
-  "options": ["A. It breaks down glucose into pyruvate in the cytoplasm", "B. It generates oxygen for use in the Krebs Cycle", "C. It transfers electrons to pump protons and produce ATP", "D. It converts carbon dioxide into glucose for energy"],
-  "correct_answer": "C",
-  "explanation": "The Electron Transport Chain uses electrons from NADH and FADH₂ to pump protons across the mitochondrial membrane, generating a gradient used to make ATP via oxidative phosphorylation.",
-  "difficulty": "medium"
-}}
-
-EXAMPLE 2 - Application Level:
-{{
-  "id": 2,
-  "type": "multiple_choice",
-  "question": "What happens to ATP production if oxygen is unavailable during cellular respiration?",
-  "options": ["A. The cell increases use of the Krebs Cycle", "B. ATP production continues normally in the mitochondria", "C. The Electron Transport Chain halts, and glycolysis becomes the main source of ATP", "D. Oxygen is replaced by glucose as the final electron acceptor"],
-  "correct_answer": "C",
-  "explanation": "Without oxygen, the ETC stops functioning because oxygen is the final electron acceptor. The cell must rely on glycolysis, which is far less efficient at producing ATP.",
-  "difficulty": "hard"
-}}
-
-EXAMPLE 3 - Analysis/Reasoning Level:
-{{
-  "id": 3,
-  "type": "multiple_choice",
-  "question": "A poison disables enzymes in the Krebs Cycle. What is the most likely consequence for ATP production in the cell?",
-  "options": ["A. The cell will produce more ATP through glycolysis to compensate", "B. The cell's total ATP production will decrease significantly", "C. The Electron Transport Chain will function normally using glucose alone", "D. The cell will increase carbon dioxide output due to faster glucose breakdown"],
-  "correct_answer": "B",
-  "explanation": "The Krebs Cycle produces NADH and FADH₂, which are essential for powering the Electron Transport Chain. If it's blocked, the ETC lacks input, reducing ATP production dramatically.",
-  "difficulty": "expert"
-}}
-
-YOUR TASK:
-1. MATCH the quality and depth shown in examples above
-2. Test deep understanding, not memorization
-3. Include clear, educational explanations
-4. Cover multiple cognitive levels (knowledge, comprehension, application, analysis)
-5. Make questions that challenge students appropriately
-
-OUTPUT FORMAT (JSON ARRAY ONLY):
-[
-  {{
-    "id": 1,
-    "type": "multiple_choice",
-    "question": "Your question here?",
-    "options": ["A", "B", "C", "D"],
-    "correct_answer": "A",
-    "explanation": "Educational explanation that teaches additional concepts.",
-    "difficulty": "{difficulty.value}"
-  }},
-  // ... continue for exactly {max_questions} questions
-]
-
-Generate all {max_questions} questions matching the example quality now:""" 
+Return JSON array only:
+[{{"id":1,"type":"multiple_choice","question":"What...?","options":["A","B","C","D"],"correct_answer":"A","explanation":"Because...","difficulty":"{difficulty.value}"}}]""" 
         
         return prompt
     
@@ -208,8 +476,8 @@ Generate all {max_questions} questions matching the example quality now:"""
                 content, difficulty, question_types, max_questions, weak_areas
             )
             
-            # Use GPT-4 for better quality and faster processing
-            model = "gpt-4" if os.getenv("USE_GPT4", "false").lower() == "true" else "gpt-3.5-turbo"
+            # Use GPT-3.5-turbo for reliability and speed
+            model = "gpt-3.5-turbo"
             
             response = await asyncio.get_event_loop().run_in_executor(
                 None,
@@ -218,50 +486,29 @@ Generate all {max_questions} questions matching the example quality now:"""
                     messages=[
                         {
                             "role": "system", 
-                            "content": f"You are a master quiz maker tutor. Always create exactly {max_questions} high-quality questions. Return ONLY valid JSON array. No markdown, no explanations, just the JSON."
+                            "content": f"You are a quiz generator. Create exactly {max_questions} questions. Return ONLY a JSON array. Start with [ and end with ]. No text before or after. No markdown. Example: [{{\"id\":1,\"type\":\"multiple_choice\",\"question\":\"What is X?\",\"options\":[\"A\",\"B\",\"C\",\"D\"],\"correct_answer\":\"A\",\"explanation\":\"Because...\",\"difficulty\":\"medium\"}}]"
                         },
                         {"role": "user", "content": prompt}
                     ],
-                    temperature=0.7,  # Slightly higher for creativity
-                    max_tokens=4000,  # Increased token limit for better responses
-                    top_p=0.9,
-                    frequency_penalty=0.3,  # Reduce repetition
-                    presence_penalty=0.2    # Encourage diverse topics
+                    temperature=0.6,  # Reduced for more consistent output
+                    max_tokens=4000,  # Reduced as requested
+                    top_p=0.85,      # Slightly reduced for more focused output
+                    frequency_penalty=0.2,  # Reduced to avoid breaking JSON
+                    presence_penalty=0.1    # Reduced to avoid breaking JSON
                 )
             )
             
             raw_content = response["choices"][0]["message"]["content"].strip()
+            print(f"🔍 Raw AI response length: {len(raw_content)}")
             
-            # Aggressive cleaning of response - optimized for speed
-            if raw_content.startswith("```"):
-                # Find JSON boundaries faster
-                start = raw_content.find('[')
-                end = raw_content.rfind(']') + 1
-                if start != -1 and end > start:
-                    raw_content = raw_content[start:end]
+            # Robust JSON extraction with multiple fallback strategies
+            parsed_questions = QuestionGenerator._parse_ai_response(raw_content)
             
-            # Parse JSON with better error handling
-            try:
-                parsed_questions = json.loads(raw_content)
-            except json.JSONDecodeError as e:
-                print(f"❌ JSON parse error: {e}")
-                # Try common fixes quickly
-                fixes = [
-                    lambda x: x.replace("'", '"'),
-                    lambda x: x.replace('True', 'true').replace('False', 'false'),
-                    lambda x: re.sub(r',\s*}', '}', x),  # Remove trailing commas
-                    lambda x: re.sub(r',\s*]', ']', x)   # Remove trailing commas in arrays
-                ]
-                
-                for fix in fixes:
-                    try:
-                        fixed_content = fix(raw_content)
-                        parsed_questions = json.loads(fixed_content)
-                        break
-                    except:
-                        continue
-                else:
-                    raise HTTPException(status_code=500, detail="Failed to parse AI response")
+            if not parsed_questions:
+                print("🔄 AI parsing failed, generating fallback questions...")
+                return QuestionGenerator._generate_fallback_questions(
+                    content, difficulty, question_types, max_questions
+                )
             
             # Validate and convert to QuizQuestion objects - optimized
             questions = []
