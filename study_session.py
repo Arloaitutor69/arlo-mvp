@@ -1,9 +1,10 @@
-import openai
+from openai import OpenAI
 import os
 import json
 import uuid
 import asyncio
 import hashlib
+import re
 from typing import List, Optional, Dict, Tuple
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
@@ -11,7 +12,7 @@ import httpx
 from functools import lru_cache
 
 # Configuration
-openai.api_key = os.getenv("OPENAI_API_KEY")
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 CONTEXT_API = os.getenv("CONTEXT_API_BASE", "https://arlo-mvp-2.onrender.com")
 
 router = APIRouter()
@@ -73,6 +74,33 @@ def create_content_hash(objective: str, parsed_summary: str, duration: int) -> s
     content = f"{objective or ''}{parsed_summary or ''}{duration}"
     return hashlib.md5(content.encode()).hexdigest()
 
+def clean_json_response(raw_response: str) -> str:
+    """Enhanced JSON cleaning with regex patterns for better error prevention"""
+    # Remove markdown formatting
+    if raw_response.startswith("```json"):
+        raw_response = raw_response[7:-3].strip()
+    elif raw_response.startswith("```"):
+        raw_response = raw_response[3:-3].strip()
+    
+    # Remove any leading/trailing whitespace and newlines
+    raw_response = raw_response.strip()
+    
+    # Fix common JSON formatting issues
+    # Remove trailing commas before closing brackets/braces
+    raw_response = re.sub(r',(\s*[}\]])', r'\1', raw_response)
+    
+    # Fix unescaped quotes in string values (basic pattern)
+    raw_response = re.sub(r'(?<!\\)"([^"]*?)(?<!\\)"([^,:}\]]*?)"', r'"\1\2"', raw_response)
+    
+    # Ensure proper string escaping for common cases
+    raw_response = raw_response.replace('\n', '\\n').replace('\t', '\\t')
+    
+    # Remove any extra commas at the end of objects/arrays
+    raw_response = re.sub(r',(\s*})', r'\1', raw_response)
+    raw_response = re.sub(r',(\s*\])', r'\1', raw_response)
+    
+    return raw_response
+
 def build_enhanced_prompt(objective: Optional[str], parsed_summary: Optional[str], duration: int) -> str:
     """Build comprehensive GPT prompt with better structure and examples"""
     
@@ -126,7 +154,13 @@ QUALITY STANDARDS:
 - Include concrete examples, not just abstract concepts
 - Provide actionable learning content, not just topic overviews
 
-CRITICAL: You MUST return a complete JSON object with ALL required fields. Missing any field will cause the system to fail.
+CRITICAL JSON REQUIREMENTS:
+- You MUST return ONLY a valid JSON object
+- NO markdown formatting, NO extra text before or after
+- ALL string values must be properly escaped
+- NO trailing commas anywhere
+- ALL required fields must be present
+- Missing any field will cause the system to fail
 
 REQUIRED JSON STRUCTURE - Return ONLY this JSON format:
 {{
@@ -170,7 +204,7 @@ EXAMPLE COMPLETE RESPONSE:
   ]
 }}
 
-Remember: You must include exactly {num_blocks} blocks and ALL required fields (units_to_cover, pomodoro, techniques, blocks) or the system will fail. Each block must have a "techniques" array with 1-3 techniques."""
+Remember: You must include exactly {num_blocks} blocks and ALL required fields (units_to_cover, pomodoro, techniques, blocks) or the system will fail. Each block must have a "techniques" array with 1-3 techniques. Return ONLY the JSON object with no additional text or formatting."""
     
     return prompt
 
@@ -185,58 +219,53 @@ async def update_context_async(payload: dict) -> bool:
         return False
 
 def generate_gpt_plan(prompt: str, max_retries: int = 2) -> dict:
-    """Generate study plan with GPT with enhanced validation and error handling"""
+    """Generate study plan with GPT-5 Nano with enhanced validation and error handling"""
     
     print(f"📏 Prompt length: {len(prompt)} characters")
     
     for attempt in range(max_retries + 1):
         try:
-            print(f"🤖 GPT attempt {attempt + 1}/{max_retries + 1}")
+            print(f"🤖 GPT-5 Nano attempt {attempt + 1}/{max_retries + 1}")
             
-            # Try new OpenAI client format first, then fall back to old format
-            try:
-                client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-                completion = client.chat.completions.create(
-                    model="gpt-3.5-turbo",
-                    messages=[
-                        {"role": "system", "content": "You are an expert curriculum designer. You MUST return ONLY valid JSON with ALL required fields: units_to_cover, pomodoro, techniques, and blocks. Each block must have a 'techniques' array with 1-3 techniques. Missing any field will cause system failure."},
-                        {"role": "user", "content": prompt}
-                    ],
-                    temperature=0.3,
-                    max_tokens=2000,  # Reduced from 3000
-                    top_p=0.9
-                )
-                raw_response = completion.choices[0].message.content.strip()
-            except AttributeError:
-                # Fall back to old format
-                completion = openai.ChatCompletion.create(
-                    model="gpt-3.5-turbo",
-                    messages=[
-                        {"role": "system", "content": "You are an expert curriculum designer. You MUST return ONLY valid JSON with ALL required fields: units_to_cover, pomodoro, techniques, and blocks. Each block must have a 'techniques' array with 1-3 techniques. Missing any field will cause system failure."},
-                        {"role": "user", "content": prompt}
-                    ],
-                    temperature=0.3,
-                    max_tokens=2000,
-                    top_p=0.9
-                )
-                raw_response = completion.choices[0].message.content.strip()
+            # GPT-5 Nano optimized API call
+            completion = client.chat.completions.create(
+                model="gpt-5-nano",  # GPT-5 Nano model
+                messages=[
+                    {"role": "system", "content": "You are an expert curriculum designer. You MUST return ONLY valid JSON with ALL required fields: units_to_cover, pomodoro, techniques, and blocks. Each block must have a 'techniques' array with 1-3 techniques. Missing any field will cause system failure. NO markdown formatting. NO trailing commas. Properly escape all strings."},
+                    {"role": "user", "content": prompt}
+                ],
+                reasoning_effort="low",  # GPT-5 Nano speed optimization
+                top_p=0.9
+            )
+            raw_response = completion.choices[0].message.content.strip()
 
             print(f"📝 Raw GPT response length: {len(raw_response)} chars")
             print(f"📝 First 300 chars: {raw_response[:300]}...")
             
-            # Clean up response
-            if raw_response.startswith("```json"):
-                raw_response = raw_response[7:-3].strip()
-            elif raw_response.startswith("```"):
-                raw_response = raw_response[3:-3].strip()
+            # Enhanced JSON cleaning
+            cleaned_response = clean_json_response(raw_response)
+            print(f"🧹 Cleaned response length: {len(cleaned_response)} chars")
             
-            # Parse JSON
+            # Parse JSON with better error handling
             try:
-                parsed = json.loads(raw_response)
+                parsed = json.loads(cleaned_response)
             except json.JSONDecodeError as e:
                 print(f"❌ JSON parse error: {e}")
-                print(f"📝 Raw response that failed: {raw_response}")
-                raise
+                print(f"📝 Cleaned response that failed: {cleaned_response}")
+                
+                # Try additional cleaning for common issues
+                try:
+                    # Remove any non-JSON content at the beginning/end
+                    json_start = cleaned_response.find('{')
+                    json_end = cleaned_response.rfind('}') + 1
+                    if json_start != -1 and json_end != -1:
+                        json_only = cleaned_response[json_start:json_end]
+                        parsed = json.loads(json_only)
+                        print("✅ Successfully parsed after additional cleaning")
+                    else:
+                        raise json.JSONDecodeError("Could not locate JSON object", cleaned_response, 0)
+                except json.JSONDecodeError:
+                    raise
             
             # Validate ALL required fields
             required_fields = ["blocks", "units_to_cover", "techniques", "pomodoro"]
@@ -265,7 +294,7 @@ def generate_gpt_plan(prompt: str, max_retries: int = 2) -> dict:
                     print(f"❌ Block {i} invalid techniques: {techniques}")
                     raise ValueError(f"Block {i} must have 1-3 techniques in array format")
             
-            print(f"✅ GPT generated valid response with {len(blocks)} blocks")
+            print(f"✅ GPT-5 Nano generated valid response with {len(blocks)} blocks")
             print(f"📊 Units: {len(parsed.get('units_to_cover', []))}")
             print(f"🔧 Techniques: {len(parsed.get('techniques', []))}")
             return parsed
@@ -298,8 +327,8 @@ async def generate_plan(data: StudyPlanRequest, request: Request):
         print("📝 Building enhanced prompt...")
         prompt = build_enhanced_prompt(data.objective, data.parsed_summary, data.duration)
         
-        # Generate plan with GPT
-        print("🤖 Calling GPT...")
+        # Generate plan with GPT-5 Nano
+        print("🤖 Calling GPT-5 Nano...")
         parsed = generate_gpt_plan(prompt)
         
         # Extract plan components
