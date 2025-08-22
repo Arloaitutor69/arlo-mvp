@@ -149,7 +149,7 @@ CRITICAL: Ensure all special characters are properly escaped in the JSON respons
         ]
 
         response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
+            model="gpt-5-nano",
             messages=messages,
             temperature=0.2,  # Lower temperature for more consistent output
             max_tokens=4000,  # Increased for longer content
