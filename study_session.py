@@ -228,7 +228,7 @@ def generate_gpt_plan(prompt: str, max_retries: int = 2) -> dict:
             
             # GPT-5 Nano optimized API call
             completion = client.chat.completions.create(
-                model="o3-mini",  # GPT-5 Nano model
+                model="gpt-5-nano",  # GPT-5 Nano model
                 messages=[
                     {"role": "system", "content": "You are an expert curriculum designer. You MUST return ONLY valid JSON with ALL required fields: units_to_cover, pomodoro, techniques, and blocks. Each block must have a 'techniques' array with 1-3 techniques. Missing any field will cause system failure. NO markdown formatting. NO trailing commas. Properly escape all strings."},
                     {"role": "user", "content": prompt}
