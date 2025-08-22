@@ -75,7 +75,7 @@ def create_content_hash(objective: str, parsed_summary: str, duration: int) -> s
     return hashlib.md5(content.encode()).hexdigest()
 
 def clean_json_response(raw_response: str) -> str:
-    """Enhanced JSON cleaning with safer patterns for better error prevention"""
+    """Enhanced JSON cleaning with comprehensive error prevention"""
     # Remove markdown formatting
     if raw_response.startswith("```json"):
         raw_response = raw_response[7:-3].strip()
@@ -85,20 +85,99 @@ def clean_json_response(raw_response: str) -> str:
     # Remove any leading/trailing whitespace
     raw_response = raw_response.strip()
     
-    # Only fix trailing commas - this is the most common issue
+    # Extract only the JSON object if there's extra text
+    json_start = raw_response.find('{')
+    json_end = raw_response.rfind('}') + 1
+    if json_start != -1 and json_end > json_start:
+        raw_response = raw_response[json_start:json_end]
+    
+    # Fix missing quotes around property names (most common issue)
+    # Pattern: word followed by colon (not already quoted)
+    raw_response = re.sub(r'(\s*)([a-zA-Z_][a-zA-Z0-9_]*?)(\s*:\s*)', r'\1"\2"\3', raw_response)
+    
+    # Fix missing quotes around string values in arrays
+    def fix_array_values(match):
+        array_content = match.group(1)
+        # Split by comma and process each item
+        items = []
+        current_item = ""
+        bracket_count = 0
+        in_quotes = False
+        
+        for char in array_content:
+            if char == '"' and (not current_item or current_item[-1] != '\\'):
+                in_quotes = not in_quotes
+            elif char in '[{' and not in_quotes:
+                bracket_count += 1
+            elif char in ']}' and not in_quotes:
+                bracket_count -= 1
+            elif char == ',' and bracket_count == 0 and not in_quotes:
+                items.append(current_item.strip())
+                current_item = ""
+                continue
+            current_item += char
+        
+        if current_item.strip():
+            items.append(current_item.strip())
+        
+        # Process each item
+        fixed_items = []
+        for item in items:
+            item = item.strip()
+            if not item:
+                continue
+            # If it's not already quoted, not a number, not a boolean, and not an object/array
+            if (not item.startswith('"') and not item.startswith('[') and not item.startswith('{') 
+                and not item.lower() in ['true', 'false', 'null'] 
+                and not re.match(r'^-?\d+\.?\d*$', item)):
+                item = f'"{item}"'
+            fixed_items.append(item)
+        
+        return '[' + ', '.join(fixed_items) + ']'
+    
+    # Apply array fixing
+    raw_response = re.sub(r'\[([^\[\]]*)\]', fix_array_values, raw_response)
+    
     # Remove trailing commas before closing brackets/braces
     raw_response = re.sub(r',(\s*[}\]])', r'\1', raw_response)
     
-    # Fix missing quotes around property names (common GPT error)
-    # Look for unquoted property names like: someProperty: "value"
-    raw_response = re.sub(r'(\s+)([a-zA-Z_][a-zA-Z0-9_]*?)(\s*:\s*)', r'\1"\2"\3', raw_response)
-    
-    # Fix missing quotes around array values 
-    # Look for unquoted values in arrays like: ["value1", unquoted, "value2"]
-    raw_response = re.sub(r'\[\s*([^"\[\],\s][^,\[\]]*?)\s*(?=,|\])', r'["\1"', raw_response)
-    raw_response = re.sub(r',\s*([^"\[\],\s][^,\[\]]*?)\s*(?=,|\])', r', "\1"', raw_response)
+    # Fix common quote escaping issues within description strings
+    raw_response = re.sub(r'("description":\s*")([^"]*)"([^"]*)"([^"]*")([",}])', r'\1\2\"\3\"\4\5', raw_response)
     
     return raw_response
+
+def validate_and_repair_json(json_str: str) -> dict:
+    """Validate JSON and attempt repairs if parsing fails"""
+    try:
+        return json.loads(json_str)
+    except json.JSONDecodeError as e:
+        print(f"🔧 JSON repair attempt for error: {e}")
+        
+        # Try common fixes
+        repairs = [
+            # Fix missing comma between array elements  
+            lambda s: re.sub(r'"\s*"(?=[a-zA-Z])', r'", "', s),
+            # Fix missing comma between object properties
+            lambda s: re.sub(r'}\s*{', r'}, {', s),
+            # Remove control characters that break JSON
+            lambda s: ''.join(char for char in s if ord(char) >= 32 or char in '\n\r\t'),
+            # Fix double quotes in description strings
+            lambda s: re.sub(r'("description":\s*"[^"]*)"([^"]*)"([^"]*")', r'\1\"\2\"\3', s),
+        ]
+        
+        current = json_str
+        for i, repair_func in enumerate(repairs):
+            try:
+                repaired = repair_func(current)
+                result = json.loads(repaired)
+                print(f"✅ JSON repaired using fix #{i+1}")
+                return result
+            except:
+                current = repaired
+                continue
+        
+        # If all repairs fail, raise the original error
+        raise e
 
 def build_enhanced_prompt(objective: Optional[str], parsed_summary: Optional[str], duration: int) -> str:
     """Build comprehensive GPT prompt with better structure and examples"""
@@ -156,8 +235,11 @@ QUALITY STANDARDS:
 CRITICAL JSON REQUIREMENTS:
 - You MUST return ONLY a valid JSON object
 - NO markdown formatting, NO extra text before or after
-- ALL string values must be properly escaped
+- ALL property names must be in double quotes: "property"
+- ALL string values must be in double quotes: "value"
+- ALL array items must be properly quoted: ["item1", "item2"]
 - NO trailing commas anywhere
+- Escape any quotes inside strings with \"
 - ALL required fields must be present
 - Missing any field will cause the system to fail
 
@@ -217,55 +299,60 @@ async def update_context_async(payload: dict) -> bool:
         print(f"⚠️ Context update failed: {e}")
         return False
 
-def generate_gpt_plan(prompt: str, max_retries: int = 2) -> dict:
-    """Generate study plan with GPT-5 Nano with enhanced validation and error handling"""
+def generate_gpt_plan(prompt: str, max_retries: int = 3) -> dict:
+    """Generate study plan with GPT with enhanced JSON handling"""
     
     print(f"📏 Prompt length: {len(prompt)} characters")
     
     for attempt in range(max_retries + 1):
         try:
-            print(f"🤖 GPT-5 Nano attempt {attempt + 1}/{max_retries + 1}")
+            print(f"🤖 GPT attempt {attempt + 1}/{max_retries + 1}")
             
-            # GPT-5 Nano optimized API call
             completion = client.chat.completions.create(
-                model="gpt-5-nano",  # GPT-5 Nano model
+                model="gpt-4",  # More reliable than gpt-5-nano for structured output
                 messages=[
-                    {"role": "system", "content": "You are an expert curriculum designer. You MUST return ONLY valid JSON with ALL required fields: units_to_cover, pomodoro, techniques, and blocks. Each block must have a 'techniques' array with 1-3 techniques. Missing any field will cause system failure. NO markdown formatting. NO trailing commas. Properly escape all strings."},
+                    {"role": "system", "content": """You are an expert curriculum designer. 
+                    
+CRITICAL JSON REQUIREMENTS:
+- Return ONLY valid JSON - no markdown, no explanations, no extra text
+- ALL property names MUST be in double quotes: "property"
+- ALL string values MUST be in double quotes: "value"  
+- ALL array items MUST be properly quoted: ["item1", "item2"]
+- NO trailing commas anywhere
+- Use proper JSON array syntax throughout
+- Escape any quotes inside strings with \"
+
+REQUIRED STRUCTURE:
+{
+  "units_to_cover": ["Unit 1", "Unit 2"],
+  "pomodoro": "25/5",
+  "techniques": ["technique1", "technique2"], 
+  "blocks": [
+    {
+      "unit": "Unit Name",
+      "techniques": ["tech1", "tech2"],
+      "description": "Complete description here",
+      "duration": 12
+    }
+  ]
+}"""},
                     {"role": "user", "content": prompt}
                 ],
-                reasoning_effort="low"  # GPT-5 Nano speed optimization
+                temperature=0.3  # Lower temperature for more consistent JSON
             )
-            raw_response = completion.choices[0].message.content.strip()
-
-            print(f"📝 Raw GPT response length: {len(raw_response)} chars")
-            print(f"📝 First 300 chars: {raw_response[:300]}...")
             
-            # Enhanced JSON cleaning
+            raw_response = completion.choices[0].message.content.strip()
+            print(f"📝 Raw response length: {len(raw_response)} chars")
+            print(f"📝 First 200 chars: {raw_response[:200]}...")
+            
+            # Clean and validate JSON
             cleaned_response = clean_json_response(raw_response)
             print(f"🧹 Cleaned response length: {len(cleaned_response)} chars")
             
-            # Parse JSON with better error handling
-            try:
-                parsed = json.loads(cleaned_response)
-            except json.JSONDecodeError as e:
-                print(f"❌ JSON parse error: {e}")
-                print(f"📝 Cleaned response that failed: {cleaned_response}")
-                
-                # Try additional cleaning for common issues
-                try:
-                    # Remove any non-JSON content at the beginning/end
-                    json_start = cleaned_response.find('{')
-                    json_end = cleaned_response.rfind('}') + 1
-                    if json_start != -1 and json_end != -1:
-                        json_only = cleaned_response[json_start:json_end]
-                        parsed = json.loads(json_only)
-                        print("✅ Successfully parsed after additional cleaning")
-                    else:
-                        raise json.JSONDecodeError("Could not locate JSON object", cleaned_response, 0)
-                except json.JSONDecodeError:
-                    raise
+            # Validate and repair if needed
+            parsed = validate_and_repair_json(cleaned_response)
             
-            # Validate ALL required fields
+            # Validate required fields
             required_fields = ["blocks", "units_to_cover", "techniques", "pomodoro"]
             missing_fields = [field for field in required_fields if field not in parsed]
             
@@ -286,21 +373,39 @@ def generate_gpt_plan(prompt: str, max_retries: int = 2) -> dict:
                     print(f"❌ Block {i} missing fields: {missing_block_fields}")
                     raise ValueError(f"Block {i} missing fields: {missing_block_fields}")
                 
-                # Validate techniques array
                 techniques = block.get("techniques", [])
                 if not isinstance(techniques, list) or len(techniques) == 0 or len(techniques) > 3:
                     print(f"❌ Block {i} invalid techniques: {techniques}")
                     raise ValueError(f"Block {i} must have 1-3 techniques in array format")
             
-            print(f"✅ GPT-5 Nano generated valid response with {len(blocks)} blocks")
+            print(f"✅ Successfully generated valid JSON with {len(blocks)} blocks")
             print(f"📊 Units: {len(parsed.get('units_to_cover', []))}")
             print(f"🔧 Techniques: {len(parsed.get('techniques', []))}")
             return parsed
             
         except json.JSONDecodeError as e:
             print(f"🔥 JSON parsing failed (attempt {attempt + 1}): {e}")
+            print(f"📝 Failed content: {cleaned_response[:500] if 'cleaned_response' in locals() else raw_response[:500]}...")
+            
             if attempt == max_retries:
-                raise HTTPException(status_code=500, detail=f"Failed to parse GPT response as JSON: {str(e)}")
+                # Last resort: try to construct a minimal valid response
+                try:
+                    num_blocks, block_duration = calculate_optimal_blocks(60)  # Default duration
+                    fallback_response = {
+                        "units_to_cover": ["Study Material"],
+                        "pomodoro": "25/5", 
+                        "techniques": ["feynman", "flashcards"],
+                        "blocks": [{
+                            "unit": "Study Material",
+                            "techniques": ["feynman"],
+                            "description": "Review and study the provided material using the Feynman technique to ensure understanding of key concepts and principles.",
+                            "duration": block_duration
+                        }]
+                    }
+                    print("🆘 Using fallback response due to JSON parsing failures")
+                    return fallback_response
+                except:
+                    raise HTTPException(status_code=500, detail=f"Failed to parse GPT response as JSON after {max_retries + 1} attempts. Error: {str(e)}")
                 
         except Exception as e:
             print(f"🔥 GPT generation failed (attempt {attempt + 1}): {e}")
@@ -325,8 +430,8 @@ async def generate_plan(data: StudyPlanRequest, request: Request):
         print("📝 Building enhanced prompt...")
         prompt = build_enhanced_prompt(data.objective, data.parsed_summary, data.duration)
         
-        # Generate plan with GPT-5 Nano
-        print("🤖 Calling GPT-5 Nano...")
+        # Generate plan with GPT
+        print("🤖 Calling GPT...")
         parsed = generate_gpt_plan(prompt)
         
         # Extract plan components
