@@ -177,9 +177,8 @@ REQUIREMENTS:
 
 CONTENT REQUIREMENTS FOR EACH BLOCK:
 Each description must be a complete self contained mini-lesson including:
-1. Key definitions and examples
-2. Important formulas, equations, or principles
-4. Specific facts, data points, or details to remember
+1. Key definitions and examples, Important formulas, equations, or principles, Specific facts, data points, or details to remember
+2. focus on most important details as oppose to minor tangential. Cater to highschool/undergraduate college info unless otherwise specified
 
 QUALITY STANDARDS:
 - Each description should be 100-200 words
