@@ -120,13 +120,12 @@ async def call_gpt_async(prompt: str, max_response_length: str = "concise") -> s
     try:
         # GPT-5 Nano optimized call
         response = client.chat.completions.create(
-            model="gpt-5-nano",  # GPT-5 Nano model
+            model="gpt-5-mini",  # GPT-5 Nano model
             messages=[
                 {"role": "system", "content": "You are Arlo, an AI tutor. Be concise, clear, and helpful. Provide direct answers without unnecessary formatting."},
                 {"role": "user", "content": prompt}
             ],
-            reasoning_effort="low",  # Speed optimization for GPT-5 Nano
-            top_p=0.9
+            reasoning_effort="low"  # Speed optimization for GPT-5 Nano
         )
         
         raw_content = response.choices[0].message.content
