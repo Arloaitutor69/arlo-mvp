@@ -58,25 +58,26 @@ EXAMPLE FORMAT - Cell Biology Topic:
     {
       "type": "overview",
       "title": "What Are We Going to Learn About Cells?",
-      "content": "**Main Questions:**\\n\\n• What is a cell and why is it called the basic unit of life?\\n• What are the key parts of a cell and what do they do?\\n• How do plant and animal cells differ?\\n\\n**Learning Goals:**\\n\\n• Understand cell structure and function\\n• Learn how organelles work together\\n• Compare different cell types"
+      "content": "**Main Questions:**\\n\\n• What is a cell and why do people call it the basic unit of life?\\n• What are the main parts inside a cell and what are their jobs?\\n• How are plant and animal cells the same, and how are they different?\\n\\n**Learning Goals:**\\n\\n• Get a simple understanding of what cells are and why they matter\\n• Learn the main jobs of the organelles (cell parts)\\n• See how the parts of a cell work together like a team\\n• Compare plant and animal cells in an easy way"
     },
     {
       "type": "detailed_explanation",
       "title": "What Is a Cell, Really?",
-      "content": "A **cell** is the smallest unit of life that can perform all life processes: growth, energy use, reproduction, and response to the environment.\\n\\n• Some organisms, like bacteria, are made of just **one** cell\\n• Others, like humans, are made of **trillions**, all working together\\n• Every cell comes from a **pre-existing cell** - this is core cell theory\\n\\n**Two main types:**\\n• **Prokaryotic cells** - Simple, no nucleus (bacteria)\\n• **Eukaryotic cells** - Complex, with nucleus (humans, plants)\\n\\n**Analogy:** Think of a eukaryotic cell as a **tiny, self-sustaining city** where each part has a specific job."
+      "content": "A **cell** is the smallest living piece of life that can do all the important things like grow, use energy, react to its surroundings, and make new cells.\\n\\n• Some life forms, like bacteria, are made of just **one** cell that does everything itself\\n• Bigger organisms, like humans, are made of **trillions** of cells all working together\\n• Every new cell comes from another cell — this is the basic rule of cell theory\\n\\n**Two main kinds of cells:**\\n• **Prokaryotic cells** – simple cells with no nucleus (like bacteria)\\n• **Eukaryotic cells** – more complex, have a nucleus (like plants and animals)\\n\\n**Analogy:** A eukaryotic cell is like a **mini city**, with each part doing a specific job to keep the whole place running."
     },
     {
       "type": "detailed_explanation",
       "title": "The Cell Membrane: Your Cell's Security Guard",
-      "content": "The **cell membrane** is like a selective security guard that controls what enters and exits the cell.\\n\\n**Key features:**\\n• Made of a phospholipid bilayer (think: double layer of soap bubbles)\\n• **Selectively permeable** - lets some things through, blocks others\\n• Contains proteins that act like doorways and ID checkers\\n\\n**What it allows:**\\n• Water and small molecules can pass easily\\n• Larger molecules need special transport proteins\\n• Waste products get escorted out\\n\\n**Why this matters:** Without proper membrane control, cells would either shrivel up or burst like water balloons."
+      "content": "The **cell membrane** works like a security guard or a bouncer at a door. It decides what can come into the cell and what has to stay out.\\n\\n**Key things to know:**\\n• It’s made of a double layer of lipids (kind of like a thin soapy bubble wall)\\n• It is **selectively permeable** – only certain things are allowed through\\n• It has special proteins that act like doors or ID checkers for bigger molecules\\n\\n**What gets through:**\\n• Water and very small molecules can slip in and out easily\\n• Larger molecules need a special 'door' (transport proteins)\\n• Waste gets pushed out so the cell stays clean\\n\\n**Why it matters:** Without this guard, the cell could either dry up or burst like a water balloon."
     },
     {
       "type": "detailed_explanation",
       "title": "The Nucleus: Cell's Control Center",
-      "content": "The **nucleus** is like the cell's brain and library combined - it contains DNA and controls all cell activities.\\n\\n**Key components:**\\n• **Nuclear envelope** - double membrane protecting the DNA\\n• **Chromatin** - DNA wrapped around proteins\\n• **Nucleolus** - where ribosomes are made\\n\\n**What it does:**\\n• Stores genetic information (your instruction manual)\\n• Controls gene expression (which instructions to follow)\\n• Coordinates protein synthesis and cell reproduction\\n\\n**Fun fact:** The nucleus takes up about 10% of the cell's space but contains 99% of the cell's DNA!"
+      "content": "The **nucleus** is like the cell’s brain. It stores DNA and tells the cell what to do.\\n\\n**Main parts inside:**\\n• **Nuclear envelope** – a double wall that protects the DNA\\n• **Chromatin** – DNA wrapped around proteins, like thread on a spool\\n• **Nucleolus** – makes ribosomes (tiny machines that build proteins)\\n\\n**What the nucleus does:**\\n• Stores the genetic information (the instruction manual)\\n• Decides which instructions to follow at any given time\\n• Helps control protein building and cell reproduction\\n\\n**Fun fact:** The nucleus is only about 10% of the cell’s space but it holds almost all of the cell’s DNA — like squeezing a whole library into one room!"
     }
   ]
 }
+
 
 Remember: Output ONLY valid JSON with exactly 10 blocks. Each block must contain substantial educational content with proper JSON escaping."""
 
