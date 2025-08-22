@@ -3,7 +3,7 @@
 from fastapi import APIRouter, FastAPI, HTTPException, Request, BackgroundTasks
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any, Literal
-import openai
+from openai import OpenAI
 import os
 import logging
 import requests
@@ -16,7 +16,7 @@ import re
 # ---------------------------
 # Setup
 # ---------------------------
-openai.api_key = os.getenv("OPENAI_API_KEY")
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 CONTEXT_API = os.getenv("CONTEXT_API_BASE", "https://arlo-mvp-2.onrender.com")
 
 logging.basicConfig(level=logging.INFO)
@@ -103,22 +103,40 @@ Your explanation:"""
 
     return prompt
 
-async def call_gpt_async(prompt: str, max_tokens: int = 250) -> str:
-    """Fast, lean GPT call"""
+def clean_response(raw_response: str) -> str:
+    """Clean and validate GPT response"""
+    if not raw_response:
+        return "I'm having trouble right now. Please try rephrasing your question."
+    
+    # Remove any potential markdown formatting
+    cleaned = raw_response.strip()
+    if cleaned.startswith("```") and cleaned.endswith("```"):
+        cleaned = cleaned[3:-3].strip()
+    
+    return cleaned
+
+async def call_gpt_async(prompt: str, max_response_length: str = "concise") -> str:
+    """Fast, lean GPT-5 Nano call with enhanced error handling"""
     try:
-        response = await openai.ChatCompletion.acreate(
-            model="gpt-3.5-turbo-1106",
+        # GPT-5 Nano optimized call
+        response = client.chat.completions.create(
+            model="gpt-5-nano",  # GPT-5 Nano model
             messages=[
-                {"role": "system", "content": "You are Arlo, an AI tutor. Be concise, clear, and helpful."},
+                {"role": "system", "content": "You are Arlo, an AI tutor. Be concise, clear, and helpful. Provide direct answers without unnecessary formatting."},
                 {"role": "user", "content": prompt}
             ],
-            temperature=0.3,
-            max_tokens=max_tokens,
-            request_timeout=10
+            reasoning_effort="low",  # Speed optimization for GPT-5 Nano
+            top_p=0.9
         )
-        return response.choices[0].message.content.strip()
+        
+        raw_content = response.choices[0].message.content
+        cleaned_response = clean_response(raw_content)
+        
+        logger.info(f"GPT-5 Nano response length: {len(cleaned_response)} chars")
+        return cleaned_response
+        
     except Exception as e:
-        logger.error(f"GPT call failed: {e}")
+        logger.error(f"GPT-5 Nano call failed: {e}")
         return "I'm having trouble right now. Please try rephrasing your question."
 
 def extract_learning_concepts(response: str) -> List[str]:
@@ -168,13 +186,13 @@ async def update_context_async(user_id: str, context_data: Dict[str, Any]):
 # ---------------------------
 @router.post("/chatbot", response_model=ChatbotResponse)
 async def chatbot_handler(request: Request, data: ChatbotInput, background_tasks: BackgroundTasks):
-    logger.info("Enhanced chatbot request received")
+    logger.info("Enhanced chatbot request received - using GPT-5 Nano")
     try:
         user_id = extract_user_id(request, data)
         prompt = build_enhanced_prompt(data)
         
-        # Async GPT call for better performance
-        gpt_reply = await call_gpt_async(prompt, max_tokens=450)
+        # Async GPT-5 Nano call for better performance
+        gpt_reply = await call_gpt_async(prompt, max_response_length="detailed")
         
         # Extract learning concepts
         concepts_covered = extract_learning_concepts(gpt_reply)
@@ -220,12 +238,12 @@ async def chatbot_handler(request: Request, data: ChatbotInput, background_tasks
 @router.post("/chatbot/help", response_model=HelpResponse)
 async def help_handler(request: Request, data: HelpInput):
     """Simplified help endpoint - just explains the content"""
-    logger.info("Help request received")
+    logger.info("Help request received - using GPT-5 Nano")
     try:
         prompt = build_help_prompt(data.content)
         
-        # Use higher token limit for detailed explanations
-        response = await call_gpt_async(prompt, max_tokens=400)
+        # Use GPT-5 Nano for detailed explanations
+        response = await call_gpt_async(prompt, max_response_length="detailed")
         
         return HelpResponse(explanation=response)
         
