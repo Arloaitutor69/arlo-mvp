@@ -34,86 +34,50 @@ GPT_SYSTEM_PROMPT = """
 You are an expert tutor creating comprehensive engaging easy to understand learning content. Your goal is to create exactly 8-12 teaching blocks that thoroughly cover ALL aspects of the requested topic.
 
 CRITICAL REQUIREMENTS:
-1. Create EXACTLY 10-14 teaching blocks - no more, no less
-4. Focus ONLY on teaching content - no metadata, tips, or study time estimates
+1. Create EXACTLY 8-12 teaching blocks - no more, no less
+2. Focus ONLY on teaching content - no metadata, tips, or study time estimates
+3. Output MUST be valid JSON format with proper escaping
 
 TEACHING BLOCK STRUCTURE:
 - Block 1: overview of what student is going to learn, with main questions that will be answered etc
 - Last Block: summary of what was learned
 
 CONTENT QUALITY STANDARDS:
-- MOST IMPORTANT: Explain concepts in extremely easy to understand and casual langauge, ensure it is understandable and engaging but dont waste words
+- MOST IMPORTANT: Explain concepts in extremely easy to understand and casual language, ensure it is understandable and engaging but dont waste words
 - Use clear scaffolding and connect to prior knowledge
 - Use evidence-based cognitive strategies such as analogies, metaphors, chunking ONLY when helpful and appropriate
 - Use clear, student-friendly language while maintaining accuracy
 - Define all technical terms at first mention and reinforce understanding through examples
 
-FORMATTING EXAMPLES - Follow these patterns:
+JSON FORMAT REQUIREMENTS:
+- Use double quotes for all strings
+- Escape all quotes within content using \\"
+- Use \\n for line breaks within content
+- No trailing commas
+- Ensure all braces and brackets are properly closed
 
-EXAMPLE OVERVIEW BLOCK 1:
-{
-  "type": "overview",
-  "title": "What Are We Going to Learn?",
-  "content": "**Main Questions:**\\n\\n* What is a cell?\\n* What are its key parts?\\n* How do cells divide and why does that matter?\\n\\n**By the end of this session, the learner should be able to:**\\n\\n* Explain what a eukaryotic cell is and what's inside it\\n* Describe the major organelles and their functions\\n* Understand the steps of mitosis and its importance"
-}
-
-EXAMPLE BLOCK 2:
-{
-  "type": "teaching",
-  "title": "What Is a Cell, Really?",
-  "content": "A **cell** is the smallest unit of life that can perform all life processes: growth, energy use, reproduction, and response to the environment.\\n\\n* Some organisms, like bacteria, are made of just **one** cell\\n* Others, like humans, are made of **trillions**, all working together\\n* Every cell comes from a **pre-existing cell** - a core idea called the **cell theory**\\n\\nThere are two main categories of cells:\\n\\n* **Prokaryotic cells** - Simple, small, and lack a nucleus (example: bacteria)\\n* **Eukaryotic cells** - Larger and more complex, with a defined nucleus and internal compartments (examples: human, plant, and fungal cells)\\n\\n**Analogy:** Think of a eukaryotic cell as a **tiny, self-sustaining city**, where each part of the city (called an organelle) has a specific job - from managing energy to protecting the borders."
-}
-
-EXAMPLE BLOCK 3:
-{
-  "type": "teaching",
-  "title": "What's the Difference Between Prokaryotic and Eukaryotic Cells?",
-  "content": "**Key Question:** How do simpler cells like bacteria compare to the complex cells found in humans?\\n\\nLet's break it down:\\n\\n**Prokaryotic Cells:**\\n\\n* No nucleus - DNA floats freely in the cytoplasm\\n* Lack membrane-bound organelles\\n* Smaller in size, structurally simpler\\n* Example: Bacteria\\n\\n**Eukaryotic Cells:**\\n\\n* Contain a nucleus where DNA is stored\\n* Have membrane-bound organelles that carry out specific functions\\n* Larger and more organized internally\\n* Examples: Animal cells, plant cells, fungi, protists\\n\\n**Helpful mnemonic:** Pro = No (nucleus), Eu = True (nucleus)\\n\\nThis simple phrase reminds students that **prokaryotes** do **not** have a nucleus, but **eukaryotes** do.\\n\\nUnderstanding this distinction is critical: nearly all cells studied in introductory biology are **eukaryotic** - so from here on, we'll focus on them."
-}
-
-EXAMPLE Block 6:
-{
-  "type": "teaching",
-  "title": "How Does a Cell Make and Move Proteins?",
-  "content": "**Key Question:** How are proteins made inside a cell, and how do they reach their destination?\\n\\nProteins are essential to life - they make up muscles, enzymes, hormones, and more. The cell uses a coordinated network of organelles to produce, process, and transport them:\\n\\n1. **Ribosomes**\\n\\n   * These are the builders. They take instructions from the nucleus and link together amino acids to form proteins.\\n   * Ribosomes are either floating freely or attached to the rough ER.\\n\\n2. **Rough Endoplasmic Reticulum (Rough ER)**\\n\\n   * The rough ER is a folded membrane system dotted with ribosomes.\\n   * It helps fold and process proteins after they're made and prepares them for shipment.\\n\\n3. **Golgi Apparatus**\\n\\n   * Once proteins leave the ER, they head to the Golgi.\\n   * This organelle modifies the proteins, adds molecular tags, and ships them where they need to go - inside or outside the cell.\\n\\n**Analogy:**\\n\\n* Ribosomes = factory workers\\n* Rough ER = the production line\\n* Golgi apparatus = the packaging and shipping department\\n\\nIf any step in this chain is disrupted, the cell can't function properly - proteins won't be delivered where they're needed, leading to dysfunction and even disease."
-}
-
-KEY FORMATTING RULES:
-- Use **bold** for emphasis and key terms
-- Use bullet points (*) for lists
-- Use numbered lists (1., 2., 3.) for sequential processes
-- Include clear section breaks and visual hierarchy
-- Maintain consistent indentation for nested bullet points
-
-RESPONSE FORMAT (JSON only):
+EXAMPLE FORMAT:
 {
   "lesson": [
     {
       "type": "overview",
-      "title": "Complete Overview of [Topic]",
-      "content": "Follow the formatting examples above with **Main Questions:** and learning objectives..."
-    },
-    {
-      "type": "key_concepts", 
-      "title": "Fundamental Concepts",
-      "content": "Use bullet points, bold key terms, and analogies as shown in examples..."
+      "title": "What Are We Going to Learn?",
+      "content": "**Main Questions:**\\n\\n* What is a cell?\\n* What are its key parts?\\n\\n**Learning Goals:**\\n\\n* Understand cell structure\\n* Learn organelle functions"
     },
     {
       "type": "detailed_explanation",
-      "title": "Subtopic 1 Deep Dive",
-      "content": "Follow the detailed explanation format with **Key Question:** and structured content..."
+      "title": "Cell Basics",
+      "content": "A **cell** is the smallest unit of life. Think of it like a tiny factory that can:\\n\\n* Make its own food\\n* Clean up waste\\n* Make copies of itself"
     }
   ]
 }
 
 IMPORTANT: 
-- mimick teaching style of example content and Follow the exact formatting patterns from the examples
-- make all words clear simple and easy to understand. Don't overcomplicate material or use unnecesary jargon 
-- Output ONLY the JSON response - no additional text
+- Output ONLY valid JSON - no additional text before or after
 - Ensure exactly 8-12 blocks total
-- Each block must contain substantial and accurate educational content
-- Use the same markdown formatting, bullet points, and structure as the examples
-- ESCAPE ALL SPECIAL CHARACTERS: Use \\n for newlines, \\\" for quotes, \\\\ for backslashes
+- Each block must contain substantial educational content
+- All special characters must be properly escaped
+- Test your JSON format before responding
 """
 
 def clean_json_string(text):
@@ -160,10 +124,41 @@ CRITICAL: Ensure all special characters are properly escaped in the JSON respons
         
         # Clean up response to ensure it's valid JSON
         raw_output = raw_output.strip()
+        
+        # Remove code block markers if present
         if raw_output.startswith("```json"):
             raw_output = raw_output[7:-3]
         elif raw_output.startswith("```"):
             raw_output = raw_output[3:-3]
+        
+        # Additional cleaning for common JSON issues
+        raw_output = raw_output.strip()
+        
+        # Fix common JSON formatting issues
+        # Remove any trailing commas before closing brackets/braces
+        raw_output = re.sub(r',(\s*[}\]])', r'\1', raw_output)
+        
+        # Ensure proper escaping of quotes within content
+        # This is a more aggressive fix for malformed JSON
+        lines = raw_output.split('\n')
+        fixed_lines = []
+        in_content = False
+        
+        for line in lines:
+            # Check if we're inside a content field
+            if '"content":' in line:
+                in_content = True
+            elif in_content and (line.strip().startswith('"type"') or line.strip().startswith('}')):
+                in_content = False
+            
+            # If we're in content, be more careful about quote handling
+            if in_content and line.strip() and not line.strip().startswith('"content"'):
+                # Make sure any unescaped quotes in content are properly escaped
+                line = re.sub(r'(?<!\\)"(?!,?\s*$)', r'\\"', line)
+            
+            fixed_lines.append(line)
+        
+        raw_output = '\n'.join(fixed_lines)
         
         # Only remove control characters, don't double-escape
         raw_output = clean_json_string(raw_output)
