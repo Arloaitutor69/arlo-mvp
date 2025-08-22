@@ -75,29 +75,28 @@ def create_content_hash(objective: str, parsed_summary: str, duration: int) -> s
     return hashlib.md5(content.encode()).hexdigest()
 
 def clean_json_response(raw_response: str) -> str:
-    """Enhanced JSON cleaning with regex patterns for better error prevention"""
+    """Enhanced JSON cleaning with safer patterns for better error prevention"""
     # Remove markdown formatting
     if raw_response.startswith("```json"):
         raw_response = raw_response[7:-3].strip()
     elif raw_response.startswith("```"):
         raw_response = raw_response[3:-3].strip()
     
-    # Remove any leading/trailing whitespace and newlines
+    # Remove any leading/trailing whitespace
     raw_response = raw_response.strip()
     
-    # Fix common JSON formatting issues
+    # Only fix trailing commas - this is the most common issue
     # Remove trailing commas before closing brackets/braces
     raw_response = re.sub(r',(\s*[}\]])', r'\1', raw_response)
     
-    # Fix unescaped quotes in string values (basic pattern)
-    raw_response = re.sub(r'(?<!\\)"([^"]*?)(?<!\\)"([^,:}\]]*?)"', r'"\1\2"', raw_response)
+    # Fix missing quotes around property names (common GPT error)
+    # Look for unquoted property names like: someProperty: "value"
+    raw_response = re.sub(r'(\s+)([a-zA-Z_][a-zA-Z0-9_]*?)(\s*:\s*)', r'\1"\2"\3', raw_response)
     
-    # Ensure proper string escaping for common cases
-    raw_response = raw_response.replace('\n', '\\n').replace('\t', '\\t')
-    
-    # Remove any extra commas at the end of objects/arrays
-    raw_response = re.sub(r',(\s*})', r'\1', raw_response)
-    raw_response = re.sub(r',(\s*\])', r'\1', raw_response)
+    # Fix missing quotes around array values 
+    # Look for unquoted values in arrays like: ["value1", unquoted, "value2"]
+    raw_response = re.sub(r'\[\s*([^"\[\],\s][^,\[\]]*?)\s*(?=,|\])', r'["\1"', raw_response)
+    raw_response = re.sub(r',\s*([^"\[\],\s][^,\[\]]*?)\s*(?=,|\])', r', "\1"', raw_response)
     
     return raw_response
 
@@ -229,7 +228,7 @@ def generate_gpt_plan(prompt: str, max_retries: int = 2) -> dict:
             
             # GPT-5 Nano optimized API call
             completion = client.chat.completions.create(
-                model="gpt-5-nano",  # GPT-5 Nano model
+                model="o3-mini",  # GPT-5 Nano model
                 messages=[
                     {"role": "system", "content": "You are an expert curriculum designer. You MUST return ONLY valid JSON with ALL required fields: units_to_cover, pomodoro, techniques, and blocks. Each block must have a 'techniques' array with 1-3 techniques. Missing any field will cause system failure. NO markdown formatting. NO trailing commas. Properly escape all strings."},
                     {"role": "user", "content": prompt}
