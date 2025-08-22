@@ -42,7 +42,7 @@ TEACHING BLOCK STRUCTURE:
 - Last Block: summary of what was learned
 
 CONTENT QUALITY STANDARDS:
-- Explain concepts as if teaching a complete lesson
+- MOST IMPORTANT: Explain concepts in extremely easy to understand and casual langauge, ensure it is understandable and engaging but dont waste words
 - Use clear scaffolding and connect to prior knowledge
 - Use evidence-based cognitive strategies such as analogies, metaphors, chunking ONLY when helpful and appropriate
 - Use clear, student-friendly language while maintaining accuracy
