@@ -3,13 +3,13 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import List, Literal, Union, Optional
-from openai import OpenAI
+import openai
 import os
 import json
 import re
 
-# Initialize OpenAI client
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+# Load OpenAI key from environment
+openai.api_key = os.getenv("OPENAI_API_KEY")
 
 router = APIRouter()
 
@@ -152,11 +152,10 @@ CRITICAL: Ensure all special characters are properly escaped in the JSON respons
         response = client.chat.completions.create(
             model="gpt-5-nano",
             messages=messages,
-            temperature=0.2,  # Lower temperature for more consistent output
-            max_completion_tokens=4000,  # Changed from max_tokens to max_completion_tokens
+            # Removed temperature parameter since gpt-5-nano only supports default (1)
         )
 
-        raw_output = response.choices[0].message.content
+        raw_output = response["choices"][0]["message"]["content"]
         
         # Clean up response to ensure it's valid JSON
         raw_output = raw_output.strip()
