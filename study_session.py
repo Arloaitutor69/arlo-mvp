@@ -234,8 +234,7 @@ def generate_gpt_plan(prompt: str, max_retries: int = 2) -> dict:
                     {"role": "system", "content": "You are an expert curriculum designer. You MUST return ONLY valid JSON with ALL required fields: units_to_cover, pomodoro, techniques, and blocks. Each block must have a 'techniques' array with 1-3 techniques. Missing any field will cause system failure. NO markdown formatting. NO trailing commas. Properly escape all strings."},
                     {"role": "user", "content": prompt}
                 ],
-                reasoning_effort="low",  # GPT-5 Nano speed optimization
-                top_p=0.9
+                reasoning_effort="low"  # GPT-5 Nano speed optimization
             )
             raw_response = completion.choices[0].message.content.strip()
 
