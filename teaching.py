@@ -44,9 +44,11 @@ TEACHING BLOCK STRUCTURE:
 - last block: summary/memory aids of what was learned
 
 CONTENT QUALITY STANDARDS:
+- ONLY MENTION information relevant to a class/test, not tangential information or outside applications
+- vary up teaching stradegies and structure of each component of lesson
 - Explain concepts in extremely easy-to-understand, casual language
 - Use clear scaffolding and connect to prior knowledge
-- Use analogies and metaphors when helpful
+- Use analogies when helpful
 - Define all technical terms at first mention
 - Student-friendly language while maintaining accuracy
 
