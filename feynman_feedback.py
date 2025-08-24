@@ -1,7 +1,6 @@
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
-from typing import Optional, List, Dict
-import openai
+from typing import Optional, List, Literal
 import os
 import json
 import requests
@@ -9,8 +8,7 @@ import logging
 import asyncio
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
-import hashlib
-import re
+from openai import OpenAI
 
 # Load environment variables
 load_dotenv()
@@ -19,8 +17,10 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("feynman_teaching")
 
-# OpenAI and Context API configuration
-openai.api_key = os.getenv("OPENAI_API_KEY")
+# Initialize OpenAI client
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
+# Context API configuration
 CONTEXT_BASE = os.getenv("CONTEXT_API_BASE", "https://arlo-mvp-2.onrender.com")
 
 router = APIRouter()
@@ -74,6 +74,65 @@ class FeynmanAssessmentResponse(BaseModel):
     gaps_in_understanding: List[str]
 
 # -----------------------------
+# JSON Schemas for structured outputs
+# -----------------------------
+FEYNMAN_EXERCISE_SCHEMA = {
+    "name": "feynman_exercise_response",
+    "schema": {
+        "type": "object",
+        "strict": True,
+        "properties": {
+            "questions": {
+                "type": "array",
+                "minItems": 3,
+                "maxItems": 3,
+                "items": {
+                    "type": "string",
+                    "minLength": 20
+                }
+            }
+        },
+        "required": ["questions"],
+        "additionalProperties": False
+    }
+}
+
+FEYNMAN_ASSESSMENT_SCHEMA = {
+    "name": "feynman_assessment_response",
+    "schema": {
+        "type": "object",
+        "strict": True,
+        "properties": {
+            "mastery_score": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 100
+            },
+            "what_went_well": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 5,
+                "items": {
+                    "type": "string",
+                    "minLength": 10
+                }
+            },
+            "gaps_in_understanding": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 6,
+                "items": {
+                    "type": "string",
+                    "minLength": 15
+                }
+            }
+        },
+        "required": ["mastery_score", "what_went_well", "gaps_in_understanding"],
+        "additionalProperties": False
+    }
+}
+
+# -----------------------------
 # User ID extraction helper
 # -----------------------------
 def extract_user_id(request: Request, data) -> str:
@@ -92,73 +151,68 @@ def extract_user_id(request: Request, data) -> str:
 # -----------------------------
 @router.post("/feynman/exercises", response_model=FeynmanExerciseResponse)
 def generate_feynman_exercises(request: Request, payload: FeynmanExerciseRequest):
-    logger.info("🎯 Generating Feynman exercises for:")
+    logger.info("🎯 Generating Feynman exercises")
 
     user_id = extract_user_id(request, payload)
     context = get_cached_context(user_id)
     
-    prompt = f"""You are an expert AI tutor creating Feynman-style teaching exercises for conceptual mastery.
+    system_prompt = """You are an expert AI tutor creating Feynman-style teaching exercises for conceptual mastery.
 
-TEACHING CONTENT:
-"{payload.teaching_content}"
-
-YOUR TASK:
-Create exactly 3 conceptual teaching questions relevant to teaching material and what a student might see on a test:
+Create exactly 3 conceptual teaching questions that:
 - Test deep understanding, not memorization
-- Use the format: *Question text ending with question mark?*
-- align your output formatting and the qaulity with style of example below 
+- Are relevant to the teaching material and what a student might see on a test
+- Help students explain concepts in their own words
 
-EXAMPLE FORMAT 
+EXAMPLE FORMAT:
 Content: The Age of Exploration was a period between the 15th and 17th centuries when European powers expanded across the globe through sea voyages, driven by economic motives, technological advances, and cultural imperatives like spreading Christianity.
 
-Expected Output:
-1. *Why did European exploration expand so rapidly in the late 15th century, and what made this timing significant compared to earlier periods?*
-2. *How did the principles of mercantilism influence the goals and outcomes of European exploration and colonization?*
-3. *How did the Columbian Exchange fundamentally transform both European and non-European societies — economically, culturally, and biologically?*
+Expected Questions:
+1. Why did European exploration expand so rapidly in the late 15th century, and what made this timing significant compared to earlier periods?
+2. How did the principles of mercantilism influence the goals and outcomes of European exploration and colonization?  
+3. How did the Columbian Exchange fundamentally transform both European and non-European societies — economically, culturally, and biologically?
 
-Respond with ONLY the 3 questions in the exact format shown above, numbered 1-3."""
+Return exactly 3 questions that encourage deep conceptual understanding."""
+
+    user_prompt = f"""TEACHING CONTENT:
+"{payload.teaching_content}"
+
+Create exactly 3 conceptual teaching questions relevant to this material."""
 
     try:
-        response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": "system", "content": "You are an expert AI tutor specializing in creating Feynman-style conceptual teaching questions."},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0.7,
-            max_tokens=400,
-            request_timeout=10
+        # Prepare messages
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt}
+        ]
+
+        # Make API call with structured outputs
+        response = client.chat.completions.create(
+            model="gpt-5-nano",
+            messages=messages,
+            response_format={
+                "type": "json_schema",
+                "json_schema": FEYNMAN_EXERCISE_SCHEMA
+            },
+            reasoning_effort="low"
         )
 
-        content = response["choices"][0]["message"]["content"].strip()
+        # Parse the guaranteed valid JSON response
+        raw_content = response.choices[0].message.content
+        parsed_data = json.loads(raw_content)
+        
         logger.info("✅ Exercise generation completed")
-
-        # Extract questions from response
-        questions = []
-        lines = content.split('\n')
-        for line in lines:
-            # Look for numbered questions with asterisks
-            if re.match(r'^\d+\.\s*\*.*\*\s*$', line.strip()):
-                question_text = re.sub(r'^\d+\.\s*\*(.*)\*\s*$', r'\1', line.strip())
-                questions.append(question_text)
-
-        if len(questions) != 3:
-            # Fallback parsing if format doesn't match exactly
-            questions = []
-            for line in lines:
-                if '?' in line and len(line.strip()) > 10:
-                    clean_question = re.sub(r'^\d+\.\s*[\*]*\s*', '', line.strip())
-                    clean_question = clean_question.replace('*', '').strip()
-                    if clean_question:
-                        questions.append(clean_question)
-
-        # Ensure we have exactly 3 questions
-        questions = questions[:3]
-
+        
         return FeynmanExerciseResponse(
-            questions=questions
+            questions=parsed_data["questions"]
         )
 
+    except json.JSONDecodeError as e:
+        # This should never happen with structured outputs, but just in case
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to parse response as JSON: {str(e)}"
+        )
+    
     except Exception as e:
         logger.exception("❌ Exercise generation failed: %s", str(e))
         raise HTTPException(status_code=500, detail="Exercise generation service temporarily unavailable")
@@ -168,41 +222,17 @@ Respond with ONLY the 3 questions in the exact format shown above, numbered 1-3.
 # -----------------------------
 @router.post("/feynman/assess", response_model=FeynmanAssessmentResponse)
 def assess_feynman_teaching(request: Request, payload: FeynmanAssessmentRequest):
-    logger.info("🎓 Assessing Feynman teaching for:")
+    logger.info("🎓 Assessing Feynman teaching")
 
     user_id = extract_user_id(request, payload)
     context = get_cached_context(user_id)
     
-    prompt = f"""You are an expert AI tutor assessing a student's conceptual explanation using the Feynman Technique.
-    
-QUESTION: "{payload.question}"
+    system_prompt = """You are an expert AI tutor assessing a student's conceptual explanation using the Feynman Technique.
 
-STUDENT'S EXPLANATION:
-"{payload.user_explanation}"
-
-EXAMPLE ASSESSMENT (based on Age of Exploration):
-Question: Why did European exploration expand so rapidly in the late 15th century?
-Student Answer: "Exploration happened because countries wanted land and they found new places and took them. They had ships and went far and people got rich."
-
-Expected Assessment:
-Mastery Score: 48/100
-
-What You Did Well:
-* ✅ Recognized that European nations were seeking new land and wealth
-* ✅ Noted that ships were a key factor in enabling exploration
-
-Gaps in Understanding:
-* ❌ No mention of historical context — why the 15th century was a turning point (e.g., Fall of Constantinople, Renaissance thought, Ottoman control of land routes)
-* ❌ Oversimplified motivations — didn't explain religious motives, competition among European powers, or desire for direct access to Asian trade
-* ❌ Vague use of terms like "people got rich" without referring to the Columbian Exchange, mercantilism, or monarchial sponsorship
-* ❌ No recognition of the impact on indigenous societies or the idea of cultural imperialism
-
-YOUR TASK:
 Assess the student's explanation and provide:
-
 1. A mastery score out of 100 (be precise and fair)
-2. What they did well (bullet points using * ✅ format)
-3. Gaps in understanding (bullet points using * ❌ format)
+2. What they did well (specific strengths)
+3. Gaps in understanding (specific areas needing improvement)
 
 Focus on:
 - Conceptual accuracy and depth
@@ -210,70 +240,66 @@ Focus on:
 - Recognition of complexity and nuance
 - Ability to connect ideas
 
-Format your response EXACTLY as:
-Mastery Score: [X]/100
+EXAMPLE ASSESSMENT:
+Question: Why did European exploration expand so rapidly in the late 15th century?
+Student Answer: "Exploration happened because countries wanted land and they found new places and took them. They had ships and went far and people got rich."
 
+Expected Assessment:
+Mastery Score: 48
 What You Did Well:
-* ✅ [specific strength]
-* ✅ [specific strength]
+- Recognized that European nations were seeking new land and wealth
+- Noted that ships were a key factor in enabling exploration
 
 Gaps in Understanding:
-* ❌ [specific gap with explanation]
-* ❌ [specific gap with explanation]
-* ❌ [specific gap with explanation]"""
+- No mention of historical context — why the 15th century was a turning point (e.g., Fall of Constantinople, Renaissance thought, Ottoman control of land routes)
+- Oversimplified motivations — didn't explain religious motives, competition among European powers, or desire for direct access to Asian trade
+- Vague use of terms like "people got rich" without referring to the Columbian Exchange, mercantilism, or monarchial sponsorship
+- No recognition of the impact on indigenous societies or the idea of cultural imperialism"""
+
+    user_prompt = f"""QUESTION: "{payload.question}"
+
+STUDENT'S EXPLANATION:
+"{payload.user_explanation}"
+
+Assess this student explanation and provide a detailed evaluation."""
 
     try:
-        response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": "system", "content": "You are an expert AI tutor specializing in conceptual mastery assessment using the Feynman Technique."},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0.3,  # Lower temperature for consistent assessment
-            max_tokens=600,
-            request_timeout=10
+        # Prepare messages
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt}
+        ]
+
+        # Make API call with structured outputs
+        response = client.chat.completions.create(
+            model="gpt-5-nano",
+            messages=messages,
+            response_format={
+                "type": "json_schema",
+                "json_schema": FEYNMAN_ASSESSMENT_SCHEMA
+            },
+            reasoning_effort="low"
         )
 
-        content = response["choices"][0]["message"]["content"].strip()
+        # Parse the guaranteed valid JSON response
+        raw_content = response.choices[0].message.content
+        parsed_data = json.loads(raw_content)
+        
         logger.info("✅ Assessment completed")
 
-        # Parse the response
-        mastery_score = 0
-        what_went_well = []
-        gaps = []
-
-        # Extract mastery score
-        score_match = re.search(r'Mastery Score:\s*(\d+)(?:/100)?', content)
-        if score_match:
-            mastery_score = int(score_match.group(1))
-
-        # Extract what went well
-        well_section = re.search(r'What You Did Well:(.*?)(?=Gaps in Understanding:|$)', content, re.DOTALL)
-        if well_section:
-            well_lines = well_section.group(1).split('\n')
-            for line in well_lines:
-                if '✅' in line:
-                    clean_line = re.sub(r'^\s*\*\s*✅\s*', '', line.strip())
-                    if clean_line:
-                        what_went_well.append(clean_line)
-
-        # Extract gaps
-        gaps_section = re.search(r'Gaps in Understanding:(.*?)$', content, re.DOTALL)
-        if gaps_section:
-            gap_lines = gaps_section.group(1).split('\n')
-            for line in gap_lines:
-                if '❌' in line:
-                    clean_line = re.sub(r'^\s*\*\s*❌\s*', '', line.strip())
-                    if clean_line:
-                        gaps.append(clean_line)
-
         return FeynmanAssessmentResponse(
-            mastery_score=mastery_score,
-            what_went_well=what_went_well,
-            gaps_in_understanding=gaps
+            mastery_score=parsed_data["mastery_score"],
+            what_went_well=parsed_data["what_went_well"],
+            gaps_in_understanding=parsed_data["gaps_in_understanding"]
         )
 
+    except json.JSONDecodeError as e:
+        # This should never happen with structured outputs, but just in case
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to parse response as JSON: {str(e)}"
+        )
+    
     except Exception as e:
         logger.exception("❌ Assessment failed: %s", str(e))
         raise HTTPException(status_code=500, detail="Assessment service temporarily unavailable")
-
