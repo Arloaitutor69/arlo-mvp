@@ -1,8 +1,6 @@
-# flashcards.py
-
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Literal
 from openai import OpenAI
 import os
 import json
@@ -54,7 +52,40 @@ class FlashcardItem(BaseModel):
     tags: Optional[List[str]] = []
     explanation: Optional[str] = None  # Additional context/explanation
 
-# Remove FlashcardResponse class - using original format
+# -----------------------------
+# JSON Schema for structured outputs
+# -----------------------------
+FLASHCARDS_SCHEMA = {
+    "name": "flashcards_response",
+    "schema": {
+        "type": "object",
+        "strict": True,
+        "properties": {
+            "flashcards": {
+                "type": "array",
+                "minItems": 10,
+                "maxItems": 15,
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "question": {
+                            "type": "string",
+                            "minLength": 10
+                        },
+                        "answer": {
+                            "type": "string",
+                            "minLength": 5
+                        }
+                    },
+                    "required": ["question", "answer"],
+                    "additionalProperties": False
+                }
+            }
+        },
+        "required": ["flashcards"],
+        "additionalProperties": False
+    }
+}
 
 # -----------------------------
 # Enhanced Context Cache
@@ -165,8 +196,7 @@ class FlashcardPromptBuilder:
         # Build learning gaps context
         gaps_context = FlashcardPromptBuilder._build_gaps_context(learning_gaps)
         
-        prompt = f"""
-You are a personalized flashcard-generating tutor. Please generate detailed, optimized flashcards for memory retention and understanding.
+        return f"""You are a personalized flashcard-generating tutor. Create detailed, optimized flashcards for memory retention and understanding.
 
 CONTENT TO PROCESS - Extract and consolidate key information from what was taught:
 {content}
@@ -183,18 +213,13 @@ CONTENT ANALYSIS:
 - Complexity: {difficulty_level}
 
 GENERATION REQUIREMENTS:
-Create exactly 10-15 flashcards as a JSON array focusing on:
+Create exactly 10-15 flashcards focusing on:
 - FACTS that need memorization
 - DEFINITIONS of key terms and concepts  
 - IMPORTANT DETAILS that students commonly forget
 - SPECIFIC INFORMATION that benefits from spaced repetition
 
 Prioritize information that can be best memorized using flashcards. Focus on consolidating what was actually taught to the student.
-
-JSON FORMAT (return only this array):
-[
-  {{ "question": "...", "answer": "..." }}
-]
 
 QUALITY STANDARDS:
 - Questions should be unambiguous and test understanding, not just recall
@@ -204,9 +229,15 @@ QUALITY STANDARDS:
 - Ensure each card addresses a specific learning objective
 - Prioritize information that benefits from spaced repetition
 
-Return ONLY the JSON array with no additional text or formatting.
-"""
-        return prompt
+EXAMPLE FORMAT:
+Content: Cell Biology - The cell membrane controls what enters and exits the cell through selective permeability. Mitochondria produce ATP energy. The nucleus contains DNA and controls cell functions.
+
+example Flashcards:
+- Question: "What is the main function of the cell membrane?" Answer: "The cell membrane controls what substances can enter and exit the cell through selective permeability, acting like a security guard for the cell."
+- Question: "What is the primary function of mitochondria?" Answer: "Mitochondria produce ATP (adenosine triphosphate), which is the cell's main source of energy."
+- Question: "What does the nucleus contain and what is its role?" Answer: "The nucleus contains the cell's DNA and serves as the control center, directing all cellular activities and functions."
+
+Create flashcards that help students memorize and understand the key concepts from the teaching content."""
     
     @staticmethod
     def _determine_difficulty(
@@ -233,15 +264,13 @@ Return ONLY the JSON array with no additional text or formatting.
         if not context:
             return "No personalization context available"
         
-        return f"""
-Current Topic: {context.get('current_topic', 'General')}
+        return f"""Current Topic: {context.get('current_topic', 'General')}
 Learning Goals: {', '.join(context.get('user_goals', [])) or 'Not specified'}
 Strong Areas: {', '.join(context.get('strong_areas', [])) or 'Not identified'}
 Weak Areas: {', '.join(context.get('weak_areas', [])) or 'Not identified'}
 Preferred Learning Style: {context.get('learning_style', 'Not specified')}
 Recent Study Sessions: {len(context.get('recent_sessions', []))}
-Review Queue Size: {len(context.get('review_queue', []))}
-"""
+Review Queue Size: {len(context.get('review_queue', []))}"""
     
     @staticmethod
     def _build_gaps_context(gaps: List[LearningGap]) -> str:
@@ -271,42 +300,41 @@ def generate_flashcards_sync(
     learning_gaps = LearningAnalyzer.identify_learning_gaps(content, context)
     
     # Build enhanced prompt
-    prompt = FlashcardPromptBuilder.build_enhanced_prompt(
+    system_prompt = FlashcardPromptBuilder.build_enhanced_prompt(
         content, context, request, content_analysis, learning_gaps
     )
     
     try:
-        messages = [{"role": "user", "content": prompt}]
+        # Prepare messages
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": f"Create flashcards for this content: {content}"}
+        ]
         
+        # Make API call with structured outputs
         response = client.chat.completions.create(
             model="gpt-5-nano",
             messages=messages,
+            response_format={
+                "type": "json_schema",
+                "json_schema": FLASHCARDS_SCHEMA
+            },
             reasoning_effort="low"
         )
         
-        raw_content = response.choices[0].message.content.strip()
+        # Parse the guaranteed valid JSON response
+        raw_content = response.choices[0].message.content
+        parsed_data = json.loads(raw_content)
         
-        # Clean up JSON response
-        if raw_content.startswith("```"):
-            raw_content = "\n".join(raw_content.strip().splitlines()[1:-1])
+        return parsed_data["flashcards"]
         
-        cards = json.loads(raw_content)
-        
-        # Validate and enhance cards
-        enhanced_cards = []
-        for card in cards:
-            if not card.get("question") or not card.get("answer"):
-                continue
-            
-            # Keep original simple format
-            enhanced_card = {
-                "question": card["question"],
-                "answer": card["answer"]
-            }
-            enhanced_cards.append(enhanced_card)
-        
-        return enhanced_cards
-        
+    except json.JSONDecodeError as e:
+        # This should never happen with structured outputs, but just in case
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to parse response as JSON: {str(e)}"
+        )
+    
     except Exception as e:
         print(f"❌ AI generation error: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to generate flashcards: {str(e)}")
@@ -417,5 +445,3 @@ async def _update_learning_context(user_id: str, flashcards: List[FlashcardItem]
                     
     except Exception as e:
         print(f"❌ Context update error: {e}")
-
-# Remove the _generate_recommendations function as it's not needed for original format
