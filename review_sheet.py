@@ -1,9 +1,9 @@
-# FIXED REVIEW SHEET MODULE - NO MORE HTTP TIMEOUTS
+# FIXED REVIEW SHEET MODULE - GPT-5-NANO STRUCTURED OUTPUTS
 
 from fastapi import APIRouter, FastAPI, HTTPException, Request
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
-import openai
+from openai import OpenAI
 import os
 import json
 from datetime import datetime
@@ -11,14 +11,15 @@ from concurrent.futures import ThreadPoolExecutor
 import asyncio
 import logging
 
+# Initialize OpenAI client
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
 # CRITICAL FIX: Import context function directly instead of HTTP calls
 from context import get_cached_context_fast  # ✅ correct
 
 # ---------------------------
 # Setup
 # ---------------------------
-openai.api_key = os.getenv("OPENAI_API_KEY")
-
 app = FastAPI()
 router = APIRouter()
 
@@ -41,6 +42,60 @@ class ReviewSheet(BaseModel):
     weak_areas: List[str]
     major_topics: List[str]
     study_tips: List[str]
+
+# --- JSON Schema for structured outputs --- #
+REVIEW_SHEET_SCHEMA = {
+    "name": "review_sheet_response",
+    "schema": {
+        "type": "object",
+        "strict": True,
+        "properties": {
+            "summary": {
+                "type": "string",
+                "minLength": 50,
+                "maxLength": 300
+            },
+            "memorization_facts": {
+                "type": "array",
+                "minItems": 3,
+                "maxItems": 5,
+                "items": {
+                    "type": "string",
+                    "minLength": 10
+                }
+            },
+            "weak_areas": {
+                "type": "array",
+                "minItems": 2,
+                "maxItems": 3,
+                "items": {
+                    "type": "string",
+                    "minLength": 5
+                }
+            },
+            "major_topics": {
+                "type": "array",
+                "minItems": 3,
+                "maxItems": 4,
+                "items": {
+                    "type": "string",
+                    "minLength": 3
+                }
+            },
+            "study_tips": {
+                "type": "array",
+                "minItems": 2,
+                "maxItems": 3,
+                "items": {
+                    "type": "string",
+                    "minLength": 15
+                }
+            }
+        },
+        "required": ["summary", "memorization_facts", "weak_areas", "major_topics", "study_tips"],
+        "additionalProperties": False
+    }
+}
 
 # ---------------------------
 # Extract user_id (optimized)
@@ -115,35 +170,51 @@ def process_context_for_review(context: dict) -> dict:
     return processed
 
 # ---------------------------
-# Optimized GPT API Call (UNCHANGED)
+# Enhanced System and User Prompts
 # ---------------------------
-def call_gpt_optimized(prompt: str) -> str:
-    """Optimized GPT call with better parameters for review generation"""
-    try:
-        response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {
-                    "role": "system", 
-                    "content": "You are Arlo, an expert learning coach specializing in memory consolidation and spaced repetition. Generate concise, actionable bedtime review sheets that optimize long-term retention."
-                },
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0.3,  # Lower for more consistent output
-            max_tokens=800,   # Reduced for faster response
-            top_p=0.9,        # Focus on high-probability tokens
-            frequency_penalty=0.1,  # Reduce repetition
-            presence_penalty=0.1    # Encourage diverse content
-        )
-        return response.choices[0].message.content.strip()
-    except Exception as e:
-        logger.error(f"GPT API call failed: {e}")
-        raise HTTPException(status_code=500, detail="AI service temporarily unavailable")
+def build_system_prompt() -> str:
+    return """You are Arlo, an expert learning coach specializing in memory consolidation and spaced repetition. Generate concise, actionable bedtime review sheets that optimize long-term retention.
 
-# ---------------------------
-# Enhanced Prompt Generator (UNCHANGED)
-# ---------------------------
-def build_optimized_review_prompt(processed_context: dict) -> str:
+QUALITY STANDARDS:
+- Create personalized content based on the student's actual learning session
+- Focus on information that benefits from sleep consolidation (facts, procedures, connections)
+- Provide specific, actionable study recommendations
+- Use encouraging but realistic language
+- Prioritize definitions, formulas, and key concepts for memorization
+
+CONTENT GUIDELINES:
+- Summary: 2-3 sentences highlighting main achievements and progress
+- Memorization facts: 3-5 specific facts perfect for bedtime review
+- Major topics: 3-4 main subjects covered in the session
+- Weak areas: 2-3 specific areas needing more practice with constructive framing
+- Study tips: 2-3 personalized, actionable recommendations for tomorrow
+
+EXAMPLE OUTPUT:
+
+Summary: You made excellent progress today working through cellular respiration concepts and successfully tackled challenging ATP synthesis problems. Your understanding of the electron transport chain has improved significantly, and you demonstrated good problem-solving skills when analyzing metabolic pathways.
+
+Memorization Facts:
+- Cellular respiration produces approximately 32-38 ATP molecules per glucose molecule
+- The electron transport chain occurs in the inner mitochondrial membrane
+- NADH produces about 2.5 ATP molecules while FADH₂ produces about 1.5 ATP molecules
+- Glycolysis occurs in the cytoplasm and does not require oxygen
+
+Major Topics:
+- Cellular respiration overview and stages
+- ATP synthesis and energy production
+- Electron transport chain mechanisms
+- Metabolic pathway analysis
+
+Weak Areas:
+- Distinguishing between aerobic and anaerobic respiration pathways
+- Calculating net ATP yield in different metabolic scenarios
+
+Study Tips:
+- Practice drawing the electron transport chain from memory tomorrow morning
+- Use flashcards to drill the ATP yield numbers from different molecules
+- Try explaining cellular respiration to someone else to reinforce your understanding"""
+
+def build_user_prompt(processed_context: dict) -> str:
     """Build a focused, optimized prompt for better review generation"""
     
     recent_topics = processed_context.get("recent_topics", [])
@@ -151,36 +222,65 @@ def build_optimized_review_prompt(processed_context: dict) -> str:
     key_facts = processed_context.get("key_facts", [])
     learning_goals = processed_context.get("learning_goals", [])
     
-    prompt = f"""Generate a bedtime review sheet for optimal memory consolidation.
+    return f"""Generate a personalized bedtime review sheet for optimal memory consolidation based on today's learning session.
 
-RECENT STUDY SESSION:
+STUDENT'S LEARNING SESSION DATA:
 Topics covered: {', '.join(recent_topics[:5]) if recent_topics else 'General study session'}
 Key facts learned: {', '.join(key_facts[:8]) if key_facts else 'Various concepts'}
 Areas of difficulty: {', '.join(struggle_areas[:4]) if struggle_areas else 'None identified'}
 Learning goals: {', '.join(learning_goals[:3]) if learning_goals else 'General mastery'}
 
-REQUIREMENTS:
-1. Summary: 2-3 sentences highlighting main achievements
+Create a comprehensive review sheet with:
+1. Summary: 2-3 sentences highlighting main achievements from today's session
 2. Memorization facts: 3-5 specific facts perfect for bedtime review (prioritize definitions, formulas, key concepts)
-3. Major topics: 3-4 main subjects covered
-4. Weak areas: 2-3 specific areas needing more practice
-5. Study tips: 2-3 personalized recommendations for tomorrow
+3. Major topics: 3-4 main subjects covered during the study session
+4. Weak areas: 2-3 specific areas needing more practice (be constructive and specific)
+5. Study tips: 2-3 personalized, actionable recommendations for tomorrow's study session
 
-Focus on information that benefits from sleep consolidation (facts, procedures, connections).
-
-Respond in JSON format:
-{{
-  "summary": "...",
-  "memorization_facts": ["..."],
-  "major_topics": ["..."],
-  "weak_areas": ["..."],
-  "study_tips": ["..."]
-}}"""
-    
-    return prompt
+Focus on content that benefits most from sleep consolidation and will help the student retain and apply what they learned."""
 
 # ---------------------------
-# Main Endpoint (FIXED - NO MORE HTTP CALLS)
+# Optimized GPT API Call with Structured Outputs
+# ---------------------------
+async def call_gpt_structured(processed_context: dict) -> dict:
+    """Optimized GPT call with structured outputs for review generation"""
+    try:
+        system_prompt = build_system_prompt()
+        user_prompt = build_user_prompt(processed_context)
+        
+        # Prepare messages
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt}
+        ]
+
+        # Make API call with structured outputs
+        response = client.chat.completions.create(
+            model="gpt-5-nano",
+            messages=messages,
+            response_format={
+                "type": "json_schema",
+                "json_schema": REVIEW_SHEET_SCHEMA
+            },
+            reasoning_effort="low"
+        )
+
+        # Parse the guaranteed valid JSON response
+        raw_content = response.choices[0].message.content
+        parsed_data = json.loads(raw_content)
+        
+        return parsed_data
+        
+    except json.JSONDecodeError as e:
+        # This should never happen with structured outputs, but just in case
+        logger.error(f"Failed to parse response as JSON: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to parse AI response: {str(e)}")
+    except Exception as e:
+        logger.error(f"GPT API call failed: {e}")
+        raise HTTPException(status_code=500, detail="AI service temporarily unavailable")
+
+# ---------------------------
+# Main Endpoint (UPDATED WITH STRUCTURED OUTPUTS)
 # ---------------------------
 @router.post("/review-sheet", response_model=ReviewSheet)
 async def generate_review_sheet(request: Request, data: ReviewRequest):
@@ -201,48 +301,22 @@ async def generate_review_sheet(request: Request, data: ReviewRequest):
         # Process context for optimal review generation
         processed_context = process_context_for_review(context)
         
-        # Build optimized prompt
-        prompt = build_optimized_review_prompt(processed_context)
-        
         logger.info(f"Generating review for user {user_id}")
         
-        # Call GPT with optimized settings
-        raw_output = await asyncio.get_event_loop().run_in_executor(
-            executor, call_gpt_optimized, prompt
+        # Call GPT with structured outputs
+        parsed_data = await call_gpt_structured(processed_context)
+        
+        # Convert to Pydantic model
+        review_sheet = ReviewSheet(
+            summary=parsed_data["summary"],
+            memorization_facts=parsed_data["memorization_facts"],
+            major_topics=parsed_data["major_topics"],
+            weak_areas=parsed_data["weak_areas"],
+            study_tips=parsed_data["study_tips"]
         )
         
-        # Parse and validate response
-        try:
-            parsed = json.loads(raw_output)
-            review_sheet = ReviewSheet(
-                summary=parsed.get("summary", "Study session completed successfully."),
-                memorization_facts=parsed.get("memorization_facts", [])[:5],  # Limit facts
-                major_topics=parsed.get("major_topics", [])[:4],  # Limit topics
-                weak_areas=parsed.get("weak_areas", [])[:3],  # Limit weak areas
-                study_tips=parsed.get("study_tips", [])[:3]  # Limit tips
-            )
-            
-            logger.info(f"Successfully generated review sheet for user {user_id}")
-            return review_sheet
-            
-        except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse GPT response: {e}")
-            logger.error(f"Raw GPT output: {raw_output}")
-            
-            # Fallback response (context function handles empty context internally)
-            return ReviewSheet(
-                summary="You've completed a productive study session today. Great work staying committed to your learning goals!",
-                memorization_facts=[
-                    "Consistent daily review improves long-term retention by 60%",
-                    "Sleep consolidation helps transfer information from short-term to long-term memory"
-                ],
-                major_topics=["General study session completed"],
-                weak_areas=["Consider tracking specific topics for more detailed feedback"],
-                study_tips=[
-                    "Review these facts again tomorrow morning",
-                    "Focus on active recall techniques in your next session"
-                ]
-            )
+        logger.info(f"Successfully generated review sheet for user {user_id}")
+        return review_sheet
             
     except HTTPException:
         raise
@@ -250,11 +324,19 @@ async def generate_review_sheet(request: Request, data: ReviewRequest):
         logger.error(f"Unexpected error generating review sheet: {e}")
         # Return basic fallback - never fail completely
         return ReviewSheet(
-            summary="Study session completed successfully.",
-            memorization_facts=["Continue your consistent learning habits"],
-            major_topics=["General study session"],
-            weak_areas=["No specific areas identified"],
-            study_tips=["Keep up the great work!"]
+            summary="You've completed a productive study session today. Great work staying committed to your learning goals and making consistent progress in your studies.",
+            memorization_facts=[
+                "Consistent daily review improves long-term retention by 60%",
+                "Sleep consolidation helps transfer information from short-term to long-term memory",
+                "Active recall techniques are more effective than passive re-reading"
+            ],
+            major_topics=["General study session completed", "Learning strategies reviewed", "Knowledge consolidation"],
+            weak_areas=["Consider tracking specific topics for more detailed feedback", "Focus on active practice techniques"],
+            study_tips=[
+                "Review these facts again tomorrow morning for better retention",
+                "Focus on active recall techniques in your next session",
+                "Try explaining concepts out loud to reinforce understanding"
+            ]
         )
 
 # ---------------------------
