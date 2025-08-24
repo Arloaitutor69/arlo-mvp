@@ -3,7 +3,7 @@
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
-import openai
+from openai import OpenAI
 import os
 import json
 import uuid
@@ -16,7 +16,7 @@ import re
 from dataclasses import dataclass
 
 # Load environment variables
-openai.api_key = os.getenv("OPENAI_API_KEY")
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 CONTEXT_BASE_URL = os.getenv("CONTEXT_API_BASE", "https://arlo-mvp-2.onrender.com")
 
 router = APIRouter()
@@ -257,12 +257,12 @@ Review Queue Size: {len(context.get('review_queue', []))}
 # -----------------------------
 # Enhanced Generation Function
 # -----------------------------
-async def generate_flashcards_async(
+def generate_flashcards_sync(
     content: str,
     context: Dict[str, Any],
     request: FlashcardRequest
 ) -> List[Dict[str, Any]]:
-    """Async flashcard generation with enhanced AI prompting"""
+    """Synchronous flashcard generation with enhanced AI prompting"""
     
     # Analyze content complexity
     content_analysis = LearningAnalyzer.analyze_content_complexity(content)
@@ -276,15 +276,12 @@ async def generate_flashcards_async(
     )
     
     try:
-        model = "gpt-3.5-turbo" 
+        messages = [{"role": "user", "content": prompt}]
         
-        response = await openai.ChatCompletion.acreate(
-            model=model,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.7,
-            max_tokens=2000,
-            presence_penalty=0.1,
-            frequency_penalty=0.1
+        response = client.chat.completions.create(
+            model="gpt-5-nano",
+            messages=messages,
+            reasoning_effort="low"
         )
         
         raw_content = response.choices[0].message.content.strip()
@@ -313,6 +310,14 @@ async def generate_flashcards_async(
     except Exception as e:
         print(f"❌ AI generation error: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to generate flashcards: {str(e)}")
+
+async def generate_flashcards_async(
+    content: str,
+    context: Dict[str, Any],
+    request: FlashcardRequest
+) -> List[Dict[str, Any]]:
+    """Async wrapper for flashcard generation"""
+    return generate_flashcards_sync(content, context, request)
 
 # -----------------------------
 # Enhanced Endpoint
