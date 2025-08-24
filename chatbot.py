@@ -3,7 +3,7 @@
 from fastapi import APIRouter, FastAPI, HTTPException, Request, BackgroundTasks
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any, Literal
-import openai
+from openai import OpenAI
 import os
 import logging
 import requests
@@ -16,7 +16,7 @@ import re
 # ---------------------------
 # Setup
 # ---------------------------
-openai.api_key = os.getenv("OPENAI_API_KEY")
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 CONTEXT_API = os.getenv("CONTEXT_API_BASE", "https://arlo-mvp-2.onrender.com")
 
 logging.basicConfig(level=logging.INFO)
@@ -103,23 +103,28 @@ Your explanation:"""
 
     return prompt
 
-async def call_gpt_async(prompt: str, max_tokens: int = 250) -> str:
-    """Fast, lean GPT call"""
+def call_gpt_sync(prompt: str, max_tokens: int = 250) -> str:
+    """Synchronous GPT call using GPT-5-nano"""
     try:
-        response = await openai.ChatCompletion.acreate(
-            model="gpt-3.5-turbo-1106",
-            messages=[
-                {"role": "system", "content": "You are Arlo, an AI tutor. Be concise, clear, and helpful."},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0.3,
-            max_tokens=max_tokens,
-            request_timeout=10
+        messages = [
+            {"role": "system", "content": "You are Arlo, an AI tutor. Be concise, clear, and helpful."},
+            {"role": "user", "content": prompt}
+        ]
+        
+        response = client.chat.completions.create(
+            model="gpt-5-nano",
+            messages=messages,
+            reasoning_effort="low"
         )
+        
         return response.choices[0].message.content.strip()
     except Exception as e:
         logger.error(f"GPT call failed: {e}")
         return "I'm having trouble right now. Please try rephrasing your question."
+
+async def call_gpt_async(prompt: str, max_tokens: int = 250) -> str:
+    """Async wrapper for GPT call"""
+    return call_gpt_sync(prompt, max_tokens)
 
 def extract_learning_concepts(response: str) -> List[str]:
     """Extract key learning concepts from response"""
