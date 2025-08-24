@@ -220,14 +220,10 @@ REQUIREMENTS:
 - Each block must cover distinct, non redundant and non-overlapping content that builds progressively toward complete mastery of the subject
 
 CONTENT REQUIREMENTS FOR EACH BLOCK:
-Each description must be a complete self contained lesson including:
-1. Key definitions and examples, Important formulas, equations, or principles, Specific facts, data points, or details to remember
-2. focus on most important details as oppose to minor tangential. Cater to highschool/undergraduate college info unless otherwise specified
-
-QUALITY STANDARDS:
-- Each description should be 100-200 words
-- Include concrete examples, not just abstract concepts
-- Provide actionable learning content, not just topic overviews
+1. Each description must be a complete self contained lesson including:
+2. Key definitions and examples, Important formulas, equations, or principles, Specific facts, data points, or details to remember
+3. focus on most important details as oppose to minor tangential. Cater to highschool/undergraduate college info unless otherwise specified
+4. Each description should be 100-200 words
 
 EXAMPLE QUALITY DESCRIPTION - Photosynthesis Topic:
 1) "Photosynthesis converts light energy into chemical energy through two interconnected stages. Master equation: 6CO2 + 6H2O + light energy → C6H12O6 + 6O2. Key definitions: autotrophs (self-feeding organisms), chloroplasts (organelles containing chlorophyll), thylakoids (membrane structures for light reactions), stroma (fluid space for Calvin cycle). Critical subtopics: chlorophyll a vs b absorption spectra, stomatal regulation, C3 vs C4 vs CAM pathways, photorespiration effects. Essential principles: light-dependent reactions produce ATP/NADPH, light-independent reactions fix CO2 into glucose, oxygen is a byproduct not the goal. Quantitative facts: ~1-2% light conversion efficiency, 70% of atmospheric oxygen from photosynthesis, 150 billion tons CO2 fixed annually.",
