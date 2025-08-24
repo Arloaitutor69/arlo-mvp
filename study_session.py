@@ -3,10 +3,9 @@ import json
 import uuid
 import asyncio
 import hashlib
-import re
 from typing import List, Optional, Dict, Tuple
 from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from openai import OpenAI
 import httpx
 from functools import lru_cache
@@ -49,29 +48,74 @@ class StudyPlanResponse(BaseModel):
     techniques: List[str]
     blocks: List[StudyBlock]
 
-# --- JSON Parsing Utilities ---
-def fix_json_escaping(text):
-    """Fix common JSON escaping issues - borrowed from teaching.py"""
-    # Remove any control characters
-    text = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]', '', text)
-    
-    # Fix single quotes that should be escaped double quotes
-    text = re.sub(r"(?<!\\)'", '"', text)
-    
-    # Fix unescaped quotes inside content strings
-    def fix_content_quotes(match):
-        content_part = match.group(1)
-        # Escape any unescaped quotes inside the content
-        content_part = re.sub(r'(?<!\\)"', r'\\"', content_part)
-        return f'"description": "{content_part}"'
-    
-    # Apply the fix to description fields
-    text = re.sub(r'"description":\s*"([^"]*(?:\\.[^"]*)*)"', fix_content_quotes, text)
-    
-    # Remove trailing commas before closing brackets
-    text = re.sub(r',(\s*[}\]])', r'\1', text)
-    
-    return text
+# --- JSON Schema for structured outputs --- #
+STUDY_PLAN_SCHEMA = {
+    "name": "study_plan_response",
+    "schema": {
+        "type": "object",
+        "strict": True,
+        "properties": {
+            "units_to_cover": {
+                "type": "array",
+                "minItems": 2,
+                "maxItems": 8,
+                "items": {
+                    "type": "string",
+                    "minLength": 1
+                }
+            },
+            "pomodoro": {
+                "type": "string",
+                "enum": ["25/5", "30/5", "45/15", "50/10"]
+            },
+            "techniques": {
+                "type": "array",
+                "minItems": 2,
+                "maxItems": 4,
+                "items": {
+                    "type": "string",
+                    "enum": ["flashcards", "feynman", "quiz", "blurting"]
+                }
+            },
+            "blocks": {
+                "type": "array",
+                "minItems": 2,
+                "maxItems": 8,
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "unit": {
+                            "type": "string",
+                            "minLength": 1
+                        },
+                        "techniques": {
+                            "type": "array",
+                            "minItems": 1,
+                            "maxItems": 3,
+                            "items": {
+                                "type": "string",
+                                "enum": ["flashcards", "feynman", "quiz", "blurting"]
+                            }
+                        },
+                        "description": {
+                            "type": "string",
+                            "minLength": 100
+                        },
+                        "duration": {
+                            "type": "integer",
+                            "minimum": 10,
+                            "maximum": 30
+                        }
+                    },
+                    "required": ["unit", "techniques", "description", "duration"],
+                    "additionalProperties": False
+                }
+            }
+        },
+        "required": ["units_to_cover", "pomodoro", "techniques", "blocks"],
+        "additionalProperties": False
+    }
+}
 
 def create_fallback_study_plan(objective: Optional[str], parsed_summary: Optional[str], duration: int) -> dict:
     """Create a fallback study plan when JSON parsing fails"""
@@ -185,51 +229,12 @@ QUALITY STANDARDS:
 - Include concrete examples, not just abstract concepts
 - Provide actionable learning content, not just topic overviews
 
-CRITICAL: You MUST return a complete JSON object with ALL required fields. Missing any field will cause the system to fail.
+EXAMPLE QUALITY DESCRIPTION - Photosynthesis Topic:
+1) "Photosynthesis converts light energy into chemical energy through two interconnected stages. Master equation: 6CO2 + 6H2O + light energy → C6H12O6 + 6O2. Key definitions: autotrophs (self-feeding organisms), chloroplasts (organelles containing chlorophyll), thylakoids (membrane structures for light reactions), stroma (fluid space for Calvin cycle). Critical subtopics: chlorophyll a vs b absorption spectra, stomatal regulation, C3 vs C4 vs CAM pathways, photorespiration effects. Essential principles: light-dependent reactions produce ATP/NADPH, light-independent reactions fix CO2 into glucose, oxygen is a byproduct not the goal. Quantitative facts: ~1-2% light conversion efficiency, 70% of atmospheric oxygen from photosynthesis, 150 billion tons CO2 fixed annually.",
+2) "Light reactions occur in thylakoid membranes converting light energy to chemical energy. Key equation: 2H2O + 2NADP+ + 3ADP + 3Pi + light → O2 + 2NADPH + 3ATP. Critical components: Photosystem II (P680 reaction center), Photosystem I (P700 reaction center), cytochrome b6f complex, ATP synthase. Essential processes: water splitting (oxygen evolution), electron transport chain, proton pumping, chemiosmosis. Important facts: cyclic vs non-cyclic electron flow, Z-scheme energy diagram, plastoquinone and plastocyanin carriers. Quantitative details: 8 photons needed per O2 molecule, proton gradient of 3-4 pH units, ATP:NADPH ratio of 3:2.",
 
-REQUIRED JSON STRUCTURE - Return ONLY this JSON format:
-{{
-  "units_to_cover": ["Unit 1 Name", "Unit 2 Name", "Unit 3 Name"],
-  "pomodoro": "25/5",
-  "techniques": ["technique1", "technique2", "technique3"],
-  "blocks": [
-    {{
-      "unit": "Unit 1 Name",
-      "techniques": ["quiz", "blurting", "flashcards"],
-      "description": "content here",
-      "duration": {block_duration}
-    }},
-    {{
-      "unit": "Unit 2 Name", 
-      "techniques": ["flashcards", "feynman"],
-      "description": "content here",
-      "duration": {block_duration}
-    }}
-  ]
-}}
 
-EXAMPLE COMPLETE RESPONSE:
-{{
-  "units_to_cover": ["Photosynthesis Overview", "Light Reactions", "Calvin Cycle"],
-  "pomodoro": "25/5",
-  "techniques": ["feynman", "flashcards", "quiz", "blurting"],
-  "blocks": [
-    {{
-      "unit": "Photosynthesis Overview",
-      "techniques": ["feynman", "flashcards"],
-      "description": "Photosynthesis converts light energy into chemical energy through two interconnected stages. Master equation: 6CO2 + 6H2O + light energy → C6H12O6 + 6O2. Key definitions: autotrophs (self-feeding organisms), chloroplasts (organelles containing chlorophyll), thylakoids (membrane structures for light reactions), stroma (fluid space for Calvin cycle). Critical subtopics: chlorophyll a vs b absorption spectra, stomatal regulation, C3 vs C4 vs CAM pathways, photorespiration effects. Essential principles: light-dependent reactions produce ATP/NADPH, light-independent reactions fix CO2 into glucose, oxygen is a byproduct not the goal. Quantitative facts: ~1-2% light conversion efficiency, 70% of atmospheric oxygen from photosynthesis, 150 billion tons CO2 fixed annually.",
-      "duration": {block_duration}
-    }},
-    {{
-      "unit": "Light Reactions",
-      "techniques": ["flashcards", "quiz"],
-      "description": "Light reactions occur in thylakoid membranes converting light energy to chemical energy. Key equation: 2H2O + 2NADP+ + 3ADP + 3Pi + light → O2 + 2NADPH + 3ATP. Critical components: Photosystem II (P680 reaction center), Photosystem I (P700 reaction center), cytochrome b6f complex, ATP synthase. Essential processes: water splitting (oxygen evolution), electron transport chain, proton pumping, chemiosmosis. Important facts: cyclic vs non-cyclic electron flow, Z-scheme energy diagram, plastoquinone and plastocyanin carriers. Quantitative details: 8 photons needed per O2 molecule, proton gradient of 3-4 pH units, ATP:NADPH ratio of 3:2.",
-      "duration": {block_duration}
-    }}
-  ]
-}}
-
-Remember: You must include exactly {num_blocks} blocks and ALL required fields (units_to_cover, pomodoro, techniques, blocks) or the system will fail. Each block must have a "techniques" array with 1-3 techniques. Output ONLY valid JSON format with proper escaping."""
+Create a study plan with exactly {num_blocks} blocks of {block_duration} minutes each."""
     
     return prompt
 
@@ -244,20 +249,24 @@ async def update_context_async(payload: dict) -> bool:
         return False
 
 def generate_gpt_plan(prompt: str, objective: Optional[str] = None, parsed_summary: Optional[str] = None, duration: int = 60) -> dict:
-    """Generate study plan with GPT-5-nano with enhanced validation and error handling"""
+    """Generate study plan with GPT-5-nano structured outputs"""
     
     print(f"📏 Prompt length: {len(prompt)} characters")
     
     try:
         print(f"🤖 Calling GPT-5-nano...")
         
-        # Use new GPT-5-nano API call format from teaching.py
+        # Use GPT-5-nano structured outputs
         response = client.chat.completions.create(
             model="gpt-5-nano",
             messages=[
-                {"role": "system", "content": "You are an expert curriculum designer. You MUST return ONLY valid JSON with ALL required fields: units_to_cover, pomodoro, techniques, and blocks. Each block must have a 'techniques' array with 1-3 techniques. Missing any field will cause system failure."},
+                {"role": "system", "content": "You are an expert curriculum designer. Create comprehensive study plans with exactly the requested number of blocks. Each block must be educational, actionable, and contain substantial learning content with specific examples, definitions, and key facts."},
                 {"role": "user", "content": prompt}
             ],
+            response_format={
+                "type": "json_schema",
+                "json_schema": STUDY_PLAN_SCHEMA
+            },
             reasoning_effort="low"
         )
 
@@ -266,30 +275,11 @@ def generate_gpt_plan(prompt: str, objective: Optional[str] = None, parsed_summa
         print(f"📝 Raw GPT response length: {len(raw_output)} chars")
         print(f"📝 First 300 chars: {raw_output[:300]}...")
         
-        # Remove code block markers
-        if raw_output.startswith("```"):
-            raw_output = re.sub(r'^```(?:json)?\n?', '', raw_output)
-            raw_output = re.sub(r'\n?```$', '', raw_output)
-        
-        # Fix JSON escaping issues
-        raw_output = fix_json_escaping(raw_output)
-        
-        # Parse JSON with better error handling
+        # Parse the guaranteed valid JSON response
         try:
             parsed_output = json.loads(raw_output)
         except json.JSONDecodeError as e:
             print(f"JSON parsing failed: {e}")
-            print(f"Raw output sample: {raw_output[:200]}...")
-            # Use fallback response
-            parsed_output = create_fallback_study_plan(objective, parsed_summary, duration)
-        
-        # Validate ALL required fields
-        required_fields = ["blocks", "units_to_cover", "techniques", "pomodoro"]
-        missing_fields = [field for field in required_fields if field not in parsed_output]
-        
-        if missing_fields:
-            print(f"❌ Missing required fields: {missing_fields}")
-            print(f"📋 Available fields: {list(parsed_output.keys())}")
             # Use fallback response
             parsed_output = create_fallback_study_plan(objective, parsed_summary, duration)
         
@@ -298,78 +288,6 @@ def generate_gpt_plan(prompt: str, objective: Optional[str] = None, parsed_summa
             print("❌ No blocks generated, using fallback")
             parsed_output = create_fallback_study_plan(objective, parsed_summary, duration)
             blocks = parsed_output.get("blocks", [])
-        
-        # Validate and clean block structure
-        num_blocks, block_duration = calculate_optimal_blocks(duration)
-        valid_techniques = {"flashcards", "feynman", "quiz", "blurting"}
-        
-        # Ensure exactly the right number of blocks
-        if len(blocks) != num_blocks:
-            if len(blocks) < num_blocks:
-                # Pad with additional blocks if needed
-                while len(blocks) < num_blocks:
-                    blocks.append({
-                        "unit": f"Additional Study {len(blocks) + 1}",
-                        "techniques": ["feynman", "flashcards"],
-                        "description": f"Additional study content to complete the {duration}-minute session.",
-                        "duration": block_duration
-                    })
-            else:
-                # Trim to exactly the right number
-                blocks = blocks[:num_blocks]
-        
-        # Clean and validate each block
-        for i, block in enumerate(blocks):
-            # Ensure block is a dictionary
-            if not isinstance(block, dict):
-                block = {
-                    "unit": f"Study Block {i+1}",
-                    "techniques": ["feynman"],
-                    "description": "Study the assigned material using active learning techniques.",
-                    "duration": block_duration
-                }
-                blocks[i] = block
-
-            # Validate required block fields
-            required_block_fields = ["unit", "techniques", "description", "duration"]
-            for field in required_block_fields:
-                if field not in block:
-                    if field == "unit":
-                        block[field] = f"Study Block {i+1}"
-                    elif field == "techniques":
-                        block[field] = ["feynman"]
-                    elif field == "description":
-                        block[field] = "Study the assigned material using active learning techniques."
-                    elif field == "duration":
-                        block[field] = block_duration
-
-            # Validate techniques array
-            techniques = block.get("techniques", [])
-            if not isinstance(techniques, list) or len(techniques) == 0 or len(techniques) > 3:
-                block["techniques"] = ["feynman"]
-            else:
-                # Ensure all techniques are valid
-                block["techniques"] = [t for t in techniques if t in valid_techniques]
-                if not block["techniques"]:
-                    block["techniques"] = ["feynman"]
-
-            # Ensure description is string and clean it
-            description = block.get("description", "")
-            if isinstance(description, list):
-                description = "\\n\\n".join([str(item) for item in description])
-            elif not isinstance(description, str):
-                description = str(description)
-            
-            # Clean description string
-            description = description.replace('\n', '\\n').replace('\r', '')
-            block["description"] = description
-
-            # Ensure duration is integer
-            if not isinstance(block.get("duration"), int):
-                block["duration"] = block_duration
-        
-        # Update the cleaned blocks back to parsed_output
-        parsed_output["blocks"] = blocks
         
         print(f"✅ GPT generated valid response with {len(blocks)} blocks")
         print(f"📊 Units: {len(parsed_output.get('units_to_cover', []))}")
