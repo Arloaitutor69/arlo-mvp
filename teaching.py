@@ -171,14 +171,38 @@ Output valid JSON with exactly 10-14 teaching blocks."""
         raw_content = response.choices[0].message.content
         parsed_data = json.loads(raw_content)
         
+        # Debug: print what we actually got
+        print(f"Parsed data keys: {list(parsed_data.keys()) if isinstance(parsed_data, dict) else 'Not a dict'}")
+        print(f"Raw content sample: {raw_content[:200]}...")
+        
+        # Handle different possible response structures
+        if "lesson" in parsed_data:
+            lesson_data = parsed_data["lesson"]
+        elif isinstance(parsed_data, list):
+            # If the response is directly a list of blocks
+            lesson_data = parsed_data
+        else:
+            # Fallback: look for any array in the response
+            lesson_data = None
+            for key, value in parsed_data.items():
+                if isinstance(value, list):
+                    lesson_data = value
+                    break
+            
+            if lesson_data is None:
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"No lesson array found in response. Keys: {list(parsed_data.keys())}"
+                )
+        
         # Convert to Pydantic models for additional validation
         lesson_blocks = [
             TeachingBlock(
-                type=block["type"],
-                title=block["title"],
-                content=block["content"]
+                type=block.get("type", "detailed_explanation"),
+                title=block.get("title", f"Learning Block {i+1}"),
+                content=block.get("content", "Educational content")
             )
-            for block in parsed_data["lesson"]
+            for i, block in enumerate(lesson_data)
         ]
         
         return TeachingResponse(lesson=lesson_blocks)
