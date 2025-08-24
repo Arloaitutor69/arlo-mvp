@@ -11,7 +11,6 @@ import asyncio
 import aiohttp
 from datetime import datetime
 import json
-import re
 
 # ---------------------------
 # Setup
@@ -26,7 +25,7 @@ app = FastAPI()
 router = APIRouter()
 
 # ---------------------------
-# Simplified Schemas
+# Schemas
 # ---------------------------
 class ChatbotInput(BaseModel):
     user_input: str
@@ -50,6 +49,58 @@ class HelpResponse(BaseModel):
     explanation: str
 
 # ---------------------------
+# JSON Schemas for structured outputs
+# ---------------------------
+CHATBOT_SCHEMA = {
+    "name": "chatbot_response",
+    "schema": {
+        "type": "object",
+        "strict": True,
+        "properties": {
+            "message": {
+                "type": "string",
+                "minLength": 10
+            },
+            "follow_up_question": {
+                "type": "string",
+                "minLength": 10
+            },
+            "learning_concepts": {
+                "type": "array",
+                "maxItems": 5,
+                "items": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 30
+                }
+            },
+            "confidence_level": {
+                "type": "string",
+                "enum": ["low", "medium", "high"]
+            }
+        },
+        "required": ["message", "follow_up_question", "learning_concepts", "confidence_level"],
+        "additionalProperties": False
+    }
+}
+
+HELP_SCHEMA = {
+    "name": "help_response",
+    "schema": {
+        "type": "object",
+        "strict": True,
+        "properties": {
+            "explanation": {
+                "type": "string",
+                "minLength": 50
+            }
+        },
+        "required": ["explanation"],
+        "additionalProperties": False
+    }
+}
+
+# ---------------------------
 # Enhanced Helpers
 # ---------------------------
 def extract_user_id(request: Request, data: ChatbotInput) -> str:
@@ -61,7 +112,7 @@ def extract_user_id(request: Request, data: ChatbotInput) -> str:
         raise HTTPException(status_code=400, detail="Missing user_id in request")
 
 def build_enhanced_prompt(data: ChatbotInput) -> str:
-    """Build an enhanced prompt for tutoring with better context"""
+    """Build an enhanced prompt for tutoring with better context and examples"""
     
     # Get last 5 messages for context
     recent_history = []
@@ -80,12 +131,26 @@ Recent conversation:
 
 Student: "{data.user_input}"
 
-Provide a clear, informative response that directly answers the student's question. Include one follow-up question to continue learning. Be concise but thorough."""
+Provide a clear, informative response that directly answers the student's question. Always include a thoughtful follow-up question to continue learning. Identify key learning concepts covered in your response. Be concise but thorough.
+
+EXAMPLE QUALITY RESPONSES:
+
+For Biology question about photosynthesis:
+Message: "Photosynthesis is how plants convert sunlight into energy through two main stages: light reactions (in thylakoids) and the Calvin cycle (in stroma). The overall equation is 6CO2 + 6H2O + light energy → C6H12O6 + 6O2. Light reactions capture energy and produce ATP/NADPH, while Calvin cycle uses these to convert CO2 into glucose. Chlorophyll absorbs light energy, mainly red and blue wavelengths, which is why plants appear green."
+Follow-up: "Would you like to explore how different wavelengths of light affect photosynthesis efficiency?"
+Learning concepts: ["photosynthesis", "light reactions", "Calvin cycle", "chlorophyll", "ATP/NADPH"]
+
+For Math question about quadratic equations:
+Message: "Quadratic equations have the form ax² + bx + c = 0. You can solve them using the quadratic formula: x = (-b ± √(b² - 4ac)) / 2a. The discriminant (b² - 4ac) tells you about solutions: positive = 2 real roots, zero = 1 repeated root, negative = 2 complex roots. For example, x² - 5x + 6 = 0 has a = 1, b = -5, c = 6, giving x = (5 ± 1) / 2, so x = 3 or x = 2."
+Follow-up: "Want to try factoring this equation instead of using the formula?"
+Learning concepts: ["quadratic formula", "discriminant", "real roots", "factoring"]
+
+Your response should help the student understand the topic better and encourage further exploration."""
 
     return prompt
 
 def build_help_prompt(content: str) -> str:
-    """Build simplified help prompt that explains content in clear paragraphs"""
+    """Build simplified help prompt that explains content in clear paragraphs with examples"""
     
     prompt = f"""You are Arlo, an AI tutor. Explain the following content in a clear, easy-to-understand way using 1-2 concise paragraphs.
 
@@ -99,45 +164,44 @@ Instructions:
 - Keep it concise but informative
 - Include examples only if they help clarify the concept
 
-Your explanation:"""
+EXAMPLE QUALITY EXPLANATIONS:
+
+For complex scientific text about DNA replication:
+"DNA replication is the process where cells copy their genetic material before dividing. Think of it like making a perfect photocopy of an instruction manual. The double helix unwinds, and special enzymes called DNA polymerases read each strand and build complementary new strands, following base-pairing rules (A with T, G with C). This ensures each new cell gets an exact copy of the genetic instructions."
+
+For mathematical concept about derivatives:
+"Derivatives measure how fast something is changing at any given moment. Imagine you're driving and look at your speedometer - that shows your derivative of distance with respect to time. In math, if you have a curve on a graph, the derivative at any point tells you the slope of the tangent line there, which represents the rate of change at that exact moment."
+
+Provide a clear explanation that helps the student understand this content better."""
 
     return prompt
 
-def call_gpt_sync(prompt: str, max_tokens: int = 250) -> str:
-    """Synchronous GPT call using GPT-5-nano"""
+def call_gpt_sync(prompt: str, schema: dict, fallback_response: dict) -> dict:
+    """Synchronous GPT call using GPT-5-nano structured outputs"""
     try:
         messages = [
-            {"role": "system", "content": "You are Arlo, an AI tutor. Be concise, clear, and helpful."},
+            {"role": "system", "content": "You are Arlo, an AI tutor. Be concise, clear, and helpful. Always provide educational content with concrete examples and specific details."},
             {"role": "user", "content": prompt}
         ]
         
         response = client.chat.completions.create(
             model="gpt-5-nano",
             messages=messages,
+            response_format={
+                "type": "json_schema",
+                "json_schema": schema
+            },
             reasoning_effort="low"
         )
         
-        return response.choices[0].message.content.strip()
+        return json.loads(response.choices[0].message.content)
     except Exception as e:
         logger.error(f"GPT call failed: {e}")
-        return "I'm having trouble right now. Please try rephrasing your question."
+        return fallback_response
 
-async def call_gpt_async(prompt: str, max_tokens: int = 250) -> str:
+async def call_gpt_async(prompt: str, schema: dict, fallback_response: dict) -> dict:
     """Async wrapper for GPT call"""
-    return call_gpt_sync(prompt, max_tokens)
-
-def extract_learning_concepts(response: str) -> List[str]:
-    """Extract key learning concepts from response"""
-    concepts = []
-    # Look for key terms in quotes or after colons
-    quoted = re.findall(r'"([^"]*)"', response)
-    concepts.extend([c for c in quoted if 3 < len(c) < 30])
-    
-    # Look for definition patterns
-    definitions = re.findall(r'(\w+(?:\s+\w+){0,2})\s+(?:is|are|means)', response, re.IGNORECASE)
-    concepts.extend([d.strip() for d in definitions if 3 < len(d.strip()) < 30])
-    
-    return list(set(concepts))[:3]  # Return top 3
+    return call_gpt_sync(prompt, schema, fallback_response)
 
 async def update_context_async(user_id: str, context_data: Dict[str, Any]):
     """Update user context asynchronously"""
@@ -178,16 +242,22 @@ async def chatbot_handler(request: Request, data: ChatbotInput, background_tasks
         user_id = extract_user_id(request, data)
         prompt = build_enhanced_prompt(data)
         
+        # Fallback response for error cases
+        fallback_chatbot_response = {
+            "message": "I'm having trouble right now. Please try rephrasing your question.",
+            "follow_up_question": "What would you like to learn more about?",
+            "learning_concepts": [],
+            "confidence_level": "low"
+        }
+        
         # Async GPT call for better performance
-        gpt_reply = await call_gpt_async(prompt, max_tokens=450)
+        gpt_reply = await call_gpt_async(prompt, CHATBOT_SCHEMA, fallback_chatbot_response)
         
-        # Extract learning concepts
-        concepts_covered = extract_learning_concepts(gpt_reply)
-        
-        # Generate natural follow-up question
-        follow_up = None
-        if "?" not in gpt_reply:  # Add follow-up if response doesn't already contain a question
-            follow_up = f"What would you like to explore further about {data.topic}?"
+        # Extract data from structured response
+        message = gpt_reply.get("message", "I'm having trouble right now.")
+        follow_up = gpt_reply.get("follow_up_question", f"What would you like to explore further about {data.topic}?")
+        concepts_covered = gpt_reply.get("learning_concepts", [])
+        confidence_level = gpt_reply.get("confidence_level", "medium")
         
         # Determine if context update is needed
         context_update_needed = len(concepts_covered) > 0 or any(
@@ -208,11 +278,11 @@ async def chatbot_handler(request: Request, data: ChatbotInput, background_tasks
             )
         
         return ChatbotResponse(
-            message=gpt_reply,
+            message=message,
             follow_up_question=follow_up,
             context_update_required=context_update_needed,
             learning_concepts_covered=concepts_covered,
-            confidence_level="high" if len(gpt_reply) > 100 else "medium"
+            confidence_level=confidence_level
         )
         
     except Exception as e:
@@ -229,10 +299,15 @@ async def help_handler(request: Request, data: HelpInput):
     try:
         prompt = build_help_prompt(data.content)
         
-        # Use higher token limit for detailed explanations
-        response = await call_gpt_async(prompt, max_tokens=400)
+        # Fallback response for error cases
+        fallback_help_response = {
+            "explanation": "I'm having trouble providing help right now. Please try rephrasing your question or breaking it into smaller parts."
+        }
         
-        return HelpResponse(explanation=response)
+        # Use GPT with structured output
+        response = await call_gpt_async(prompt, HELP_SCHEMA, fallback_help_response)
+        
+        return HelpResponse(explanation=response.get("explanation", fallback_help_response["explanation"]))
         
     except Exception as e:
         logger.error(f"Help handler failed: {e}")
