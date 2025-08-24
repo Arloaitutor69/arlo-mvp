@@ -33,6 +33,7 @@ TEACHING_SCHEMA = {
     "name": "teaching_response",
     "schema": {
         "type": "object",
+        "strict": True,
         "properties": {
             "lesson": {
                 "type": "array",
@@ -161,8 +162,7 @@ Output valid JSON with exactly 10-14 teaching blocks."""
             messages=messages,
             response_format={
                 "type": "json_schema",
-                "json_schema": TEACHING_SCHEMA,
-                "strict": True
+                "json_schema": TEACHING_SCHEMA
             },
             reasoning_effort="low"
         )
