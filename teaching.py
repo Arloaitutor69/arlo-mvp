@@ -77,11 +77,12 @@ CRITICAL REQUIREMENTS:
 5. No trailing commas
 
 TEACHING BLOCK STRUCTURE:
-- First Block: concise overview of what student will learn and the main questions
+- First Block: breifly introduce topic and give 3 main questions going to answer
 - Middle Blocks: mini lessons which fully flesh out 1-2 subtopics in an easy to understand way, modeled off example mini lessons
 - Final Block: summary of what was learned
 
 CONTENT QUALITY STANDARDS:
+- each mini lesson should be 50-80 words of teaching content 
 - ONLY MENTION information relevant to a test, not tangential information
 - Explain concepts in extremely easy-to-understand, casual language
 - Use analogies, mneumonic devices, and other learning stradegies when helpful
@@ -145,7 +146,9 @@ def generate_teaching_content(req: TeachingRequest):
         # Create user prompt
         user_prompt = f"""{context_info}
 
-Create a comprehensive lesson about: {req.description}
+Create a comprehensive lesson based on this study plan: {req.description}
+
+ensure every topic in the study plan is properly explained, and avoid veering from the study plan. 
 
 Output valid JSON with exactly 10-14 teaching blocks."""
 
