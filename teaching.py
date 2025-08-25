@@ -35,7 +35,7 @@ TEACHING_SCHEMA = {
         "properties": {
             "lesson": {
                 "type": "array",
-                "minItems": 10,
+                "minItems": 9,
                 "maxItems": 14,
                 "items": {
                     "type": "object",
@@ -54,7 +54,7 @@ TEACHING_SCHEMA = {
                         },
                         "content": {
                             "type": "string",
-                            "minLength": 75
+                            "minLength": 70
                         }
                     },
                     "required": ["type", "title", "content"],
