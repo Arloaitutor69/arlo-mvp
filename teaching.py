@@ -187,7 +187,7 @@ Output valid JSON with exactly 10-14 teaching blocks."""
             # Fallback: look for any array in the response
             lesson_data = None
             for key, value in parsed_data.items():
-                if isinstance(value, value):  
+                if isinstance(value, list):  
                     lesson_data = value
                     break
             
