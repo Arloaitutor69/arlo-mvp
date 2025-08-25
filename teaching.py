@@ -1,5 +1,3 @@
-# teaching.py
-
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import List, Literal, Optional
@@ -94,37 +92,44 @@ CONTENT QUALITY STANDARDS:
 - Define all technical terms at first mention
 - Student-friendly language while maintaining accuracy
 
-EXAMPLE FORMAT - Cell Biology Topic:
+EXAMPLE FORMAT - Economics/Cell Biology Topic:
 {
   "lesson": [
     {
       "type": "overview",
-      "title": "What Are We Going to Learn About Cells?",
-      "content": "**Main Questions:**\\n\\n• What is a cell and why do people call it the basic unit of life?\\n• What are the main parts inside a cell and what are their jobs?\\n• How are plant and animal cells the same, and how are they different?\\n\\n**Learning Goals:**\\n\\n• Get a simple understanding of what cells are and why they matter\\n• Learn the main jobs of the organelles (cell parts)\\n• See how the parts of a cell work together like a team\\n• Compare plant and animal cells in an easy way"
+      "title": "What Are We Going to Learn About Economics?",
+      "content": "**Main Questions:**\\n\\n• What is economics and why does it matter in daily life?\\n• How do scarcity and choice affect everyone's decisions?\\n• What's the difference between microeconomics and macroeconomics?\\n\\n**Learning Goals:**\\n\\n• Understand what economics is really about\\n• Learn key concepts like scarcity and opportunity cost\\n• See how economics affects both individual choices and whole countries\\n• Compare micro and macro perspectives in simple terms"
     },
+    {
+      "type": "detailed_explanation",
+      "title": "What Is Economics, Really?",
+      "content": "**Economics** is the study of how people make choices about their **limited resources**. Everyone—individuals, businesses, and governments—has to make decisions about what to use, what to save, and what to trade.\\n\\n**Key ideas:**\\n• **Scarcity:** Resources (money, time, food, etc.) are **limited**. We can't have everything we want.\\n• **Choices:** Because of scarcity, we make decisions about what to use resources for.\\n• **Opportunity Cost:** Whenever you choose one thing, you give up the **next best alternative**. (Example: if you spend $10 on lunch, you can't spend that $10 on a movie ticket.)\\n\\nSo economics is the study of **who gets what, how they can get it, and why!**"
+    },
+    {
+      "type": "detailed_explanation",
+      "title": "Micro vs. Macro Economics",
+      "content": "Economics is split into two main \\"worlds.\\"\\n\\n• **Microeconomics:** The study of small, individual decisions.\\n   • Example: A family choosing whether to eat out or cook at home.\\n   • Example: A business deciding how much to charge for sneakers.\\n\\n• **Macroeconomics:** The study of the whole economy.\\n   • Example: Why is inflation rising?\\n   • Example: Why do some countries grow richer while others struggle?\\n\\nThink of it like zooming in with a camera: **Micro = zoomed-in close-up**, **Macro = wide angle view of the entire economy.**"
+    },
+
+    here is now an explenation of teaching cell biology 
     {
       "type": "detailed_explanation",
       "title": "What Is a Cell, Really?",
-      "content": "A **cell** is the smallest living piece of life that can do all the important things like grow, use energy, react to its surroundings, and make new cells.\\n\\n• Some life forms, like bacteria, are made of just **one** cell that does everything itself\\n• Bigger organisms, like humans, are made of **trillions** of cells all working together\\n• Every new cell comes from another cell — this is the basic rule of cell theory\\n\\n**Two main kinds of cells:**\\n• **Prokaryotic cells** – simple cells with no nucleus (like bacteria)\\n• **Eukaryotic cells** – more complex, have a nucleus (like plants and animals)\\n\\n**Analogy:** A eukaryotic cell is like a **mini city**, with each part doing a specific job to keep the whole place running."
+      "content": "A **cell** is the smallest living piece of life that can do all the important things like grow, use energy, react to its surroundings, and replicate to make new cells. **Cell theory** says that…\\n• All living things are made of cells\\n• All cells that you see came from another cell at one point\\n\\nThe most basic type of cell is called a **prokaryote**. These guys have only ONE cell, hence their name, single cell life forms. Prokaryotes are special in a few ways:\\n• No nucleus (remember that big circle in the middle of the cell)\\n• Their DNA floats freely in the cytoplasm (jelly like substance that fills the whole cell)\\n• They reproduce extremely quickly by a process called binary fission (one cell that splits into two)\\n\\nThe cells that you have are called **Eukaryotes**—they are cells found in plants and animals, and are like miniature cities with their own factories, workers, and laws."
     },
     {
       "type": "detailed_explanation",
-      "title": "The Cell Membrane: Your Cell's Security Guard",
-      "content": "The **cell membrane** works like a security guard or a bouncer at a door. It decides what can come into the cell and what has to stay out.\\n\\n**Key things to know:**\\n• It's made of a double layer of lipids (kind of like a thin soapy bubble wall)\\n• It is **selectively permeable** – only certain things are allowed through\\n• It has special proteins that act like doors or ID checkers for bigger molecules\\n\\n**What gets through:**\\n• Water and very small molecules can slip in and out easily\\n• Larger molecules need a special 'door' (transport proteins)\\n• Waste gets pushed out so the cell stays clean\\n\\n**Why it matters:** Without this guard, the cell could either dry up or burst like a water balloon."
-    },
-    {
-      "type": "detailed_explanation",
-      "title": "The Nucleus: Cell's Control Center",
-      "content": "The **nucleus** is like the cell's brain. It stores DNA and tells the cell what to do.\\n\\n**Main parts inside:**\\n• **Nuclear envelope** – a double wall that protects the DNA\\n• **Chromatin** – DNA wrapped around proteins, like thread on a spool\\n• **Nucleolus** – makes ribosomes (tiny machines that build proteins)\\n\\n**What the nucleus does:**\\n• Stores the genetic information (the instruction manual)\\n• Decides which instructions to follow at any given time\\n• Helps control protein building and cell reproduction\\n\\n**Fun fact:** The nucleus is only about 10% of the cell's space but it holds almost all of the cell's DNA — like squeezing a whole library into one room!"
+      "title": "The Cell Membrane: Your Cell's Security System",
+      "content": "The **cell membrane** works like a security guard or a bouncer at a door. It decides what can come into the cell and what has to stay out.\\n\\n**Key things to know:**\\n• It's made of a double layer of phospholipids (kind of like a thin soapy bubble wall)\\n• It is **selectively permeable** – a fancy term for deciding what goes in and what comes out\\n• It has special transport proteins that act like doors or ID checkers for bigger molecules when they want to enter or leave\\n\\n**What actually gets through:**\\n• Water and very small molecules can slip in and out easily\\n• Larger molecules need a special 'door' (transport proteins)\\n• Waste gets pushed out so the cell stays clean\\n\\nSome cells have a secondary wall that surrounds the cell membrane. The **Cell wall** is…\\n• Found in **plant cells**, fungi, and bacteria — but **not in animal cells**\\n• Made mostly of cellulose (a tough, sturdy substance)\\n• Strong and rigid — it helps plants stand tall instead of flopping over"
     }
   ]
 }
 
+note: please mimick teaching style and content structure of examples, and try to have each lesson fully teach at least one subtopic. 
 BLOCK TYPES TO USE:
 - "overview": Introduction, learning goals, main questions
 - "key_concepts": Essential terms and principles
 - "detailed_explanation": In-depth explanations of concepts
-- "examples": Real-world applications and illustrations
 - "summary": Summary and key takeaways
 
 Remember: Output ONLY valid JSON with exactly 10-14 blocks. Each block must contain substantial educational content with proper JSON escaping."""
@@ -185,7 +190,7 @@ Output valid JSON with exactly 10-14 teaching blocks."""
             # Fallback: look for any array in the response
             lesson_data = None
             for key, value in parsed_data.items():
-                if isinstance(value, list):
+                if isinstance(value, value):
                     lesson_data = value
                     break
             
