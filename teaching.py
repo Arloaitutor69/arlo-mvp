@@ -54,7 +54,7 @@ TEACHING_SCHEMA = {
                         },
                         "content": {
                             "type": "string",
-                            "minLength": 50
+                            "minLength": 75
                         }
                     },
                     "required": ["type", "title", "content"],
@@ -82,7 +82,7 @@ TEACHING BLOCK STRUCTURE:
 - Final Block: summary of what was learned
 
 CONTENT QUALITY STANDARDS:
-- each mini lesson should be 50-80 words of teaching content 
+- each mini lesson should be 75-100 words of teaching content 
 - ONLY MENTION information relevant to a test, not tangential information
 - Explain concepts in extremely easy-to-understand, casual language
 - Use analogies, mneumonic devices, and other learning stradegies when helpful
