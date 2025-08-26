@@ -47,8 +47,8 @@ CONTENT QUALITY STANDARDS:
 - Each block should be ~50-130 words.
 - ONLY MENTION information relevant to a test, not tangential information.
 - Explain concepts in extremely easy-to-understand, casual language.
-- Use analogies, mnemonic devices, and other learning strategies when helpful.
-- Define all technical terms at first mention.
+- Use analogies and mnemonic devices like PMAT or 
+- Define all technical terms at first mention and assume student has almost zero prior knowledge
 
 --- Most Important ---
 1. Always output exactly 8-14 separate teaching blocks.
@@ -56,6 +56,7 @@ CONTENT QUALITY STANDARDS:
 3. If you cannot follow the formatting rules exactly, return a single JSON object like: { "error": "short reason why rules couldn't be followed" } and nothing else.
 """
 
+# --- JSON examples --- #
 # --- JSON examples --- #
 ASSISTANT_EXAMPLE_JSON_1 = """
 {
@@ -74,6 +75,28 @@ ASSISTANT_EXAMPLE_JSON_2 = """
     {
       "title": "The Cell Membrane: Your Cell's Security System",
       "content": "The **cell membrane** works like a security guard or a bouncer at a door. It decides what can come into the cell and what has to stay out.\\n\\n**Key things to know:**\\n* It's made of a double layer of phospholipids (kind of like a thin soapy bubble wall)\\n* It is **selectively permeable** – a fancy term for deciding what goes in and what comes out\\n* It has special **transport proteins** that act like doors or ID checkers for bigger molecules when they want to enter or leave\\n\\n**What actually gets through:**\\n* Water and very small molecules can slip in and out easily\\n* Larger molecules need a special 'door' (transport proteins)\\n* Waste gets pushed out so the cell stays clean"
+    }
+  ]
+}
+"""
+
+ASSISTANT_EXAMPLE_JSON_3 = """
+{
+  "lesson": [
+    {
+      "title": "Micro vs. Macro Economics",
+      "content": "Economics is split into two main 'worlds.'\\n\\n**Microeconomics:** The study of small, individual decisions.\\n* Example: A family choosing whether to eat out or cook at home\\n* Example: A business deciding how much to charge for sneakers\\n\\n**Macroeconomics:** The study of the whole economy.\\n* Example: Why is inflation rising?\\n* Example: Why do some countries grow richer while others struggle?\\n\\nThink of it like zooming in with a camera: **Micro = close-up**, **Macro = wide-angle** view of the entire economy."
+    }
+  ]
+}
+"""
+
+ASSISTANT_EXAMPLE_JSON_4 = """
+{
+  "lesson": [
+    {
+      "title": "Cells and Cell Theory",
+      "content": "A **cell** is the smallest living piece of life that can do all the important things like grow, use energy, react to surroundings, and reproduce.\\n\\n**Cell Theory says:**\\n* All living things are made of cells\\n* All cells come from other cells\\n\\n**Types of cells:**\\n* **Prokaryotes:** Simple cells with no nucleus, DNA floats in cytoplasm, reproduce fast by binary fission (split in two)\\n* **Eukaryotes:** Found in plants and animals, more complex with a nucleus to protect DNA, like miniature cities with factories and workers\\n\\nCells often team up to make bigger organisms (like humans with trillions of cells working together)."
     }
   ]
 }
@@ -155,8 +178,11 @@ Output exactly 8-14 teaching blocks in valid JSON format with proper formatting 
             {"role": "system", "content": GPT_SYSTEM_PROMPT},
             {"role": "assistant", "content": ASSISTANT_EXAMPLE_JSON_1},
             {"role": "assistant", "content": ASSISTANT_EXAMPLE_JSON_2},
+            {"role": "assistant", "content": ASSISTANT_EXAMPLE_JSON_3},
+            {"role": "assistant", "content": ASSISTANT_EXAMPLE_JSON_4},
             {"role": "user", "content": user_prompt},
         ]
+
 
         # First attempt
         response = _call_model_and_get_parsed(input_messages)
