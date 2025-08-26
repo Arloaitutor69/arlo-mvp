@@ -174,7 +174,7 @@ Output valid JSON with exactly 10-14 teaching blocks."""
                 "json_schema": TEACHING_SCHEMA
             },
             reasoning_effort="low",
-            max_tokens=5000
+            max_completion_tokens=5000
         )
 
         # Parse the guaranteed valid JSON response
