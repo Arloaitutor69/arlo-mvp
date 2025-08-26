@@ -88,38 +88,45 @@ CONTENT QUALITY STANDARDS:
 - Use analogies, mneumonic devices, and other learning stradegies when helpful
 - Define all technical terms at first mention
 
-EXAMPLE FORMAT - Economics/Cell Biology Topic:
+EXAMPLE FORMAT - Economics
+
 {
   "lesson": [
     {
       "type": "overview",
       "title": "What Are We Going to Learn About Economics?",
-      "content": "**Main Questions:**\\n\\n• What is economics and why does it matter in daily life?\\n• How do scarcity and choice affect everyone's decisions?\\n• What's the difference between microeconomics and macroeconomics?\\n\\n**Learning Goals:**\\n\\n• Understand what economics is really about\\n• Learn key concepts like scarcity and opportunity cost\\n• See how economics affects both individual choices and whole countries\\n• Compare micro and macro perspectives in simple terms"
+      "content": "**Main Questions:**\n\n• What is economics and why does it matter in daily life?\n• How do scarcity and choice affect everyone's decisions?\n• What's the difference between microeconomics and macroeconomics?\n\n**Learning Goals:**\n\n• Understand what economics is really about\n• Learn key concepts like scarcity and opportunity cost\n• See how economics affects both individual choices and whole countries\n• Compare micro and macro perspectives in simple terms"
     },
     {
       "type": "mini_lesson",
       "title": "What Is Economics, Really?",
-      "content": "**Economics** is the study of how people make choices about their **limited resources**. Everyone—individuals, businesses, and governments—has to make decisions about what to use, what to save, and what to trade.\\n\\n**Key ideas:**\\n• **Scarcity:** Resources (money, time, food, etc.) are **limited**. We can't have everything we want.\\n• **Choices:** Because of scarcity, we make decisions about what to use resources for.\\n• **Opportunity Cost:** Whenever you choose one thing, you give up the **next best alternative**. (Example: if you spend $10 on lunch, you can't spend that $10 on a movie ticket.)\\n\\nSo economics is the study of **who gets what, how they can get it, and why!**"
+      "content": "**Economics** is the study of how people make choices about their **limited resources**. Everyone—individuals, businesses, and governments—has to make decisions about what to use, what to save, and what to trade.\n\n**Key ideas:**\n• **Scarcity:** Resources (money, time, food, etc.) are **limited**. We can't have everything we want.\n• **Choices:** Because of scarcity, we make decisions about what to use resources for.\n• **Opportunity Cost:** Whenever you choose one thing, you give up the **next best alternative**. (Example: if you spend $10 on lunch, you can't spend that $10 on a movie ticket.)\n\nSo economics is the study of **who gets what, how they can get it, and why!**"
     },
     {
       "type": "mini_lesson",
       "title": "Micro vs. Macro Economics",
-      "content": "Economics is split into two main \\"worlds.\\"\\n\\n• **Microeconomics:** The study of small, individual decisions.\\n   • Example: A family choosing whether to eat out or cook at home.\\n   • Example: A business deciding how much to charge for sneakers.\\n\\n• **Macroeconomics:** The study of the whole economy.\\n   • Example: Why is inflation rising?\\n   • Example: Why do some countries grow richer while others struggle?\\n\\nThink of it like zooming in with a camera: **Micro = zoomed-in close-up**, **Macro = wide angle view of the entire economy.**"
-    },
+      "content": "Economics is split into two main \"worlds.\"\n\n• **Microeconomics:** The study of small, individual decisions.\n   • Example: A family choosing whether to eat out or cook at home.\n   • Example: A business deciding how much to charge for sneakers.\n\n• **Macroeconomics:** The study of the whole economy.\n   • Example: Why is inflation rising?\n   • Example: Why do some countries grow richer while others struggle?\n\nThink of it like zooming in with a camera: **Micro = zoomed-in close-up**, **Macro = wide angle view of the entire economy.**"
+    }
+  ]
+}
 
-    here is now an explenation of teaching cell biology 
+here is a second cell biology example 
+
+{
+  "lesson": [
     {
       "type": "mini_lesson",
       "title": "What Is a Cell, Really?",
-      "content": "A **cell** is the smallest living piece of life that can do all the important things like grow, use energy, react to its surroundings, and replicate to make new cells. **Cell theory** says that…\\n• All living things are made of cells\\n• All cells that you see came from another cell at one point\\n\\nThe most basic type of cell is called a **prokaryote**. These guys have only ONE cell, hence their name, single cell life forms. Prokaryotes are special in a few ways:\\n• No nucleus (remember that big circle in the middle of the cell)\\n• Their DNA floats freely in the cytoplasm (jelly like substance that fills the whole cell)\\n• They reproduce extremely quickly by a process called binary fission (one cell that splits into two)\\n\\nThe cells that you have are called **Eukaryotes**—they are cells found in plants and animals, and are like miniature cities with their own factories, workers, and laws."
+      "content": "A **cell** is the smallest living piece of life that can do all the important things like grow, use energy, react to its surroundings, and replicate to make new cells. **Cell theory** says that…\n• All living things are made of cells\n• All cells that you see came from another cell at one point\n\nThe most basic type of cell is called a **prokaryote**. These guys have only ONE cell, hence their name, single cell life forms. Prokaryotes are special in a few ways:\n• No nucleus (remember that big circle in the middle of the cell)\n• Their DNA floats freely in the cytoplasm (jelly like substance that fills the whole cell)\n• They reproduce extremely quickly by a process called binary fission (one cell that splits into two)\n\nThe cells that you have are called **Eukaryotes**—they are cells found in plants and animals, and are like miniature cities with their own factories, workers, and laws."
     },
     {
       "type": "mini_lesson",
       "title": "The Cell Membrane: Your Cell's Security System",
-      "content": "The **cell membrane** works like a security guard or a bouncer at a door. It decides what can come into the cell and what has to stay out.\\n\\n**Key things to know:**\\n• It's made of a double layer of phospholipids (kind of like a thin soapy bubble wall)\\n• It is **selectively permeable** – a fancy term for deciding what goes in and what comes out\\n• It has special transport proteins that act like doors or ID checkers for bigger molecules when they want to enter or leave\\n\\n**What actually gets through:**\\n• Water and very small molecules can slip in and out easily\\n• Larger molecules need a special 'door' (transport proteins)\\n• Waste gets pushed out so the cell stays clean\\n\\nSome cells have a secondary wall that surrounds the cell membrane. The **Cell wall** is…\\n• Found in **plant cells**, fungi, and bacteria — but **not in animal cells**\\n• Made mostly of cellulose (a tough, sturdy substance)\\n• Strong and rigid — it helps plants stand tall instead of flopping over"
+      "content": "The **cell membrane** works like a security guard or a bouncer at a door. It decides what can come into the cell and what has to stay out.\n\n**Key things to know:**\n• It's made of a double layer of phospholipids (kind of like a thin soapy bubble wall)\n• It is **selectively permeable** – a fancy term for deciding what goes in and what comes out\n• It has special transport proteins that act like doors or ID checkers for bigger molecules when they want to enter or leave\n\n**What actually gets through:**\n• Water and very small molecules can slip in and out easily\n• Larger molecules need a special 'door' (transport proteins)\n• Waste gets pushed out so the cell stays clean\n\nSome cells have a secondary wall that surrounds the cell membrane. The **Cell wall** is…\n• Found in **plant cells**, fungi, and bacteria — but **not in animal cells**\n• Made mostly of cellulose (a tough, sturdy substance)\n• Strong and rigid — it helps plants stand tall instead of flopping over"
     }
   ]
 }
+
 
 note: please mimick teaching style and content structure of examples, and try to have each lesson fully teach at least one subtopic. 
 BLOCK TYPES TO USE:
@@ -167,7 +174,7 @@ Output valid JSON with exactly 10-14 teaching blocks."""
                 "json_schema": TEACHING_SCHEMA
             },
             reasoning_effort="low",
-            max_output_tokens=5000
+            max_tokens=5000
         )
 
         # Parse the guaranteed valid JSON response
