@@ -166,7 +166,7 @@ Output valid JSON with exactly 10-14 teaching blocks."""
                 "type": "json_schema",
                 "json_schema": TEACHING_SCHEMA
             },
-            reasoning_effort="low"
+            reasoning_effort="low",
             max_output_tokens=5000
         )
 
