@@ -144,9 +144,12 @@ Output valid JSON with exactly 10-14 teaching blocks."""
         ]
 
         # --- New API call with responses endpoint --- #
-        response = client.chat.responses.create(
+        response = client.responses.create(
             model="gpt-5-nano",
-            messages=messages,
+            input=[
+                {"role": "system", "content": GPT_SYSTEM_PROMPT},
+                {"role": "user", "content": user_prompt}
+            ],
             response_format={
                 "type": "json_schema",
                 "json_schema": TEACHING_SCHEMA
@@ -154,6 +157,7 @@ Output valid JSON with exactly 10-14 teaching blocks."""
             reasoning={"effort": "low"},
             max_output_tokens=5000
         )
+
 
         # Extract validated structured JSON directly
         raw_content = response.output[0].content[0].text
