@@ -52,7 +52,7 @@ TEACHING_SCHEMA = {
     }
 }
 
-# --- GPT Prompt with multiple teaching content examples --- #
+# --- GPT System Prompt with original examples + instruction --- #
 GPT_SYSTEM_PROMPT = """You are an expert tutor creating comprehensive, engaging, easy-to-understand learning content. 
 Create exactly 10-14 teaching blocks that thoroughly cover ALL aspects of the requested topic.
 
@@ -90,6 +90,9 @@ Content: A cell is the smallest living unit that can grow, use energy, react to 
 
 Title: The Cell Membrane: Your Cell's Security System
 Content: The cell membrane is like a bouncer at the door, deciding what enters and exits. Key points: made of a phospholipid bilayer, selectively permeable (controls passage of molecules), uses transport proteins for larger molecules. Water and small molecules pass easily; waste is expelled to keep the cell clean. Some cells have a secondary cell wall (plants, fungi, bacteria) made of cellulose, strong and rigid for structural support.
+
+--- IMPORTANT ADDITION ---
+Always output exactly 10-14 separate teaching blocks. Do not merge examples. Treat each subtopic as its own block. Follow the style of the examples exactly.
 """
 
 @router.post("/teaching", response_model=TeachingResponse)
@@ -122,7 +125,7 @@ Output valid JSON with exactly 10-14 teaching blocks."""
                 {"role": "system", "content": GPT_SYSTEM_PROMPT},
                 {"role": "user", "content": user_prompt}
             ],
-            format={   # updated from response_format
+            response_format={
                 "type": "json_schema",
                 "json_schema": TEACHING_SCHEMA
             },
