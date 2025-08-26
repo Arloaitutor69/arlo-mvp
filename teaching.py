@@ -150,7 +150,7 @@ def _call_model_and_get_parsed(input_messages, max_tokens=4000):
         input=input_messages,
         text_format=TeachingResponse,
         reasoning={"effort": "low"},
-        instructions="Teach the topic in a fun, casual, and conversational style that mimics how a friendly tutor would explain things. Keep tone freindly engaging throughout entire lesson, especially in the later blocks",
+        instructions="Teach the topic in a casual, and conversational style that mimics how a tutor would explain things. Keep tone engaging throughout entire lesson, especially in the later blocks",
         max_output_tokens=max_tokens,
     )
 
