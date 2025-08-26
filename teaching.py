@@ -143,23 +143,23 @@ Output valid JSON with exactly 10-14 teaching blocks."""
             {"role": "user", "content": user_prompt}
         ]
 
-        # Make API call with structured outputs
-        response = client.chat.completions.create(
+        # --- New API call with responses endpoint --- #
+        response = client.chat.responses.create(
             model="gpt-5-nano",
             messages=messages,
             response_format={
                 "type": "json_schema",
-                "json_schema": TEACHING_SCHEMA  # ✅ pass full schema with name
+                "json_schema": TEACHING_SCHEMA
             },
-            reasoning_effort="low",
-            max_completion_tokens=5000
+            reasoning={"effort": "low"},
+            max_output_tokens=5000
         )
 
-        # Parse the guaranteed valid JSON response
-        raw_content = response.choices[0].message.content
+        # Extract validated structured JSON directly
+        raw_content = response.output[0].content[0].text
         parsed_data = json.loads(raw_content)
         
-        # Debug: print what we actually got
+        # Debug
         print(f"Parsed data keys: {list(parsed_data.keys()) if isinstance(parsed_data, dict) else 'Not a dict'}")
         print(f"Raw content sample: {raw_content[:200]}...")
         
@@ -194,14 +194,12 @@ Output valid JSON with exactly 10-14 teaching blocks."""
         return TeachingResponse(lesson=lesson_blocks)
 
     except json.JSONDecodeError as e:
-        # This should never happen with structured outputs, but just in case
         raise HTTPException(
             status_code=500,
             detail=f"Failed to parse response as JSON: {str(e)}"
         )
     
     except Exception as e:
-        # Handle any other errors
         raise HTTPException(
             status_code=500,
             detail=f"Error generating teaching content: {str(e)}"
