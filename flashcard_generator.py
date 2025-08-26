@@ -11,7 +11,6 @@ import asyncio
 import aiohttp
 from concurrent.futures import ThreadPoolExecutor
 import re
-from dataclasses import dataclass
 
 # Load environment variables
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
@@ -20,23 +19,12 @@ CONTEXT_BASE_URL = os.getenv("CONTEXT_API_BASE", "https://arlo-mvp-2.onrender.co
 router = APIRouter()
 
 # -----------------------------
-# Enhanced Models
+# Models
 # -----------------------------
-@dataclass
-class LearningGap:
-    concept: str
-    description: str
-    priority: str  # "high", "medium", "low"
-    prerequisites: List[str]
-
 class FlashcardRequest(BaseModel):
     content: str
     format: Optional[str] = "Q&A"
     user_id: Optional[str] = None
-    difficulty_level: Optional[str] = "adaptive"  # "beginner", "intermediate", "advanced", "adaptive"
-    focus_areas: Optional[List[str]] = []
-    learning_objectives: Optional[List[str]] = []
-    exclude_topics: Optional[List[str]] = []
 
 class FlashcardItem(BaseModel):
     id: str
@@ -52,40 +40,9 @@ class FlashcardItem(BaseModel):
     tags: Optional[List[str]] = []
     explanation: Optional[str] = None  # Additional context/explanation
 
-# -----------------------------
-# JSON Schema for structured outputs
-# -----------------------------
-FLASHCARDS_SCHEMA = {
-    "name": "flashcards_response",
-    "schema": {
-        "type": "object",
-        "strict": True,
-        "properties": {
-            "flashcards": {
-                "type": "array",
-                "minItems": 10,
-                "maxItems": 15,
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "question": {
-                            "type": "string",
-                            "minLength": 10
-                        },
-                        "answer": {
-                            "type": "string",
-                            "minLength": 5
-                        }
-                    },
-                    "required": ["question", "answer"],
-                    "additionalProperties": False
-                }
-            }
-        },
-        "required": ["flashcards"],
-        "additionalProperties": False
-    }
-}
+# --- Output schema for structured parsing --- #
+class FlashcardResponse(BaseModel):
+    flashcards: List[dict]
 
 # -----------------------------
 # Enhanced Context Cache
@@ -128,75 +85,13 @@ def get_cached_context(user_id: str) -> Dict[str, Any]:
         loop.close()
 
 # -----------------------------
-# Learning Analytics
+# Prompt Engineering
 # -----------------------------
-class LearningAnalyzer:
-    @staticmethod
-    def analyze_content_complexity(content: str) -> Dict[str, Any]:
-        """Analyze content to determine complexity and key concepts"""
-        word_count = len(content.split())
-        sentence_count = len(re.findall(r'[.!?]+', content))
-        avg_sentence_length = word_count / max(sentence_count, 1)
-        
-        # Extract potential key concepts (capitalized terms, technical terms)
-        key_concepts = re.findall(r'\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b', content)
-        technical_terms = re.findall(r'\b\w+(?:tion|sion|ment|ness|ity|ism|ology|graphy)\b', content)
-        
-        complexity_score = min(10, (avg_sentence_length / 15) * 5 + (len(technical_terms) / 10) * 5)
-        
-        return {
-            "complexity_score": complexity_score,
-            "key_concepts": list(set(key_concepts[:10])),
-            "technical_terms": list(set(technical_terms[:10])),
-            "word_count": word_count,
-            "estimated_reading_time": word_count / 200  # minutes
-        }
+def build_flashcard_prompt(content: str, context: Dict[str, Any]) -> str:
+    # Build personalization context
+    personalization = _build_personalization_context(context)
     
-    @staticmethod
-    def identify_learning_gaps(content: str, user_context: Dict[str, Any]) -> List[LearningGap]:
-        """Identify potential learning gaps based on content and user context"""
-        gaps = []
-        weak_areas = user_context.get('weak_areas', [])
-        
-        # Analyze content for prerequisite concepts
-        content_analysis = LearningAnalyzer.analyze_content_complexity(content)
-        
-        for concept in content_analysis['key_concepts']:
-            if any(weak_area.lower() in concept.lower() for weak_area in weak_areas):
-                gaps.append(LearningGap(
-                    concept=concept,
-                    description=f"User has indicated weakness in {concept}",
-                    priority="high",
-                    prerequisites=[]
-                ))
-        
-        return gaps
-
-# -----------------------------
-# Enhanced Prompt Engineering
-# -----------------------------
-class FlashcardPromptBuilder:
-    @staticmethod
-    def build_enhanced_prompt(
-        content: str,
-        context: Dict[str, Any],
-        request: FlashcardRequest,
-        content_analysis: Dict[str, Any],
-        learning_gaps: List[LearningGap]
-    ) -> str:
-        
-        # Determine optimal difficulty based on context and request
-        difficulty_level = FlashcardPromptBuilder._determine_difficulty(
-            request.difficulty_level, context, content_analysis
-        )
-        
-        # Build personalization context
-        personalization = FlashcardPromptBuilder._build_personalization_context(context)
-        
-        # Build learning gaps context
-        gaps_context = FlashcardPromptBuilder._build_gaps_context(learning_gaps)
-        
-        return f"""You are a personalized flashcard-generating tutor. Create detailed, optimized flashcards for memory retention and understanding.
+    return f"""You are a personalized flashcard-generating tutor. Create detailed, optimized flashcards for memory retention and understanding.
 
 CONTENT TO PROCESS - Extract and consolidate key information from what was taught:
 {content}
@@ -204,16 +99,8 @@ CONTENT TO PROCESS - Extract and consolidate key information from what was taugh
 PERSONALIZATION CONTEXT:
 {personalization}
 
-LEARNING GAPS TO ADDRESS:
-{gaps_context}
-
-CONTENT ANALYSIS:
-- Key Concepts: {', '.join(content_analysis['key_concepts'])}
-- Technical Terms: {', '.join(content_analysis['technical_terms'])}
-- Complexity: {difficulty_level}
-
 GENERATION REQUIREMENTS:
-Create exactly 10-15 flashcards focusing on:
+Create exactly 12-20 flashcards focusing on:
 - FACTS that need memorization
 - DEFINITIONS of key terms and concepts  
 - IMPORTANT DETAILS that students commonly forget
@@ -229,6 +116,13 @@ QUALITY STANDARDS:
 - Ensure each card addresses a specific learning objective
 - Prioritize information that benefits from spaced repetition
 
+CRITICAL REQUIREMENTS:
+1. Return ONLY JSON data conforming to the schema, never the schema itself.
+2. Output ONLY valid JSON format with proper escaping.
+3. Use double quotes, escape internal quotes as \\\".
+4. Use \\n for line breaks within content.
+5. No trailing commas.
+
 EXAMPLE FORMAT:
 Content: Cell Biology - The cell membrane controls what enters and exits the cell through selective permeability. Mitochondria produce ATP energy. The nucleus contains DNA and controls cell functions.
 
@@ -238,54 +132,103 @@ example Flashcards:
 - Question: "What does the nucleus contain and what is its role?" Answer: "The nucleus contains the cell's DNA and serves as the control center, directing all cellular activities and functions."
 
 Create flashcards that help students memorize and understand the key concepts from the teaching content."""
+
+def _build_personalization_context(context: Dict[str, Any]) -> str:
+    if not context:
+        return "No personalization context available"
     
-    @staticmethod
-    def _determine_difficulty(
-        requested_difficulty: str,
-        context: Dict[str, Any],
-        content_analysis: Dict[str, Any]
-    ) -> str:
-        if requested_difficulty != "adaptive":
-            return requested_difficulty
-        
-        # Adaptive difficulty based on user context and content
-        complexity_score = content_analysis['complexity_score']
-        user_experience = len(context.get('user_goals', []))
-        
-        if complexity_score < 3 and user_experience < 2:
-            return "beginner"
-        elif complexity_score < 7 and user_experience < 4:
-            return "intermediate"
-        else:
-            return "advanced"
-    
-    @staticmethod
-    def _build_personalization_context(context: Dict[str, Any]) -> str:
-        if not context:
-            return "No personalization context available"
-        
-        return f"""Current Topic: {context.get('current_topic', 'General')}
+    return f"""Current Topic: {context.get('current_topic', 'General')}
 Learning Goals: {', '.join(context.get('user_goals', [])) or 'Not specified'}
-Strong Areas: {', '.join(context.get('strong_areas', [])) or 'Not identified'}
-Weak Areas: {', '.join(context.get('weak_areas', [])) or 'Not identified'}
+Strong Areas: {', '.join(context.get('strong_areas', [])) or 'Not specified'}
+Weak Areas: {', '.join(context.get('weak_areas', [])) or 'Not specified'}
 Preferred Learning Style: {context.get('learning_style', 'Not specified')}
 Recent Study Sessions: {len(context.get('recent_sessions', []))}
 Review Queue Size: {len(context.get('review_queue', []))}"""
-    
-    @staticmethod
-    def _build_gaps_context(gaps: List[LearningGap]) -> str:
-        if not gaps:
-            return "No specific learning gaps identified"
-        
-        gap_descriptions = []
-        for gap in gaps:
-            gap_descriptions.append(f"- {gap.concept}: {gap.description} (Priority: {gap.priority})")
-        
-        return "\n".join(gap_descriptions)
 
-# -----------------------------
-# Enhanced Generation Function
-# -----------------------------
+# --- JSON examples --- #
+ASSISTANT_EXAMPLE_JSON_1 = """{
+  "flashcards": [
+    {
+      "question": "What is the main function of the cell membrane?",
+      "answer": "The cell membrane controls what substances can enter and exit the cell through selective permeability, acting like a security guard for the cell."
+    },
+    {
+      "question": "What is the primary function of mitochondria?",
+      "answer": "Mitochondria produce ATP (adenosine triphosphate), which is the cell's main source of energy."
+    }
+  ]
+}"""
+
+ASSISTANT_EXAMPLE_JSON_2 = """{
+  "flashcards": [
+    {
+      "question": "What is opportunity cost in economics?",
+      "answer": "Opportunity cost is the value of the next best alternative that you give up when making a choice. For example, if you spend $10 on lunch, the opportunity cost is the movie ticket you could have bought instead."
+    },
+    {
+      "question": "What does scarcity mean in economics?",
+      "answer": "Scarcity means that resources (money, time, materials, etc.) are limited while our wants and needs are unlimited. This forces us to make choices about how to use our resources."
+    }
+  ]
+}"""
+
+ASSISTANT_EXAMPLE_JSON_3 = """{
+  "flashcards": [
+    {
+      "question": "",
+      "answer": ""
+    }
+  ]
+}"""
+
+# --- Helper utilities --- #
+def _count_words(text: str) -> int:
+    return len(re.findall(r"\w+", text))
+
+def _flashcard_valid(flashcard: dict) -> (bool, Optional[str]):
+    if not isinstance(flashcard.get("question"), str) or not flashcard["question"].strip():
+        return False, "missing or invalid question"
+    if not isinstance(flashcard.get("answer"), str) or not flashcard["answer"].strip():
+        return False, "missing or invalid answer"
+    if len(flashcard["question"]) < 10:
+        return False, "question too short"
+    if len(flashcard["answer"]) < 5:
+        return False, "answer too short"
+    return True, None
+
+def _sanitize_content(raw: str) -> str:
+    s = raw.replace("\r\n", "\n").replace("\r", "\n")
+    s = s.replace("\n", "\\n")
+    s = s.replace('"', '\\"')
+    return s
+
+def _validate_and_sanitize_flashcards(flashcards: List[dict]) -> (bool, Optional[str], List[dict]):
+    sanitized = []
+    for i, card in enumerate(flashcards):
+        if not isinstance(card, dict):
+            return False, f"flashcard {i} is not a dictionary", flashcards
+        ok, reason = _flashcard_valid(card)
+        if not ok:
+            return False, f"flashcard {i} invalid: {reason}", flashcards
+        sanitized_question = _sanitize_content(card["question"])
+        sanitized_answer = _sanitize_content(card["answer"])
+        sanitized.append({
+            "question": sanitized_question,
+            "answer": sanitized_answer
+        })
+    return True, None, sanitized
+
+# --- OpenAI call wrapper --- #
+def _call_model_and_get_parsed(input_messages, max_tokens=4000):
+    return client.responses.parse(
+        model="gpt-5-nano",
+        input=input_messages,
+        text_format=FlashcardResponse,
+        reasoning={"effort": "low"},
+        instructions="Generate flashcards that focus on key facts, definitions, and concepts that benefit from spaced repetition.",
+        max_output_tokens=max_tokens,
+    )
+
 def generate_flashcards_sync(
     content: str,
     context: Dict[str, Any],
@@ -293,48 +236,71 @@ def generate_flashcards_sync(
 ) -> List[Dict[str, Any]]:
     """Synchronous flashcard generation with enhanced AI prompting"""
     
-    # Analyze content complexity
-    content_analysis = LearningAnalyzer.analyze_content_complexity(content)
-    
-    # Identify learning gaps
-    learning_gaps = LearningAnalyzer.identify_learning_gaps(content, context)
-    
-    # Build enhanced prompt
-    system_prompt = FlashcardPromptBuilder.build_enhanced_prompt(
-        content, context, request, content_analysis, learning_gaps
-    )
-    
     try:
-        # Prepare messages
-        messages = [
+        # Build prompt
+        system_prompt = build_flashcard_prompt(content, context)
+        
+        # User prompt
+        user_prompt = f"Create flashcards for this content: {content}\n\nOutput exactly 12-20 flashcards in valid JSON format."
+        
+        # Messages
+        input_messages = [
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": f"Create flashcards for this content: {content}"}
+            {"role": "assistant", "content": ASSISTANT_EXAMPLE_JSON_1},
+            {"role": "assistant", "content": ASSISTANT_EXAMPLE_JSON_2},
+            {"role": "assistant", "content": ASSISTANT_EXAMPLE_JSON_3},
+            {"role": "user", "content": user_prompt},
         ]
+
+        # First attempt
+        response = _call_model_and_get_parsed(input_messages)
+
+        if getattr(response, "output_parsed", None) is None:
+            if hasattr(response, "refusal") and response.refusal:
+                raise HTTPException(status_code=400, detail=response.refusal)
+            retry_msg = {
+                "role": "user",
+                "content": "Fix JSON only: If the previous response had any formatting or schema issues, return only the corrected single JSON object. Nothing else."
+            }
+            response = _call_model_and_get_parsed(input_messages + [retry_msg])
+            if getattr(response, "output_parsed", None) is None:
+                raise HTTPException(status_code=500, detail="Model did not return valid parsed output after retry.")
+
+        flashcards = response.output_parsed.flashcards
+
+        # Ensure 12–20 flashcards
+        if not (12 <= len(flashcards) <= 20):
+            retry_msg = {
+                "role": "user",
+                "content": "Fix JSON only: Must have 12-20 flashcards. Return corrected JSON only."
+            }
+            response_retry = _call_model_and_get_parsed(input_messages + [retry_msg])
+            if getattr(response_retry, "output_parsed", None) is None:
+                raise HTTPException(status_code=500, detail=f"Flashcard count invalid ({len(flashcards)}). Retry failed.")
+            flashcards = response_retry.output_parsed.flashcards
+            if not (12 <= len(flashcards) <= 20):
+                raise HTTPException(status_code=500, detail=f"Flashcard count invalid after retry ({len(flashcards)}).")
+
+        # Validate + sanitize
+        valid, reason, sanitized_flashcards = _validate_and_sanitize_flashcards(flashcards)
+        if not valid:
+            retry_msg = {
+                "role": "user",
+                "content": f"Fix JSON only: Last output failed validation ({reason}). Return corrected JSON only."
+            }
+            response_retry = _call_model_and_get_parsed(input_messages + [retry_msg])
+            if getattr(response_retry, "output_parsed", None) is None:
+                raise HTTPException(status_code=500, detail=f"Validation failed ({reason}) and retry failed.")
+            flashcards = response_retry.output_parsed.flashcards
+            valid2, reason2, sanitized_flashcards2 = _validate_and_sanitize_flashcards(flashcards)
+            if not valid2:
+                raise HTTPException(status_code=500, detail=f"Validation failed after retry: {reason2}")
+            sanitized_flashcards = sanitized_flashcards2
+
+        return sanitized_flashcards
         
-        # Make API call with structured outputs
-        response = client.chat.completions.create(
-            model="gpt-5-nano",
-            messages=messages,
-            response_format={
-                "type": "json_schema",
-                "json_schema": FLASHCARDS_SCHEMA
-            },
-            reasoning_effort="low"
-        )
-        
-        # Parse the guaranteed valid JSON response
-        raw_content = response.choices[0].message.content
-        parsed_data = json.loads(raw_content)
-        
-        return parsed_data["flashcards"]
-        
-    except json.JSONDecodeError as e:
-        # This should never happen with structured outputs, but just in case
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to parse response as JSON: {str(e)}"
-        )
-    
+    except HTTPException:
+        raise
     except Exception as e:
         print(f"❌ AI generation error: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to generate flashcards: {str(e)}")
