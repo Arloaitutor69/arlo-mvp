@@ -3,9 +3,8 @@ from pydantic import BaseModel
 from typing import List, Optional
 from openai import OpenAI
 import os
-import json
 
-# Initialize OpenAI client
+# --- Initialize OpenAI client --- #
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 router = APIRouter()
@@ -13,9 +12,9 @@ router = APIRouter()
 # --- Input schema --- #
 class TeachingRequest(BaseModel):
     description: str
-    subject: Optional[str] = None  # e.g., "Biology", "History", "Mathematics"
-    level: Optional[str] = None    # e.g., "High School", "College", "Graduate"
-    test_type: Optional[str] = None # e.g., "SAT", "AP Exam", "Midterm", "Final"
+    subject: Optional[str] = None
+    level: Optional[str] = None
+    test_type: Optional[str] = None
 
 # --- Output schema --- #
 class TeachingBlock(BaseModel):
@@ -25,34 +24,7 @@ class TeachingBlock(BaseModel):
 class TeachingResponse(BaseModel):
     lesson: List[TeachingBlock]
 
-# --- JSON Schema for structured outputs --- #
-TEACHING_SCHEMA = {
-    "name": "teaching_response",
-    "schema": {
-        "type": "object",
-        "strict": True,
-        "properties": {
-            "lesson": {
-                "type": "array",
-                "minItems": 10,
-                "maxItems": 14,
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "title": {"type": "string", "minLength": 1},
-                        "content": {"type": "string", "minLength": 600}
-                    },
-                    "required": ["title", "content"],
-                    "additionalProperties": False
-                }
-            }
-        },
-        "required": ["lesson"],
-        "additionalProperties": False
-    }
-}
-
-# --- GPT System Prompt with original examples + instruction --- #
+# --- GPT System Prompt with examples --- #
 GPT_SYSTEM_PROMPT = """You are an expert tutor creating comprehensive, engaging, easy-to-understand learning content. 
 Create exactly 10-14 teaching blocks that thoroughly cover ALL aspects of the requested topic.
 
@@ -92,7 +64,7 @@ Title: The Cell Membrane: Your Cell's Security System
 Content: The cell membrane is like a bouncer at the door, deciding what enters and exits. Key points: made of a phospholipid bilayer, selectively permeable (controls passage of molecules), uses transport proteins for larger molecules. Water and small molecules pass easily; waste is expelled to keep the cell clean. Some cells have a secondary cell wall (plants, fungi, bacteria) made of cellulose, strong and rigid for structural support.
 
 --- IMPORTANT ADDITION ---
-Always output exactly 10-14 separate teaching blocks. Do not merge examples. Treat each subtopic as its own block. Follow the style of the examples exactly.
+Always output exactly 10-14 separate teaching blocks. Treat each subtopic as its own block. Follow the style of examples exactly.
 """
 
 @router.post("/teaching", response_model=TeachingResponse)
@@ -106,66 +78,44 @@ def generate_teaching_content(req: TeachingRequest):
             context_parts.append(f"Level: {req.level}")
         if req.test_type:
             context_parts.append(f"Test: {req.test_type}")
-        
         context_info = "\n".join(context_parts)
-        
+
         # Create user prompt
         user_prompt = f"""{context_info}
 
 Create a comprehensive lesson based on this study plan: {req.description}
 
 Ensure every topic in the study plan is properly explained, and avoid veering from the study plan. 
+Output exactly 10-14 teaching blocks in valid JSON format."""
 
-Output valid JSON with exactly 10-14 teaching blocks."""
-
-        # --- OpenAI Responses API call ---
-        response = client.responses.create(
+        # --- OpenAI Responses API call using parse() --- #
+        response = client.responses.parse(
             model="gpt-5-nano",
             input=[
                 {"role": "system", "content": GPT_SYSTEM_PROMPT},
                 {"role": "user", "content": user_prompt}
             ],
-            response_format={
-                "type": "json_schema",
-                "json_schema": TEACHING_SCHEMA
-            },
-            reasoning={"effort": "low"},
-            max_output_tokens=5000
+            text_format=TeachingResponse,
+            reasoning={"effort": "medium"},
+            max_output_tokens=7000
         )
 
-        # Extract validated structured JSON
-        raw_content = response.output[0].content[0].text
-        parsed_data = json.loads(raw_content)
-        
-        # Debug logging
-        print(f"Parsed data keys: {list(parsed_data.keys()) if isinstance(parsed_data, dict) else 'Not a dict'}")
-        print(f"Raw content sample: {raw_content[:200]}...")
-        
-        # Find lesson array
-        lesson_data = parsed_data.get("lesson")
-        if not lesson_data:
+        # Handle refusals
+        if hasattr(response, "refusal") and response.refusal:
+            raise HTTPException(status_code=400, detail=response.refusal)
+
+        # Extract lesson blocks
+        lesson_blocks = response.output_parsed.lesson
+
+        # Sanity check: ensure 10-14 blocks
+        if not (10 <= len(lesson_blocks) <= 14):
             raise HTTPException(
                 status_code=500,
-                detail=f"No lesson array found in response. Keys: {list(parsed_data.keys())}"
+                detail=f"Lesson block count ({len(lesson_blocks)}) not within 10–14 range"
             )
-        
-        # Convert to Pydantic models
-        lesson_blocks = [
-            TeachingBlock(
-                title=block.get("title", f"Learning Block {i+1}"),
-                content=block.get("content", "Educational content")
-            )
-            for i, block in enumerate(lesson_data)
-        ]
-        
+
         return TeachingResponse(lesson=lesson_blocks)
 
-    except json.JSONDecodeError as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to parse response as JSON: {str(e)}"
-        )
-    
     except Exception as e:
         raise HTTPException(
             status_code=500,
