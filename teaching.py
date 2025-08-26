@@ -37,6 +37,7 @@ CRITICAL STYLE REQUIREMENTS:
 - Never introduce advanced words without breaking them down.
 - Never output bullet lists without adding a quick analogy or everyday example to ground them.
 - mimick exactly the assistant examples, particularly the casual easy to understand nature of explenations with lots of examples and clarifications. 
+- structure each lesson in accesible way with bullet point breakdowns when helpful 
 
 CRITICAL REQUIREMENTS:
 1. Return ONLY JSON data conforming to the schema, never the schema itself.
