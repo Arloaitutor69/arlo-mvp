@@ -144,7 +144,8 @@ def _call_model_and_get_parsed(input_messages, max_tokens=4000):
         model="gpt-5-nano",
         input=input_messages,
         text_format=TeachingResponse,
-        reasoning={"effort": "low"}, ## switch back to low if too slow
+        reasoning={"effort": "low"},
+        instructions="Teach the topic in a conversational, approachable way that builds understanding gradually, emphasizes key concepts with clear examples and analogies",
         max_output_tokens=max_tokens,
     )
 
