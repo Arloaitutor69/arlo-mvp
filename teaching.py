@@ -46,17 +46,14 @@ TEACHING BLOCK STRUCTURE:
 CONTENT QUALITY STANDARDS:
 - Each block should be ~50-130 words.
 - ONLY MENTION information relevant to a test, not tangential information.
-- Explain concepts in extremely easy-to-understand, casual language.
-- Use analogies and mnemonic devices like PMAT or 
+- Explain concepts in extremely easy-to-understand, casual language. Use real world examples metaphors etc like the ones found in examples 
 - Define all technical terms at first mention and assume student has almost zero prior knowledge
 
 --- Most Important ---
 1. Always output exactly 8-14 separate teaching blocks.
 2. Mimic teaching style of examples as closely as possible, use same casual language, structure, and explanation style.
-3. If you cannot follow the formatting rules exactly, return a single JSON object like: { "error": "short reason why rules couldn't be followed" } and nothing else.
 """
 
-# --- JSON examples --- #
 # --- JSON examples --- #
 ASSISTANT_EXAMPLE_JSON_1 = """
 {
