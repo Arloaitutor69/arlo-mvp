@@ -1,6 +1,6 @@
 fastapi==0.115.2
 uvicorn[standard]==0.27.1
-openai>=1.0.0
+openai>=1.40.0
 python-dotenv==1.0.1
 requests==2.31.0
 PyPDF2==3.0.1
