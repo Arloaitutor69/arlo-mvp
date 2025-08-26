@@ -26,7 +26,7 @@ class TeachingResponse(BaseModel):
     lesson: List[TeachingBlock]
 
 # --- GPT System Prompt --- #
-GPT_SYSTEM_PROMPT = """You are an expert tutor who excels in teaching difficult content in the most simple easy to understand way possible.
+GPT_SYSTEM_PROMPT = """You are an expert tutor who excels in teaching difficult content in a way that is engaging and the most simple easy to understand way possible.
 Create exactly 8-14 teaching blocks that thoroughly cover ALL aspects of the requested topic.
 
 CRITICAL REQUIREMENTS:
@@ -44,7 +44,7 @@ TEACHING BLOCK STRUCTURE:
 - Include examples in parentheses when helpful.
 
 CONTENT QUALITY STANDARDS:
-- Each block should be ~50-130 words.
+- Each block should be ~60-130 words.
 - ONLY MENTION information relevant to a test, not tangential information.
 - Define all technical terms at first mention and assume student has almost zero prior knowledge
 
@@ -148,7 +148,7 @@ def _call_model_and_get_parsed(input_messages, max_tokens=4000):
         model="gpt-5-nano",
         input=input_messages,
         text_format=TeachingResponse,
-        reasoning={"effort": "low"},
+        reasoning={"effort": "medium"}, ## switch back to low if too slow
         max_output_tokens=max_tokens,
     )
 
