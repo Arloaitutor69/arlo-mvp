@@ -112,10 +112,6 @@ def _block_valid(block: TeachingBlock) -> (bool, Optional[str]):
         return False, "missing or invalid title"
     if not isinstance(block.content, str) or not block.content.strip():
         return False, "missing or invalid content"
-    if "* " not in block.content:
-        return False, "no bullet list found (require '* ' bullets)"
-    if ("\n" not in block.content) and ("\\n" not in block.content):
-        return False, "no newline breaks found"
     words = _count_words(block.content)
     if words < 40:
         return False, f"content too short ({words} words)"
@@ -148,7 +144,7 @@ def _call_model_and_get_parsed(input_messages, max_tokens=4000):
         model="gpt-5-nano",
         input=input_messages,
         text_format=TeachingResponse,
-        reasoning={"effort": "medium"}, ## switch back to low if too slow
+        reasoning={"effort": "low"}, ## switch back to low if too slow
         max_output_tokens=max_tokens,
     )
 
