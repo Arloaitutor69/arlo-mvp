@@ -45,7 +45,7 @@ TEACHING_SCHEMA = {
                         },
                         "content": {
                             "type": "string",
-                            "minLength": 100
+                            "minLength": 600
                         }
                     },
                     "required": ["title", "content"],
