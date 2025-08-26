@@ -25,8 +25,8 @@ class TeachingBlock(BaseModel):
 class TeachingResponse(BaseModel):
     lesson: List[TeachingBlock]
 
-# --- GPT System Prompt with JSON examples --- #
-GPT_SYSTEM_PROMPT = """You are an expert tutor creating who excels in teaching difficult content in the most simple easy to understand way possible.
+# --- GPT System Prompt --- #
+GPT_SYSTEM_PROMPT = """You are an expert tutor who excels in teaching difficult content in the most simple easy to understand way possible.
 Create exactly 8-14 teaching blocks that thoroughly cover ALL aspects of the requested topic.
 
 CRITICAL REQUIREMENTS:
@@ -44,20 +44,19 @@ TEACHING BLOCK STRUCTURE:
 - Include examples in parentheses when helpful.
 
 CONTENT QUALITY STANDARDS:
-- Each block should be ~50-130 words of teaching content (minimum lowered slightly).
+- Each block should be ~50-130 words.
 - ONLY MENTION information relevant to a test, not tangential information.
 - Explain concepts in extremely easy-to-understand, casual language.
 - Use analogies, mnemonic devices, and other learning strategies when helpful.
 - Define all technical terms at first mention.
 
 --- Most Important ---
-1. Always output exactly 8-14 separate teaching blocks. Treat each subtopic as its own block. Follow the formatting style of examples exactly with proper bullet points, bold text, and clear structure.
+1. Always output exactly 8-14 separate teaching blocks.
 2. Mimic teaching style of examples as closely as possible, use same casual language, structure, and explanation style.
 3. If you cannot follow the formatting rules exactly, return a single JSON object like: { "error": "short reason why rules couldn't be followed" } and nothing else.
 """
 
-# --- Assistant few-shot examples (TRUE JSON examples for formatting/escaping guidance) --- #
-# --- Assistant few-shot examples (TRUE JSON examples for formatting/escaping guidance) --- #
+# --- JSON examples --- #
 ASSISTANT_EXAMPLE_JSON_1 = """
 {
   "lesson": [
@@ -80,86 +79,59 @@ ASSISTANT_EXAMPLE_JSON_2 = """
 }
 """
 
-# --- Helper utilities for validation & sanitization --- #
+# --- Helper utilities --- #
 def _count_words(text: str) -> int:
     return len(re.findall(r"\w+", text))
 
 def _block_valid(block: TeachingBlock) -> (bool, Optional[str]):
-    """Validate a single block for basic rules. Returns (is_valid, reason_if_invalid)."""
     if not isinstance(block.title, str) or not block.title.strip():
         return False, "missing or invalid title"
     if not isinstance(block.content, str) or not block.content.strip():
         return False, "missing or invalid content"
-    # Require at least one bullet marker "* "
     if "* " not in block.content:
         return False, "no bullet list found (require '* ' bullets)"
-    # Require at least one newline (either actual newline or escaped)
     if ("\n" not in block.content) and ("\\n" not in block.content):
-        return False, "no newline breaks found (require \\n for paragraph breaks)"
-    # Word count roughly within range (allow some slack)
+        return False, "no newline breaks found"
     words = _count_words(block.content)
-    if words < 40:  # slightly relaxed lower bound to avoid false negatives
+    if words < 40:
         return False, f"content too short ({words} words)"
-    # title length small sanity
     if len(block.title) > 200:
         return False, "title too long"
     return True, None
 
 def _sanitize_content(raw: str) -> str:
-    """
-    Programmatically sanitize content to ensure:
-      - internal double quotes are escaped as \"
-      - newline characters are represented as \\n (literal backslash + n)
-      - ensure bullets '* ' are preserved
-    We assume raw is a Python string (parsed); we will convert actual newlines to \\n
-    and escape double quotes.
-    """
-    # First, convert actual newline characters to the two-character sequence \n
     s = raw.replace("\r\n", "\n").replace("\r", "\n")
     s = s.replace("\n", "\\n")
-    # Escape double quotes
     s = s.replace('"', '\\"')
     return s
 
 def _validate_and_sanitize_blocks(blocks: List[TeachingBlock]) -> (bool, Optional[str], List[TeachingBlock]):
-    """
-    Validate parsed blocks. If valid, sanitize content for JSON-safe output and return (True, None, sanitized_blocks).
-    If invalid, return (False, reason, original_blocks).
-    """
     sanitized = []
     for i, b in enumerate(blocks):
-        # Validate structure types first
         if not isinstance(b.title, str) or not isinstance(b.content, str):
             return False, f"block {i} has invalid types", blocks
-        # Create a temporary TeachingBlock for validation purposes (use raw strings)
         temp_block = TeachingBlock(title=b.title, content=b.content)
         ok, reason = _block_valid(temp_block)
         if not ok:
             return False, f"block {i} invalid: {reason}", blocks
-        # Sanitize content (escape quotes and convert newlines to \\n)
         sanitized_content = _sanitize_content(b.content)
         sanitized.append(TeachingBlock(title=b.title, content=sanitized_content))
     return True, None, sanitized
 
-# --- OpenAI call + retry logic encapsulated --- #
-def _call_model_and_get_parsed(input_messages, max_tokens=4000, temperature=0.25):
-    """
-    Wrapper to call the Responses API via client.responses.parse and return the parsed output.
-    """
-    response = client.responses.parse(
+# --- OpenAI call wrapper --- #
+def _call_model_and_get_parsed(input_messages, max_tokens=4000):
+    return client.responses.parse(
         model="gpt-5-nano",
         input=input_messages,
         text_format=TeachingResponse,
         reasoning={"effort": "low"},
-        temperature=temperature,
-        max_output_tokens=max_tokens
+        max_output_tokens=max_tokens,
     )
-    return response
 
 @router.post("/teaching", response_model=TeachingResponse)
 def generate_teaching_content(req: TeachingRequest):
     try:
-        # Build context information
+        # Context info
         context_parts = []
         if req.subject:
             context_parts.append(f"Subject: {req.subject}")
@@ -169,7 +141,7 @@ def generate_teaching_content(req: TeachingRequest):
             context_parts.append(f"Test: {req.test_type}")
         context_info = "\n".join(context_parts)
 
-        # Create user prompt
+        # User prompt
         user_prompt = f"""{context_info}
 
 Create a comprehensive lesson based on this study plan: {req.description}
@@ -178,78 +150,62 @@ Ensure every topic in the study plan is properly explained, and avoid veering fr
 Output exactly 8-14 teaching blocks in valid JSON format with proper formatting including bullet points and bold text.
 """
 
-        # Prepare input messages including two TRUE JSON assistant examples
+        # Messages
         input_messages = [
             {"role": "system", "content": GPT_SYSTEM_PROMPT},
             {"role": "assistant", "content": ASSISTANT_EXAMPLE_JSON_1},
             {"role": "assistant", "content": ASSISTANT_EXAMPLE_JSON_2},
-            {"role": "user", "content": user_prompt}
+            {"role": "user", "content": user_prompt},
         ]
 
         # First attempt
-        response = _call_model_and_get_parsed(input_messages, temperature=0.25)
+        response = _call_model_and_get_parsed(input_messages)
 
-        # If model didn't return parsed output, handle refusal/errors
         if getattr(response, "output_parsed", None) is None:
-            # If refusal present, bubble up
             if hasattr(response, "refusal") and response.refusal:
                 raise HTTPException(status_code=400, detail=response.refusal)
-            # Otherwise attempt a single retry with a strict "Fix JSON only" instruction
             retry_msg = {
                 "role": "user",
-                "content": "Fix JSON only: If the previous response had any formatting or schema issues, return only the corrected single JSON object that matches the TeachingResponse schema. Do not add commentary."
+                "content": "Fix JSON only: If the previous response had any formatting or schema issues, return only the corrected single JSON object. Nothing else."
             }
-            input_messages_retry = input_messages + [retry_msg]
-            response = _call_model_and_get_parsed(input_messages_retry, temperature=0.0)
+            response = _call_model_and_get_parsed(input_messages + [retry_msg])
             if getattr(response, "output_parsed", None) is None:
                 raise HTTPException(status_code=500, detail="Model did not return valid parsed output after retry.")
 
-        # Extract parsed lesson blocks
         lesson_blocks = response.output_parsed.lesson
 
-        # Basic sanity check: ensure length is within 8-14
+        # Ensure 8–14 blocks
         if not (8 <= len(lesson_blocks) <= 14):
-            # Try one automated retry instructing the model to return corrected JSON only
             retry_msg = {
                 "role": "user",
-                "content": "Fix JSON only: The last output did not have the correct number of blocks (must be 8-14). Return only a corrected JSON object that matches the TeachingResponse schema and obeys all prior formatting rules. Nothing else."
+                "content": "Fix JSON only: Must have 8-14 blocks. Return corrected JSON only."
             }
-            input_messages_retry = input_messages + [retry_msg]
-            response_retry = _call_model_and_get_parsed(input_messages_retry, temperature=0.0)
+            response_retry = _call_model_and_get_parsed(input_messages + [retry_msg])
             if getattr(response_retry, "output_parsed", None) is None:
-                raise HTTPException(status_code=500, detail=f"Lesson block count ({len(lesson_blocks)}) not within 8–14 range and retry failed.")
+                raise HTTPException(status_code=500, detail=f"Lesson block count invalid ({len(lesson_blocks)}). Retry failed.")
             lesson_blocks = response_retry.output_parsed.lesson
-            # Re-check counts
             if not (8 <= len(lesson_blocks) <= 14):
-                raise HTTPException(status_code=500, detail=f"Lesson block count ({len(lesson_blocks)}) not within 8–14 range after retry.")
+                raise HTTPException(status_code=500, detail=f"Lesson block count invalid after retry ({len(lesson_blocks)}).")
 
-        # Validate & sanitize blocks (programmatic sanitization ensures proper escaping and \\n usage)
+        # Validate + sanitize
         valid, reason, sanitized_blocks = _validate_and_sanitize_blocks(lesson_blocks)
         if not valid:
-            # Retry once with a strict Fix JSON only prompt
             retry_msg = {
                 "role": "user",
-                "content": f"Fix JSON only: The previous output failed validation ({reason}). Return only a corrected JSON object that matches the TeachingResponse schema and obeys all formatting rules. Nothing else."
+                "content": f"Fix JSON only: Last output failed validation ({reason}). Return corrected JSON only."
             }
-            input_messages_retry = input_messages + [retry_msg]
-            response_retry = _call_model_and_get_parsed(input_messages_retry, temperature=0.0)
+            response_retry = _call_model_and_get_parsed(input_messages + [retry_msg])
             if getattr(response_retry, "output_parsed", None) is None:
-                raise HTTPException(status_code=500, detail=f"Validation failed ({reason}) and retry did not return valid parsed output.")
+                raise HTTPException(status_code=500, detail=f"Validation failed ({reason}) and retry failed.")
             lesson_blocks = response_retry.output_parsed.lesson
             valid2, reason2, sanitized_blocks2 = _validate_and_sanitize_blocks(lesson_blocks)
             if not valid2:
                 raise HTTPException(status_code=500, detail=f"Validation failed after retry: {reason2}")
             sanitized_blocks = sanitized_blocks2
 
-        # At this point sanitized_blocks contains TeachingBlock objects with content sanitized for JSON (internal quotes escaped and newlines as \\n)
-        # Return final TeachingResponse (pydantic will validate)
         return TeachingResponse(lesson=sanitized_blocks)
 
     except HTTPException:
-        # re-raise HTTPExceptions as-is
         raise
     except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error generating teaching content: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Error generating teaching content: {str(e)}")
