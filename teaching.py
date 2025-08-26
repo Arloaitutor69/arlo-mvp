@@ -25,7 +25,7 @@ class TeachingResponse(BaseModel):
     lesson: List[TeachingBlock]
 
 # --- GPT System Prompt with JSON examples --- #
-GPT_SYSTEM_PROMPT = """You are an expert tutor creating comprehensive, engaging, easy-to-understand learning content.
+GPT_SYSTEM_PROMPT = """You are an expert tutor creating who excels in teaching difficult content in the most simple easy to understand way possible.
 Create exactly 10-14 teaching blocks that thoroughly cover ALL aspects of the requested topic.
 
 CRITICAL REQUIREMENTS:
@@ -38,7 +38,6 @@ CRITICAL REQUIREMENTS:
 TEACHING BLOCK STRUCTURE:
 - Each block should fully explain 1-2 subtopics in an easy to understand way
 - Cover all aspects of the requested topic comprehensively
-- Progress logically from foundational concepts to more complex ideas
 - Use bullet points with * for key concepts and lists
 - Use **bold formatting** for important terms and concepts
 - Include examples in parentheses when helpful
@@ -49,9 +48,8 @@ CONTENT QUALITY STANDARDS:
 - Explain concepts in extremely easy-to-understand, casual language
 - Use analogies, mnemonic devices, and other learning strategies when helpful
 - Define all technical terms at first mention
-- Include learning goals and key takeaways where appropriate
 
-EXAMPLE TEACHING CONTENT (JSON FORMAT):
+EXAMPLE TEACHING CONTENT formatting and style:
 
 {
   "lesson": [
@@ -78,8 +76,9 @@ EXAMPLE TEACHING CONTENT (JSON FORMAT):
   ]
 }
 
---- IMPORTANT ADDITION ---
-Always output exactly 10-14 separate teaching blocks. Treat each subtopic as its own block. Follow the formatting style of examples exactly with proper bullet points, bold text, and clear structure.
+--- Most Important ---
+1. Always output exactly 10-14 separate teaching blocks. Treat each subtopic as its own block. Follow the formatting style of examples exactly with proper bullet points, bold text, and clear structure.
+2. mimick teaching style of examples as closely as possible, use same casual language, structure, and explenation style. 
 """
 
 @router.post("/teaching", response_model=TeachingResponse)
