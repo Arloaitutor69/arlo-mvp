@@ -57,26 +57,28 @@ CONTENT QUALITY STANDARDS:
 """
 
 # --- Assistant few-shot examples (TRUE JSON examples for formatting/escaping guidance) --- #
-# These are full, valid JSON lesson objects (as strings) included as assistant messages
-ASSISTANT_EXAMPLE_JSON_1 = (
-    '{'
-    '"lesson": ['
-    '  {'
-    '    "title": "What is Economics?",'
-    '    "content": "Economics is the study of how people make choices about their limited resources. Everyone—individuals, businesses, and governments—has to make decisions about what to use, what to save, and what to trade.\\n\\n**Key ideas:**\\n* **Scarcity:** Resources (money, time, food, etc.) are limited. We can\\\'t have everything we want.\\n* **Choices:** Because of scarcity, we make decisions about what to use resources for.\\n* **Opportunity Cost:** Whenever you choose one thing, you give up the next best alternative. (Example: if you spend $10 on lunch, you can\\'t spend that $10 on a movie ticket.)\\n\\nSo economics is the study of **who gets what, how they can get it, and why!**"'
-    '  }'
-'] }'
-)
+# --- Assistant few-shot examples (TRUE JSON examples for formatting/escaping guidance) --- #
+ASSISTANT_EXAMPLE_JSON_1 = """
+{
+  "lesson": [
+    {
+      "title": "What is Economics?",
+      "content": "Economics is the study of how people make choices about their limited resources. Everyone—individuals, businesses, and governments—has to make decisions about what to use, what to save, and what to trade.\\n\\n**Key ideas:**\\n* **Scarcity:** Resources (money, time, food, etc.) are limited. We can\\'t have everything we want.\\n* **Choices:** Because of scarcity, we make decisions about what to use resources for.\\n* **Opportunity Cost:** Whenever you choose one thing, you give up the next best alternative. (Example: if you spend $10 on lunch, you can\\'t spend that $10 on a movie ticket.)\\n\\nSo economics is the study of **who gets what, how they can get it, and why!**"
+    }
+  ]
+}
+"""
 
-ASSISTANT_EXAMPLE_JSON_2 = (
-    '{'
-    '"lesson": ['
-    '  {'
-    '    "title": "The Cell Membrane: Your Cell\\\'s Security System",'
-    '    "content": "The **cell membrane** works like a security guard or a bouncer at a door. It decides what can come into the cell and what has to stay out.\\n\\n**Key things to know:**\\n* It\\\'s made of a double layer of phospholipids (kind of like a thin soapy bubble wall)\\n* It is **selectively permeable** – a fancy term for deciding what goes in and what comes out\\n* It has special **transport proteins** that act like doors or ID checkers for bigger molecules when they want to enter or leave\\n\\n**What actually gets through:**\\n* Water and very small molecules can slip in and out easily\\n* Larger molecules need a special \\'door\\' (transport proteins)\\n* Waste gets pushed out so the cell stays clean"'
-    '  }'
-'] }'
-)
+ASSISTANT_EXAMPLE_JSON_2 = """
+{
+  "lesson": [
+    {
+      "title": "The Cell Membrane: Your Cell's Security System",
+      "content": "The **cell membrane** works like a security guard or a bouncer at a door. It decides what can come into the cell and what has to stay out.\\n\\n**Key things to know:**\\n* It's made of a double layer of phospholipids (kind of like a thin soapy bubble wall)\\n* It is **selectively permeable** – a fancy term for deciding what goes in and what comes out\\n* It has special **transport proteins** that act like doors or ID checkers for bigger molecules when they want to enter or leave\\n\\n**What actually gets through:**\\n* Water and very small molecules can slip in and out easily\\n* Larger molecules need a special 'door' (transport proteins)\\n* Waste gets pushed out so the cell stays clean"
+    }
+  ]
+}
+"""
 
 # --- Helper utilities for validation & sanitization --- #
 def _count_words(text: str) -> int:
