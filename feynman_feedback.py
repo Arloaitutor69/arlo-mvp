@@ -118,6 +118,10 @@ Focus on:
 - Recognition of complexity and nuance
 - Ability to connect ideas
 
+Style: 
+- stick to the style of question in examples - ie how and why questions 
+- do not explicity reference teaching content in question phrasing, enable student to think and make own connections 
+
 CRITICAL REQUIREMENTS:
 1. Return ONLY JSON data conforming to the schema, never the schema itself.
 2. Output ONLY valid JSON format with proper escaping.
