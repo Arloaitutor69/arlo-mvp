@@ -41,8 +41,12 @@ class FlashcardItem(BaseModel):
     explanation: Optional[str] = None  # Additional context/explanation
 
 # --- Output schema for structured parsing --- #
+class FlashcardResponseItem(BaseModel):
+    question: str
+    answer: str
+
 class FlashcardResponse(BaseModel):
-    flashcards: List[dict]
+    flashcards: List[FlashcardResponseItem]
 
 # -----------------------------
 # Enhanced Context Cache
@@ -175,8 +179,8 @@ ASSISTANT_EXAMPLE_JSON_2 = """{
 ASSISTANT_EXAMPLE_JSON_3 = """{
   "flashcards": [
     {
-      "question": "",
-      "answer": ""
+      "question": "What is photosynthesis?",
+      "answer": "Photosynthesis is the process by which plants convert sunlight, carbon dioxide, and water into glucose and oxygen. It occurs in chloroplasts and is essential for plant energy production."
     }
   ]
 }"""
@@ -185,14 +189,14 @@ ASSISTANT_EXAMPLE_JSON_3 = """{
 def _count_words(text: str) -> int:
     return len(re.findall(r"\w+", text))
 
-def _flashcard_valid(flashcard: dict) -> (bool, Optional[str]):
-    if not isinstance(flashcard.get("question"), str) or not flashcard["question"].strip():
+def _flashcard_valid(flashcard: FlashcardResponseItem) -> (bool, Optional[str]):
+    if not isinstance(flashcard.question, str) or not flashcard.question.strip():
         return False, "missing or invalid question"
-    if not isinstance(flashcard.get("answer"), str) or not flashcard["answer"].strip():
+    if not isinstance(flashcard.answer, str) or not flashcard.answer.strip():
         return False, "missing or invalid answer"
-    if len(flashcard["question"]) < 10:
+    if len(flashcard.question) < 10:
         return False, "question too short"
-    if len(flashcard["answer"]) < 5:
+    if len(flashcard.answer) < 5:
         return False, "answer too short"
     return True, None
 
@@ -202,20 +206,21 @@ def _sanitize_content(raw: str) -> str:
     s = s.replace('"', '\\"')
     return s
 
-def _validate_and_sanitize_flashcards(flashcards: List[dict]) -> (bool, Optional[str], List[dict]):
+def _validate_and_sanitize_flashcards(flashcards: List[FlashcardResponseItem]) -> (bool, Optional[str], List[FlashcardResponseItem]):
     sanitized = []
     for i, card in enumerate(flashcards):
-        if not isinstance(card, dict):
-            return False, f"flashcard {i} is not a dictionary", flashcards
-        ok, reason = _flashcard_valid(card)
+        if not isinstance(card.question, str) or not isinstance(card.answer, str):
+            return False, f"flashcard {i} has invalid types", flashcards
+        temp_card = FlashcardResponseItem(question=card.question, answer=card.answer)
+        ok, reason = _flashcard_valid(temp_card)
         if not ok:
             return False, f"flashcard {i} invalid: {reason}", flashcards
-        sanitized_question = _sanitize_content(card["question"])
-        sanitized_answer = _sanitize_content(card["answer"])
-        sanitized.append({
-            "question": sanitized_question,
-            "answer": sanitized_answer
-        })
+        sanitized_question = _sanitize_content(card.question)
+        sanitized_answer = _sanitize_content(card.answer)
+        sanitized.append(FlashcardResponseItem(
+            question=sanitized_question,
+            answer=sanitized_answer
+        ))
     return True, None, sanitized
 
 # --- OpenAI call wrapper --- #
@@ -297,7 +302,8 @@ def generate_flashcards_sync(
                 raise HTTPException(status_code=500, detail=f"Validation failed after retry: {reason2}")
             sanitized_flashcards = sanitized_flashcards2
 
-        return sanitized_flashcards
+        # Convert to dict format for compatibility
+        return [{"question": card.question, "answer": card.answer} for card in sanitized_flashcards]
         
     except HTTPException:
         raise
