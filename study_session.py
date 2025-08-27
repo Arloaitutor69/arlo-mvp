@@ -3,7 +3,7 @@ import json
 import uuid
 import asyncio
 import hashlib
-from typing import List, Optional, Dict, Tuple
+from typing import List, Optional, Dict, Tuple, Literal, Any
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 from openai import OpenAI
@@ -49,11 +49,30 @@ class StudyPlanResponse(BaseModel):
     blocks: List[StudyBlock]
 
 # --- JSON Schema for structured outputs --- #
+# FIX: Define explicit Block schema and forbid extra properties so the Responses API sees
+# "additionalProperties": false for each block item.
+class BlockOutput(BaseModel):
+    unit: str
+    techniques: List[str]
+    description: str
+    duration: int
+
+    # Pydantic v2 compatible way to forbid extra fields
+    model_config = {"extra": "forbid"}
+    # Pydantic v1 compatible way to forbid extra fields
+    class Config:
+        extra = "forbid"
+
 class StudyPlanOutput(BaseModel):
-    units_to_cover: List[str] = Field(min_length=2, max_length=8)
-    pomodoro: str = Field(pattern="^(25/5|30/5|45/15|50/10)$")
-    techniques: List[str] = Field(min_length=2, max_length=4)
-    blocks: List[Dict] = Field(min_length=2, max_length=8)
+    units_to_cover: List[str] = Field(..., min_items=2, max_items=8)
+    pomodoro: Literal["25/5", "30/5", "45/15", "50/10"]
+    techniques: List[str] = Field(..., min_items=2, max_items=4)
+    blocks: List[BlockOutput] = Field(..., min_items=2, max_items=8)
+
+    # Forbid extras at root too
+    model_config = {"extra": "forbid"}
+    class Config:
+        extra = "forbid"
 
 def create_fallback_study_plan(objective: Optional[str], parsed_summary: Optional[str], duration: int) -> dict:
     """Create a fallback study plan when JSON parsing fails"""
@@ -255,7 +274,12 @@ async def update_context_async(payload: dict) -> bool:
         return False
 
 # --- OpenAI call wrapper --- #
-def _call_model_and_get_parsed(input_messages, max_tokens=4000):
+def _call_model_and_get_parsed(input_messages: List[Dict[str, Any]], max_tokens: int = 4000):
+    """
+    Wrapper for the Responses API parse method.
+    Note: we pass the pydantic model class StudyPlanOutput into text_format so the SDK can
+    validate/parse the modelled JSON.
+    """
     return client.responses.parse(
         model="gpt-5-nano",
         input=input_messages,
@@ -318,8 +342,16 @@ def generate_gpt_plan(prompt: str, objective: Optional[str] = None, parsed_summa
         
         # Validate block structure
         for i, block in enumerate(blocks):
-            if not isinstance(block, dict) or not all(key in block for key in ["unit", "techniques", "description", "duration"]):
+            if not isinstance(block, dict) and not isinstance(block, BaseModel):
                 print(f"❌ Block {i} invalid structure, using fallback")
+                return create_fallback_study_plan(objective, parsed_summary, duration)
+            
+            # If block is a pydantic model instance, convert to dict
+            if isinstance(block, BaseModel):
+                block = block.dict()
+            
+            if not all(key in block for key in ["unit", "techniques", "description", "duration"]):
+                print(f"❌ Block {i} missing keys, using fallback")
                 return create_fallback_study_plan(objective, parsed_summary, duration)
             
             # Ensure techniques is a list
@@ -372,6 +404,9 @@ async def generate_plan(data: StudyPlanRequest, request: Request):
         
         for idx, item in enumerate(blocks_json):
             try:
+                # If item is a Pydantic model convert to dict
+                if isinstance(item, BaseModel):
+                    item = item.dict()
                 unit = item.get("unit", f"Unit {idx + 1}")
                 techniques_list = item.get("techniques", ["feynman"])
                 primary_technique = techniques_list[0] if techniques_list else "feynman"
