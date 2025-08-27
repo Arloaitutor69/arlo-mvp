@@ -172,29 +172,9 @@ def _call_model_and_get_parsed(input_messages, max_tokens=6000):
     )
 
 # -----------------------------
-# Optimized Question Generation - Updated
+# JSON Example Payloads
 # -----------------------------
 
-class QuestionGenerator:
-    @staticmethod
-    async def generate_questions(
-        content: str,
-        difficulty: DifficultyLevel,
-        question_types: List[QuestionType],
-        max_questions: int,
-        user_context: Dict[str, Any] = None
-    ) -> List[QuizQuestion]:
-        
-        try:
-            # Extract only essential context
-            weak_areas = user_context.get('weak_areas', [])[:3] if user_context else []
-            
-            system_prompt = build_system_prompt()
-            user_prompt = build_user_prompt(
-                content, difficulty, question_types, max_questions, weak_areas
-            )
-            
-# --- JSON examples --- #
 ASSISTANT_EXAMPLE_JSON_1 = """{
   "questions": [
     {
@@ -234,6 +214,28 @@ ASSISTANT_EXAMPLE_JSON_3 = """{
   ]
 }"""
 
+# -----------------------------
+# Optimized Question Generation - Updated
+# -----------------------------
+
+class QuestionGenerator:
+    @staticmethod
+    async def generate_questions(
+        content: str,
+        difficulty: DifficultyLevel,
+        question_types: List[QuestionType],
+        max_questions: int,
+        user_context: Dict[str, Any] = None
+    ) -> List[QuizQuestion]:
+        
+        try:
+            weak_areas = user_context.get('weak_areas', [])[:3] if user_context else []
+            
+            system_prompt = build_system_prompt()
+            user_prompt = build_user_prompt(
+                content, difficulty, question_types, max_questions, weak_areas
+            )
+
             # Prepare messages with example structure
             input_messages = [
                 {"role": "system", "content": system_prompt},
@@ -243,7 +245,6 @@ ASSISTANT_EXAMPLE_JSON_3 = """{
                 {"role": "user", "content": user_prompt}
             ]
 
-            # First attempt with new GPT-5-nano syntax
             response = _call_model_and_get_parsed(input_messages)
 
             if getattr(response, "output_parsed", None) is None:
@@ -259,7 +260,6 @@ ASSISTANT_EXAMPLE_JSON_3 = """{
 
             questions = response.output_parsed.questions
 
-            # Ensure proper question count
             if not (7 <= len(questions) <= 15):
                 retry_msg = {
                     "role": "user",
@@ -272,10 +272,8 @@ ASSISTANT_EXAMPLE_JSON_3 = """{
                 if not (7 <= len(questions) <= 15):
                     raise HTTPException(status_code=500, detail=f"Question count invalid after retry ({len(questions)}).")
 
-            # Process questions to handle options based on type
             processed_questions = []
             for q in questions:
-                # Handle options based on question type
                 if q.type in ["true_false", "short_answer"]:
                     q.options = None
                 processed_questions.append(q)
@@ -297,7 +295,6 @@ ASSISTANT_EXAMPLE_JSON_3 = """{
 # -----------------------------
 
 async def log_quiz_creation(user_id: str, topic: str, question_count: int):
-    """Simplified logging"""
     if not user_id:
         return
     
@@ -326,7 +323,6 @@ async def log_quiz_creation(user_id: str, topic: str, question_count: int):
 # -----------------------------
 
 def extract_user_id(request: Request, req: QuizRequest) -> Optional[str]:
-    """Extract user ID from various sources"""
     user_info = getattr(request.state, "user", None)
     if user_info and "sub" in user_info:
         return user_info["sub"]
@@ -346,16 +342,12 @@ async def create_quiz(
     request: Request,
     background_tasks: BackgroundTasks
 ):
-    """Generate optimized quiz with maximum questions"""
-    
     print(f"🚀 Creating quiz: {req.max_questions} questions from {len(req.content)} chars")
     start_time = datetime.now()
     
-    # Get user context quickly
     user_id = extract_user_id(request, req)
     user_context = await context_cache.get_context(user_id) if user_id else {}
     
-    # Generate questions with optimized approach
     questions = await QuestionGenerator.generate_questions(
         content=req.content,
         difficulty=req.difficulty,
@@ -364,7 +356,6 @@ async def create_quiz(
         user_context=user_context
     )
     
-    # Create response
     quiz_id = f"quiz_{uuid.uuid4().hex[:8]}"
     estimated_time = len(questions) * 90  # 90 seconds per question average
     
@@ -375,7 +366,6 @@ async def create_quiz(
         estimated_time_minutes=estimated_time // 60
     )
     
-    # Log in background
     if user_id:
         background_tasks.add_task(
             log_quiz_creation,
