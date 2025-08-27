@@ -2,18 +2,13 @@
 
 from fastapi import APIRouter, HTTPException, Request, BackgroundTasks
 from pydantic import BaseModel, Field, validator
-from typing import List, Literal, Union, Optional, Dict, Any
+from typing import List, Literal, Optional, Dict, Any
 from openai import OpenAI
 import uuid
 import os
-import json
-import requests
 import asyncio
 import aiohttp
 from datetime import datetime, timedelta
-import hashlib
-import re
-from dataclasses import dataclass, asdict
 from enum import Enum
 
 # Initialize OpenAI client
@@ -37,8 +32,6 @@ class DifficultyLevel(str, Enum):
 
 class QuestionType(str, Enum):
     MULTIPLE_CHOICE = "multiple_choice"
-    TRUE_FALSE = "true_false"
-    SHORT_ANSWER = "short_answer"
 
 class LearningObjective(str, Enum):
     KNOWLEDGE = "knowledge"
@@ -60,12 +53,12 @@ class QuizRequest(BaseModel):
             raise ValueError('Content must be at least 10 characters long')
         return v.strip()
 
-# Simplified Question Model - Only Essential Fields
+# Simplified Question Model - Only Multiple Choice
 class QuizQuestion(BaseModel):
     id: int
-    type: Literal["multiple_choice", "true_false", "short_answer"]
+    type: Literal["multiple_choice"]
     question: str
-    options: Optional[List[str]] = None
+    options: List[str]
     correct_answer: str
     explanation: str
 
@@ -113,7 +106,7 @@ context_cache = ContextCache()
 # -----------------------------
 
 def build_system_prompt() -> str:
-    return """You are an expert quiz generator that creates high-quality educational questions. Create exactly 7-15 quiz questions that test deep understanding, not just memorization.
+    return """You are an expert quiz generator that creates high-quality educational multiple-choice questions. Create exactly 7-15 quiz questions that test deep understanding, not just memorization.
 
 QUALITY REQUIREMENTS:
 1. Test understanding, comprehension, and application - not just recall
@@ -139,24 +132,21 @@ def build_user_prompt(
     user_weak_areas: List[str] = None
 ) -> str:
     
-    question_type_str = ", ".join([qt.value for qt in question_types])
     weak_areas_str = f" Focus extra attention on: {', '.join(user_weak_areas[:3])}" if user_weak_areas else ""
     
-    return f"""Create {max_questions} high-quality quiz questions from this content.
+    return f"""Create {max_questions} high-quality multiple-choice quiz questions from this content.
 
 CONTENT:
 {content}
 
 REQUIREMENTS:
 - Difficulty: {difficulty.value}
-- Question Types: {question_type_str}
+- Question Type: multiple_choice only
 - Test deep understanding, not just memorization{weak_areas_str}
 - Include questions that require analysis and application of concepts
 - For multiple choice questions, include the options array
-- For true/false questions, set options to null and correct_answer to "true" or "false"
-- For short answer questions, set options to null
 
-Create exactly {max_questions} questions that thoroughly test student understanding."""
+Create exactly {max_questions} multiple-choice questions that thoroughly test student understanding."""
 
 # -----------------------------
 # OpenAI call wrapper - Updated for GPT-5-nano
@@ -167,12 +157,12 @@ def _call_model_and_get_parsed(input_messages, max_tokens=6000):
         input=input_messages,
         text_format=QuizGenerationResponse,
         reasoning={"effort": "low"},
-        instructions="Generate high-quality quiz questions that test deep understanding and application of concepts, not just memorization.",
+        instructions="Generate high-quality multiple-choice quiz questions that test deep understanding and application of concepts, not just memorization.",
         max_output_tokens=max_tokens,
     )
 
 # -----------------------------
-# JSON Example Payloads
+# JSON Example Payloads (only multiple choice)
 # -----------------------------
 
 ASSISTANT_EXAMPLE_JSON_1 = """{
@@ -192,10 +182,15 @@ ASSISTANT_EXAMPLE_JSON_2 = """{
   "questions": [
     {
       "id": 1,
-      "type": "true_false",
-      "question": "Photosynthesis and cellular respiration are essentially opposite processes.",
-      "options": null,
-      "correct_answer": "true",
+      "type": "multiple_choice",
+      "question": "Which of the following best describes the relationship between photosynthesis and cellular respiration?",
+      "options": [
+        "They are completely unrelated processes",
+        "They are opposite but complementary processes",
+        "Both produce glucose from sunlight",
+        "Both release carbon dioxide as their primary product"
+      ],
+      "correct_answer": "They are opposite but complementary processes",
       "explanation": "Photosynthesis converts CO₂ and H₂O into glucose using light energy, while cellular respiration breaks down glucose into CO₂ and H₂O to release energy. They are complementary opposite processes."
     }
   ]
@@ -205,9 +200,14 @@ ASSISTANT_EXAMPLE_JSON_3 = """{
   "questions": [
     {
       "id": 1,
-      "type": "short_answer",
+      "type": "multiple_choice",
       "question": "What is the main function of mitochondria in cellular respiration?",
-      "options": null,
+      "options": [
+        "Store genetic information",
+        "Generate ATP through oxidative phosphorylation",
+        "Produce glucose using sunlight",
+        "Control cell division"
+      ],
       "correct_answer": "Generate ATP through oxidative phosphorylation",
       "explanation": "Mitochondria are the powerhouses of the cell, using oxygen to break down glucose and produce ATP through the electron transport chain and chemiosmosis."
     }
@@ -272,15 +272,9 @@ class QuestionGenerator:
                 if not (7 <= len(questions) <= 15):
                     raise HTTPException(status_code=500, detail=f"Question count invalid after retry ({len(questions)}).")
 
-            processed_questions = []
-            for q in questions:
-                if q.type in ["true_false", "short_answer"]:
-                    q.options = None
-                processed_questions.append(q)
+            print(f"✅ Generated {len(questions)} multiple-choice questions (requested: {max_questions})")
             
-            print(f"✅ Generated {len(processed_questions)} questions (requested: {max_questions})")
-            
-            return processed_questions
+            return questions
             
         except HTTPException:
             raise
