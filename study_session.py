@@ -266,7 +266,8 @@ def generate_gpt_plan(prompt: str, objective: Optional[str] = None, parsed_summa
                 "type": "json_schema",
                 "json_schema": STUDY_PLAN_SCHEMA
             },
-            reasoning_effort="low"
+            reasoning_effort="low",
+            max_output_tokens="4000"
         )
 
         raw_output = response.choices[0].message.content.strip()
