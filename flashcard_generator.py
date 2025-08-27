@@ -95,16 +95,16 @@ def build_flashcard_prompt(content: str, context: Dict[str, Any]) -> str:
     # Build personalization context
     personalization = _build_personalization_context(context)
     
-    return f"""You are a personalized flashcard-generating tutor. Create detailed, optimized flashcards for memory retention and understanding.
+    return f"""You are a personalized flashcard-generating tutor. Create flashcards designed for active recall memorization 
 
-CONTENT TO PROCESS - Extract and consolidate key information from what was taught:
+This is the teaching content your student was just taught. Identify the 12-20 key definitions, facts, details, and specific information that is best suited for active recall consolidation. Only mention information found in the teaching content except to fill major gaps if present. 
 {content}
 
 PERSONALIZATION CONTEXT:
 {personalization}
 
 GENERATION REQUIREMENTS:
-Create exactly 12-20 flashcards focusing on:
+Create exactly 12-20 flashcards focusing on designed to aid in memory retention, focusing on: 
 - FACTS that need memorization
 - DEFINITIONS of key terms and concepts  
 - IMPORTANT DETAILS that students commonly forget
@@ -113,12 +113,11 @@ Create exactly 12-20 flashcards focusing on:
 Prioritize information that can be best memorized using flashcards. Focus on consolidating what was actually taught to the student.
 
 QUALITY STANDARDS:
-- Questions should be unambiguous and test understanding, not just recall
+- Questions should be direct and straightforward
 - Answers should be complete but concise
-- Include examples in answers when they aid understanding
+- Include examples in answers in paranthesis when they aid understanding
 - Use active voice and clear language
-- Ensure each card addresses a specific learning objective
-- Prioritize information that benefits from spaced repetition
+- Ensure each card addresses a specific learning objective and peice of information 
 
 CRITICAL REQUIREMENTS:
 1. Return ONLY JSON data conforming to the schema, never the schema itself.
@@ -127,15 +126,7 @@ CRITICAL REQUIREMENTS:
 4. Use \\n for line breaks within content.
 5. No trailing commas.
 
-EXAMPLE FORMAT:
-Content: Cell Biology - The cell membrane controls what enters and exits the cell through selective permeability. Mitochondria produce ATP energy. The nucleus contains DNA and controls cell functions.
-
-example Flashcards:
-- Question: "What is the main function of the cell membrane?" Answer: "The cell membrane controls what substances can enter and exit the cell through selective permeability, acting like a security guard for the cell."
-- Question: "What is the primary function of mitochondria?" Answer: "Mitochondria produce ATP (adenosine triphosphate), which is the cell's main source of energy."
-- Question: "What does the nucleus contain and what is its role?" Answer: "The nucleus contains the cell's DNA and serves as the control center, directing all cellular activities and functions."
-
-Create flashcards that help students memorize and understand the key concepts from the teaching content."""
+"""
 
 def _build_personalization_context(context: Dict[str, Any]) -> str:
     if not context:
@@ -153,12 +144,8 @@ Review Queue Size: {len(context.get('review_queue', []))}"""
 ASSISTANT_EXAMPLE_JSON_1 = """{
   "flashcards": [
     {
-      "question": "What is the main function of the cell membrane?",
-      "answer": "The cell membrane controls what substances can enter and exit the cell through selective permeability, acting like a security guard for the cell."
-    },
-    {
-      "question": "What is the primary function of mitochondria?",
-      "answer": "Mitochondria produce ATP (adenosine triphosphate), which is the cell's main source of energy."
+      "question": "What is the main function of the Golgi apparatus?",
+      "answer": "Modify, sort, and package proteins and lipids for secretion or delivery to other organelles (example: adds carbohydrate tags for targeting)."
     }
   ]
 }"""
@@ -166,12 +153,8 @@ ASSISTANT_EXAMPLE_JSON_1 = """{
 ASSISTANT_EXAMPLE_JSON_2 = """{
   "flashcards": [
     {
-      "question": "What is opportunity cost in economics?",
-      "answer": "Opportunity cost is the value of the next best alternative that you give up when making a choice. For example, if you spend $10 on lunch, the opportunity cost is the movie ticket you could have bought instead."
-    },
-    {
-      "question": "What does scarcity mean in economics?",
-      "answer": "Scarcity means that resources (money, time, materials, etc.) are limited while our wants and needs are unlimited. This forces us to make choices about how to use our resources."
+      "question": "What were the four long-term causes of World War I and what mnemonic helps remember them?",
+      "answer": "Militarism, Alliances, Imperialism, Nationalism — mnemonic: MAIN. (Militarism: arms races; Alliances: binding defense pacts; Imperialism: colonial competition; Nationalism: ethnic tensions and national pride.)"
     }
   ]
 }"""
@@ -179,8 +162,8 @@ ASSISTANT_EXAMPLE_JSON_2 = """{
 ASSISTANT_EXAMPLE_JSON_3 = """{
   "flashcards": [
     {
-      "question": "What is photosynthesis?",
-      "answer": "Photosynthesis is the process by which plants convert sunlight, carbon dioxide, and water into glucose and oxygen. It occurs in chloroplasts and is essential for plant energy production."
+      "question": "What is an eigenvalue of a matrix A?",
+      "answer": "An eigenvalue is a scalar called lambda for which there exists a nonzero vector v satisfying A v = lambda v (v is the corresponding eigenvector)."
     }
   ]
 }"""
