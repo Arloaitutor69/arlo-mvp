@@ -89,20 +89,12 @@ def extract_user_id(request: Request, data) -> str:
         raise HTTPException(status_code=400, detail="Missing user_id in request")
 
 # --- System Prompts --- #
-FEYNMAN_EXERCISE_SYSTEM_PROMPT = """You are an expert AI tutor creating Feynman-style teaching exercises for conceptual mastery.
+FEYNMAN_EXERCISE_SYSTEM_PROMPT = """You are an expert AI tutor creating Feynman-style teaching exercises for conceptual mastery to consolidate teaching material. 
 
 Create exactly 3 conceptual teaching questions that:
-- Test deep understanding, not memorization
-- Are relevant to the teaching material and what a student might see on a test
-- Help students explain concepts in their own words
-
-EXAMPLE FORMAT:
-Content: The Age of Exploration was a period between the 15th and 17th centuries when European powers expanded across the globe through sea voyages, driven by economic motives, technological advances, and cultural imperatives like spreading Christianity.
-
-Expected Questions:
-1. Why did European exploration expand so rapidly in the late 15th century, and what made this timing significant compared to earlier periods?
-2. How did the principles of mercantilism influence the goals and outcomes of European exploration and colonization?  
-3. How did the Columbian Exchange fundamentally transform both European and non-European societies — economically, culturally, and biologically?
+- directly relate to teaching content and can be answered almost exclusively from teaching content, apart from making connections etc
+- Test deep understanding, not just memorization
+- Help students explain concepts in their own words and recall material learned earleir 
 
 CRITICAL REQUIREMENTS:
 1. Return ONLY JSON data conforming to the schema, never the schema itself.
@@ -111,7 +103,7 @@ CRITICAL REQUIREMENTS:
 4. Use \\n for line breaks within content.
 5. No trailing commas.
 
-Return exactly 3 questions that encourage deep conceptual understanding."""
+Return exactly 3 questions that encourage conceptual understanding."""
 
 FEYNMAN_ASSESSMENT_SYSTEM_PROMPT = """You are an expert AI tutor assessing a student's conceptual explanation using the Feynman Technique.
 
@@ -125,22 +117,6 @@ Focus on:
 - Use of appropriate terminology
 - Recognition of complexity and nuance
 - Ability to connect ideas
-
-EXAMPLE ASSESSMENT:
-Question: Why did European exploration expand so rapidly in the late 15th century?
-Student Answer: "Exploration happened because countries wanted land and they found new places and took them. They had ships and went far and people got rich."
-
-Expected Assessment:
-Mastery Score: 48
-What You Did Well:
-- Recognized that European nations were seeking new land and wealth
-- Noted that ships were a key factor in enabling exploration
-
-Gaps in Understanding:
-- No mention of historical context — why the 15th century was a turning point (e.g., Fall of Constantinople, Renaissance thought, Ottoman control of land routes)
-- Oversimplified motivations — didn't explain religious motives, competition among European powers, or desire for direct access to Asian trade
-- Vague use of terms like "people got rich" without referring to the Columbian Exchange, mercantilism, or monarchial sponsorship
-- No recognition of the impact on indigenous societies or the idea of cultural imperialism
 
 CRITICAL REQUIREMENTS:
 1. Return ONLY JSON data conforming to the schema, never the schema itself.
@@ -254,7 +230,7 @@ def _call_model_and_get_parsed_exercise(input_messages, max_tokens=2000):
         input=input_messages,
         text_format=FeynmanExerciseResponse,
         reasoning={"effort": "low"},
-        instructions="Generate exactly 3 conceptual questions that test deep understanding using the Feynman technique.",
+        instructions="Generate exactly 3 conceptual questions that test deep understanding using the Feynman technique that can be entirely answered from teaching content.",
         max_output_tokens=max_tokens,
     )
 
