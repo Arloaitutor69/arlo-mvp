@@ -68,7 +68,6 @@ class QuizQuestion(BaseModel):
     options: Optional[List[str]] = None
     correct_answer: str
     explanation: str
-    difficulty: Literal["beginner", "easy", "medium", "hard", "expert"]
 
 # Simplified Response Model
 class QuizResponse(BaseModel):
@@ -77,63 +76,9 @@ class QuizResponse(BaseModel):
     total_questions: int
     estimated_time_minutes: int
 
-# --- JSON Schema for structured outputs --- #
-QUIZ_SCHEMA = {
-    "name": "quiz_response",
-    "schema": {
-        "type": "object",
-        "strict": True,
-        "properties": {
-            "questions": {
-                "type": "array",
-                "minItems": 7,
-                "maxItems": 15,
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "id": {
-                            "type": "integer",
-                            "minimum": 1
-                        },
-                        "type": {
-                            "type": "string",
-                            "enum": ["multiple_choice", "true_false", "short_answer"]
-                        },
-                        "question": {
-                            "type": "string",
-                            "minLength": 10
-                        },
-                        "options": {
-                            "type": "array",
-                            "items": {
-                                "type": "string",
-                                "minLength": 1
-                            },
-                            "minItems": 2,
-                            "maxItems": 5
-                        },
-                        "correct_answer": {
-                            "type": "string",
-                            "minLength": 1
-                        },
-                        "explanation": {
-                            "type": "string",
-                            "minLength": 20
-                        },
-                        "difficulty": {
-                            "type": "string",
-                            "enum": ["beginner", "easy", "medium", "hard", "expert"]
-                        }
-                    },
-                    "required": ["id", "type", "question", "correct_answer", "explanation", "difficulty"],
-                    "additionalProperties": False
-                }
-            }
-        },
-        "required": ["questions"],
-        "additionalProperties": False
-    }
-}
+# New response model for GPT-5-nano parsing
+class QuizGenerationResponse(BaseModel):
+    questions: List[QuizQuestion]
 
 # -----------------------------
 # Simplified Context Cache
@@ -177,55 +122,12 @@ QUALITY REQUIREMENTS:
 4. Provide helpful explanations that teach additional concepts
 5. For multiple choice: create plausible distractors that test common misconceptions
 
-EXAMPLE HIGH-QUALITY QUESTIONS:
-
-Multiple Choice Example:
-{
-    "id": 1,
-    "type": "multiple_choice",
-    "question": "Which of the following correctly describes the role of the Electron Transport Chain in cellular respiration?",
-    "options": [
-        "It breaks down glucose into pyruvate in the cytoplasm",
-        "It generates oxygen for use in the Krebs Cycle",
-        "It transfers electrons to pump protons and produce ATP",
-        "It converts carbon dioxide into glucose for energy"
-    ],
-    "correct_answer": "It transfers electrons to pump protons and produce ATP",
-    "explanation": "The Electron Transport Chain uses electrons from NADH and FADH₂ to pump protons across the membrane, creating a gradient that drives ATP synthesis.",
-    "difficulty": "medium"
-}
-
-Application-Based Example:
-{
-    "id": 2,
-    "type": "multiple_choice",
-    "question": "What happens to ATP production if oxygen is unavailable during cellular respiration?",
-    "options": [
-        "The cell increases use of the Krebs Cycle",
-        "ATP production continues normally in the mitochondria",
-        "The Electron Transport Chain halts, and glycolysis becomes the main source of ATP",
-        "Oxygen is replaced by glucose as the final electron acceptor"
-    ],
-    "correct_answer": "The Electron Transport Chain halts, and glycolysis becomes the main source of ATP",
-    "explanation": "Without oxygen, the ETC stops functioning because oxygen is the final electron acceptor. The cell must rely on glycolysis, which is far less efficient at producing ATP.",
-    "difficulty": "hard"
-}
-
-Analysis Example:
-{
-    "id": 3,
-    "type": "multiple_choice", 
-    "question": "A poison disables enzymes in the Krebs Cycle. What is the most likely consequence for ATP production in the cell?",
-    "options": [
-        "The cell will produce more ATP through glycolysis to compensate",
-        "The cell's total ATP production will decrease significantly",
-        "The Electron Transport Chain will function normally using glucose alone",
-        "The cell will increase carbon dioxide output due to faster glucose breakdown"
-    ],
-    "correct_answer": "The cell's total ATP production will decrease significantly",
-    "explanation": "The Krebs Cycle is a key source of NADH and FADH₂, which fuel the Electron Transport Chain. Disabling it reduces the input to ETC, lowering total ATP output.",
-    "difficulty": "expert"
-}
+CRITICAL REQUIREMENTS:
+1. Return ONLY JSON data conforming to the schema, never the schema itself.
+2. Output ONLY valid JSON format with proper escaping.
+3. Use double quotes, escape internal quotes as \\\".
+4. Use \\n for line breaks within content.
+5. No trailing commas.
 
 Remember: Create questions that require students to think, analyze, and apply concepts rather than just memorize facts."""
 
@@ -257,7 +159,20 @@ REQUIREMENTS:
 Create exactly {max_questions} questions that thoroughly test student understanding."""
 
 # -----------------------------
-# Optimized Question Generation
+# OpenAI call wrapper - Updated for GPT-5-nano
+# -----------------------------
+def _call_model_and_get_parsed(input_messages, max_tokens=6000):
+    return client.responses.parse(
+        model="gpt-5-nano",
+        input=input_messages,
+        text_format=QuizGenerationResponse,
+        reasoning={"effort": "low"},
+        instructions="Generate high-quality quiz questions that test deep understanding and application of concepts, not just memorization.",
+        max_output_tokens=max_tokens,
+    )
+
+# -----------------------------
+# Optimized Question Generation - Updated
 # -----------------------------
 
 class QuestionGenerator:
@@ -279,51 +194,98 @@ class QuestionGenerator:
                 content, difficulty, question_types, max_questions, weak_areas
             )
             
-            # Prepare messages
-            messages = [
+# --- JSON examples --- #
+ASSISTANT_EXAMPLE_JSON_1 = """{
+  "questions": [
+    {
+      "id": 1,
+      "type": "multiple_choice",
+      "question": "Which process directly produces the most ATP during cellular respiration?",
+      "options": ["Glycolysis", "Krebs Cycle", "Electron Transport Chain", "Fermentation"],
+      "correct_answer": "Electron Transport Chain",
+      "explanation": "The Electron Transport Chain produces approximately 32-34 ATP molecules through oxidative phosphorylation, which is far more than glycolysis (2 ATP) or the Krebs Cycle (2 ATP)."
+    }
+  ]
+}"""
+
+ASSISTANT_EXAMPLE_JSON_2 = """{
+  "questions": [
+    {
+      "id": 1,
+      "type": "true_false",
+      "question": "Photosynthesis and cellular respiration are essentially opposite processes.",
+      "options": null,
+      "correct_answer": "true",
+      "explanation": "Photosynthesis converts CO₂ and H₂O into glucose using light energy, while cellular respiration breaks down glucose into CO₂ and H₂O to release energy. They are complementary opposite processes."
+    }
+  ]
+}"""
+
+ASSISTANT_EXAMPLE_JSON_3 = """{
+  "questions": [
+    {
+      "id": 1,
+      "type": "short_answer",
+      "question": "What is the main function of mitochondria in cellular respiration?",
+      "options": null,
+      "correct_answer": "Generate ATP through oxidative phosphorylation",
+      "explanation": "Mitochondria are the powerhouses of the cell, using oxygen to break down glucose and produce ATP through the electron transport chain and chemiosmosis."
+    }
+  ]
+}"""
+
+            # Prepare messages with example structure
+            input_messages = [
                 {"role": "system", "content": system_prompt},
+                {"role": "assistant", "content": ASSISTANT_EXAMPLE_JSON_1},
+                {"role": "assistant", "content": ASSISTANT_EXAMPLE_JSON_2},
+                {"role": "assistant", "content": ASSISTANT_EXAMPLE_JSON_3},
                 {"role": "user", "content": user_prompt}
             ]
 
-            # Make API call with structured outputs
-            response = client.chat.completions.create(
-                model="gpt-5-nano",
-                messages=messages,
-                response_format={
-                    "type": "json_schema",
-                    "json_schema": QUIZ_SCHEMA
-                },
-                reasoning_effort="low"
-            )
+            # First attempt with new GPT-5-nano syntax
+            response = _call_model_and_get_parsed(input_messages)
 
-            # Parse the guaranteed valid JSON response
-            raw_content = response.choices[0].message.content
-            parsed_data = json.loads(raw_content)
+            if getattr(response, "output_parsed", None) is None:
+                if hasattr(response, "refusal") and response.refusal:
+                    raise HTTPException(status_code=400, detail=response.refusal)
+                retry_msg = {
+                    "role": "user",
+                    "content": "Fix JSON only: If the previous response had any formatting or schema issues, return only the corrected quiz questions. Nothing else."
+                }
+                response = _call_model_and_get_parsed(input_messages + [retry_msg])
+                if getattr(response, "output_parsed", None) is None:
+                    raise HTTPException(status_code=500, detail="Model did not return valid parsed output after retry.")
+
+            questions = response.output_parsed.questions
+
+            # Ensure proper question count
+            if not (7 <= len(questions) <= 15):
+                retry_msg = {
+                    "role": "user",
+                    "content": f"Fix JSON only: Must have {max_questions} questions. Return corrected JSON only."
+                }
+                response_retry = _call_model_and_get_parsed(input_messages + [retry_msg])
+                if getattr(response_retry, "output_parsed", None) is None:
+                    raise HTTPException(status_code=500, detail=f"Question count invalid ({len(questions)}). Retry failed.")
+                questions = response_retry.output_parsed.questions
+                if not (7 <= len(questions) <= 15):
+                    raise HTTPException(status_code=500, detail=f"Question count invalid after retry ({len(questions)}).")
+
+            # Process questions to handle options based on type
+            processed_questions = []
+            for q in questions:
+                # Handle options based on question type
+                if q.type in ["true_false", "short_answer"]:
+                    q.options = None
+                processed_questions.append(q)
             
-            # Convert to QuizQuestion objects
-            questions = []
-            for i, q_data in enumerate(parsed_data["questions"]):
-                try:
-                    # Handle options based on question type
-                    if q_data["type"] in ["true_false", "short_answer"]:
-                        q_data["options"] = None
-                    
-                    questions.append(QuizQuestion(**q_data))
-                    
-                except Exception as e:
-                    print(f"❌ Error processing question {i}: {e}")
-                    continue
+            print(f"✅ Generated {len(processed_questions)} questions (requested: {max_questions})")
             
-            print(f"✅ Generated {len(questions)} questions (requested: {max_questions})")
+            return processed_questions
             
-            return questions
-            
-        except json.JSONDecodeError as e:
-            # This should never happen with structured outputs, but just in case
-            raise HTTPException(
-                status_code=500,
-                detail=f"Failed to parse response as JSON: {str(e)}"
-            )
+        except HTTPException:
+            raise
         except Exception as e:
             print(f"❌ Question generation failed: {e}")
             print(f"Content length: {len(content)}")
