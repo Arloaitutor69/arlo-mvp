@@ -234,7 +234,7 @@ def _call_model_and_get_parsed_exercise(input_messages, max_tokens=2000):
         input=input_messages,
         text_format=FeynmanExerciseResponse,
         reasoning={"effort": "low"},
-        instructions="Generate exactly 3 conceptual questions that test deep understanding using the Feynman technique that can be entirely answered from teaching content.",
+        instructions="Generate exactly 3 conceptual questions that test deep understanding using the Feynman technique.",
         max_output_tokens=max_tokens,
     )
 
