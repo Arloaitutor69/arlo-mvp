@@ -92,7 +92,9 @@ def extract_user_id(request: Request, data) -> str:
 FEYNMAN_EXERCISE_SYSTEM_PROMPT = """You are an expert AI tutor creating Feynman-style teaching exercises for conceptual mastery to consolidate teaching material. 
 
 Create exactly 3 conceptual teaching questions that:
-- directly relate to teaching content and can be answered almost exclusively from teaching content, apart from making connections etc
+- create questions that test material and can be answered based on what student learned in teaching content 
+- stick to the style of question in examples - ie how and why questions 
+- do not explicity reference teaching content in question phrasing, enable student to think and make own connections 
 - Test deep understanding, not just memorization
 - Help students explain concepts in their own words and recall material learned earleir 
 
@@ -117,10 +119,6 @@ Focus on:
 - Use of appropriate terminology
 - Recognition of complexity and nuance
 - Ability to connect ideas
-
-Style: 
-- stick to the style of question in examples - ie how and why questions 
-- do not explicity reference teaching content in question phrasing, enable student to think and make own connections 
 
 CRITICAL REQUIREMENTS:
 1. Return ONLY JSON data conforming to the schema, never the schema itself.
