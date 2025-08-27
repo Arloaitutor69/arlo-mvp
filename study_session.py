@@ -48,66 +48,24 @@ class StudyPlanResponse(BaseModel):
     techniques: List[str]
     blocks: List[StudyBlock]
 
-# --- JSON Schema for structured outputs --- #
-# FIX: Define explicit Block schema and forbid extra properties so the Responses API sees
-# "additionalProperties": false for each block item.
+# --- JSON Schema for structured outputs (Pydantic v2 only) --- #
 class BlockOutput(BaseModel):
     unit: str
     techniques: List[str]
     description: str
     duration: int
 
-    # Pydantic v2 compatible way to forbid extra fields
+    # Disallow extra keys to ensure items schema has "additionalProperties": false
     model_config = {"extra": "forbid"}
-    # Pydantic v1 compatible way to forbid extra fields
-    class Config:
-        extra = "forbid"
 
 class StudyPlanOutput(BaseModel):
-    units_to_cover: List[str] = Field(..., min_items=2, max_items=8)
+    units_to_cover: List[str]
     pomodoro: Literal["25/5", "30/5", "45/15", "50/10"]
-    techniques: List[str] = Field(..., min_items=2, max_items=4)
-    blocks: List[BlockOutput] = Field(..., min_items=2, max_items=8)
+    techniques: List[str]
+    blocks: List[BlockOutput]
 
-    # Forbid extras at root too
+    # Forbid extras at the root as well
     model_config = {"extra": "forbid"}
-    class Config:
-        extra = "forbid"
-
-def create_fallback_study_plan(objective: Optional[str], parsed_summary: Optional[str], duration: int) -> dict:
-    """Create a fallback study plan when JSON parsing fails"""
-    num_blocks, block_duration = calculate_optimal_blocks(duration)
-    topic = objective or "Study Session"
-    
-    # Create basic units based on available content
-    if parsed_summary and len(parsed_summary) > 100:
-        units = [f"Section {i+1}" for i in range(min(num_blocks, 4))]
-    elif objective:
-        units = [f"{topic} - Part {i+1}" for i in range(min(num_blocks, 3))]
-    else:
-        units = ["Review Session", "Practice Problems", "Key Concepts"]
-    
-    # Pad units to match number of blocks if needed
-    while len(units) < num_blocks:
-        units.append(f"Additional Study {len(units) + 1}")
-    
-    blocks = []
-    for i in range(num_blocks):
-        unit_name = units[i] if i < len(units) else f"Study Block {i+1}"
-        
-        blocks.append({
-            "unit": unit_name,
-            "techniques": ["feynman", "quiz"] if i % 2 == 0 else ["flashcards", "blurting"],
-            "description": f"Comprehensive study of {unit_name}. Focus on key concepts, important details, and practical applications. Use active recall and spaced repetition techniques to reinforce learning.",
-            "duration": block_duration
-        })
-    
-    return {
-        "units_to_cover": units[:num_blocks],
-        "pomodoro": "25/5",
-        "techniques": ["feynman", "flashcards", "quiz", "blurting"],
-        "blocks": blocks
-    }
 
 # --- Utility Functions ---
 def extract_user_id(request: Request) -> str:
@@ -138,19 +96,16 @@ def create_content_hash(objective: str, parsed_summary: str, duration: int) -> s
 
 def build_enhanced_prompt(objective: Optional[str], parsed_summary: Optional[str], duration: int) -> str:
     """Build comprehensive GPT prompt with better structure and examples"""
-    
     num_blocks, block_duration = calculate_optimal_blocks(duration)
-    
-    # Build content section with better truncation
+
     content_section = ""
     if objective:
         content_section += f"STUDENT'S LEARNING OBJECTIVE:\n{objective.strip()}\n\n"
-    
+
     if parsed_summary:
-        # Truncate more aggressively to prevent token overflow
-        truncated_summary = parsed_summary[:2500]  # Reduced from 4500
+        truncated_summary = parsed_summary[:2500]
         content_section += f"SOURCE MATERIAL TO COVER:\n{truncated_summary}\n\n"
-    
+
     if not objective and not parsed_summary:
         raise ValueError("At least one of objective or parsed_summary must be provided.")
 
@@ -182,7 +137,6 @@ CONTENT REQUIREMENTS FOR EACH BLOCK:
 5. the collection of study topics and descriptions should cover the entirety of the content the student wants to learn in that session
 
 Create a study plan with exactly {num_blocks} blocks of {block_duration} minutes each."""
-    
     return prompt
 
 # --- GPT System Prompt --- #
@@ -266,8 +220,8 @@ ASSISTANT_EXAMPLE_JSON_3 = """
 async def update_context_async(payload: dict) -> bool:
     """Asynchronously update context API with better error handling"""
     try:
-        async with httpx.AsyncClient(timeout=3.0) as client:  # Reduced timeout
-            response = await client.post(f"{CONTEXT_API}/api/context/update", json=payload)
+        async with httpx.AsyncClient(timeout=3.0) as client_http:
+            response = await client_http.post(f"{CONTEXT_API}/api/context/update", json=payload)
             return response.status_code == 200
     except Exception as e:
         print(f"⚠️ Context update failed: {e}")
@@ -275,227 +229,178 @@ async def update_context_async(payload: dict) -> bool:
 
 # --- OpenAI call wrapper --- #
 def _call_model_and_get_parsed(input_messages: List[Dict[str, Any]], max_tokens: int = 4000):
-    """
-    Wrapper for the Responses API parse method.
-    Note: we pass the pydantic model class StudyPlanOutput into text_format so the SDK can
-    validate/parse the modelled JSON.
-    """
+    """Call Responses API and parse into StudyPlanOutput (strict schema)."""
     return client.responses.parse(
         model="gpt-5-nano",
         input=input_messages,
         text_format=StudyPlanOutput,
         reasoning={"effort": "low"},
-        instructions="Create comprehensive study plans with exactly the requested number of blocks. Focus on educational value and comprehensive coverage.",
+        instructions=(
+            "Create comprehensive study plans with exactly the requested number of blocks. "
+            "Focus on educational value and comprehensive coverage."
+        ),
         max_output_tokens=max_tokens,
     )
 
-def generate_gpt_plan(prompt: str, objective: Optional[str] = None, parsed_summary: Optional[str] = None, duration: int = 60) -> dict:
-    """Generate study plan with GPT-5-nano structured outputs"""
-    
+def generate_gpt_plan(
+    prompt: str,
+    objective: Optional[str] = None,
+    parsed_summary: Optional[str] = None,
+    duration: int = 60
+) -> dict:
+    """Generate study plan with GPT-5-nano structured outputs. Raises on any failure."""
     print(f"📏 Prompt length: {len(prompt)} characters")
-    
-    try:
-        print(f"🤖 Calling GPT-5-nano...")
-        
-        # Messages with assistant examples
-        input_messages = [
-            {"role": "system", "content": GPT_SYSTEM_PROMPT},
-            {"role": "assistant", "content": ASSISTANT_EXAMPLE_JSON_1},
-            {"role": "assistant", "content": ASSISTANT_EXAMPLE_JSON_2},
-            {"role": "assistant", "content": ASSISTANT_EXAMPLE_JSON_3},
-            {"role": "user", "content": prompt}
-        ]
+    print(f"🤖 Calling GPT-5-nano...")
 
-        # First attempt
-        response = _call_model_and_get_parsed(input_messages)
+    # Messages with assistant examples
+    input_messages = [
+        {"role": "system", "content": GPT_SYSTEM_PROMPT},
+        {"role": "assistant", "content": ASSISTANT_EXAMPLE_JSON_1},
+        {"role": "assistant", "content": ASSISTANT_EXAMPLE_JSON_2},
+        {"role": "assistant", "content": ASSISTANT_EXAMPLE_JSON_3},
+        {"role": "user", "content": prompt},
+    ]
 
-        if getattr(response, "output_parsed", None) is None:
-            if hasattr(response, "refusal") and response.refusal:
-                print(f"Model refusal: {response.refusal}")
-                return create_fallback_study_plan(objective, parsed_summary, duration)
-            
-            # Retry with correction prompt
-            retry_msg = {
-                "role": "user",
-                "content": "Fix JSON only: If the previous response had any formatting or schema issues, return only the corrected single JSON object. Nothing else."
-            }
-            response = _call_model_and_get_parsed(input_messages + [retry_msg])
-            if getattr(response, "output_parsed", None) is None:
-                print("❌ Model did not return valid parsed output after retry")
-                return create_fallback_study_plan(objective, parsed_summary, duration)
+    # First attempt
+    response = _call_model_and_get_parsed(input_messages)
 
-        parsed_output = response.output_parsed
-        
-        # Convert to dict format
-        result = {
-            "units_to_cover": parsed_output.units_to_cover,
-            "pomodoro": parsed_output.pomodoro,
-            "techniques": parsed_output.techniques,
-            "blocks": parsed_output.blocks
+    if getattr(response, "output_parsed", None) is None:
+        if hasattr(response, "refusal") and response.refusal:
+            raise RuntimeError(f"Model refusal: {response.refusal}")
+        # Retry once with a strict correction instruction
+        retry_msg = {
+            "role": "user",
+            "content": "Fix JSON only: If the previous response had any formatting or schema issues, return only the corrected single JSON object. Nothing else."
         }
-        
-        # Validate blocks
-        blocks = result.get("blocks", [])
-        if not blocks:
-            print("❌ No blocks generated, using fallback")
-            return create_fallback_study_plan(objective, parsed_summary, duration)
-        
-        # Validate block structure
-        for i, block in enumerate(blocks):
-            if not isinstance(block, dict) and not isinstance(block, BaseModel):
-                print(f"❌ Block {i} invalid structure, using fallback")
-                return create_fallback_study_plan(objective, parsed_summary, duration)
-            
-            # If block is a pydantic model instance, convert to dict
-            if isinstance(block, BaseModel):
-                block = block.dict()
-            
-            if not all(key in block for key in ["unit", "techniques", "description", "duration"]):
-                print(f"❌ Block {i} missing keys, using fallback")
-                return create_fallback_study_plan(objective, parsed_summary, duration)
-            
-            # Ensure techniques is a list
-            if not isinstance(block.get("techniques"), list):
-                block["techniques"] = ["feynman"]
-        
-        print(f"✅ GPT generated valid response with {len(blocks)} blocks")
-        print(f"📊 Units: {len(result.get('units_to_cover', []))}")
-        print(f"🔧 Techniques: {len(result.get('techniques', []))}")
-        return result
-        
-    except Exception as e:
-        print(f"🔥 GPT generation failed: {e}")
-        print(f"Using fallback study plan...")
-        return create_fallback_study_plan(objective, parsed_summary, duration)
+        response = _call_model_and_get_parsed(input_messages + [retry_msg])
+        if getattr(response, "output_parsed", None) is None:
+            raise RuntimeError("Model did not return valid parsed output after retry")
+
+    parsed_output = response.output_parsed
+
+    # Convert to dict format
+    result = {
+        "units_to_cover": parsed_output.units_to_cover,
+        "pomodoro": parsed_output.pomodoro,
+        "techniques": parsed_output.techniques,
+        "blocks": parsed_output.blocks,
+    }
+
+    # Validate blocks are present and structured
+    blocks = result.get("blocks", [])
+    if not blocks:
+        raise RuntimeError("No blocks returned by model")
+
+    for i, block in enumerate(blocks):
+        if isinstance(block, BaseModel):
+            block = block.model_dump()
+        if not isinstance(block, dict):
+            raise RuntimeError(f"Block {i} is not a JSON object")
+        for key in ("unit", "techniques", "description", "duration"):
+            if key not in block:
+                raise RuntimeError(f"Block {i} missing required key: {key}")
+        if not isinstance(block.get("techniques"), list):
+            raise RuntimeError(f"Block {i} 'techniques' must be a list")
+
+    print(f"✅ GPT generated valid response with {len(blocks)} blocks")
+    print(f"📊 Units: {len(result.get('units_to_cover', []))}")
+    print(f"🔧 Techniques: {len(result.get('techniques', []))}")
+    return result
 
 # --- Main Endpoint ---
 @router.post("/study-session", response_model=StudyPlanResponse)
 async def generate_plan(data: StudyPlanRequest, request: Request):
-    """Generate comprehensive study plan with enhanced logging and error handling"""
-    
+    """Generate comprehensive study plan with strict erroring on failure."""
     print(f"🚀 Starting study plan generation...")
     print(f"📋 Request: duration={data.duration}, objective={bool(data.objective)}, summary={bool(data.parsed_summary)}")
-    
+
     try:
         user_id = extract_user_id(request)
         print(f"👤 User ID: {user_id}")
-        
+
         # Build enhanced prompt
         print("📝 Building enhanced prompt...")
         prompt = build_enhanced_prompt(data.objective, data.parsed_summary, data.duration)
-        
-        # Generate plan with GPT
+
+        # Generate plan with GPT (raises on failure)
         print("🤖 Calling GPT...")
         parsed = generate_gpt_plan(prompt, data.objective, data.parsed_summary, data.duration)
-        
+
         # Extract plan components
         session_id = f"session_{uuid.uuid4().hex[:8]}"
         units = parsed.get("units_to_cover", [])
         techniques = parsed.get("techniques", [])
         blocks_json = parsed.get("blocks", [])
         pomodoro = parsed.get("pomodoro", "25/5")
-        
+
         print(f"📦 Processing {len(blocks_json)} blocks...")
-        
+
         # Build study blocks
-        blocks = []
+        blocks: List[StudyBlock] = []
         context_tasks = []
         total_time = 0
-        
+
         for idx, item in enumerate(blocks_json):
-            try:
-                # If item is a Pydantic model convert to dict
-                if isinstance(item, BaseModel):
-                    item = item.dict()
-                unit = item.get("unit", f"Unit {idx + 1}")
-                techniques_list = item.get("techniques", ["feynman"])
-                primary_technique = techniques_list[0] if techniques_list else "feynman"
-                description = item.get("description", "Study the assigned material")
-                duration = item.get("duration", 12)
-                block_id = f"block_{uuid.uuid4().hex[:8]}"
-                
-                # Create study block with both single technique (backward compatibility) and multiple techniques
-                study_block = StudyBlock(
-                    id=block_id,
-                    unit=unit,
-                    technique=primary_technique,  # Primary technique for backward compatibility
-                    techniques=techniques_list,   # New field for multiple techniques
-                    phase=primary_technique,
-                    tool=primary_technique,
-                    lovable_component="text-block",
-                    duration=duration,
-                    description=description,
-                    position=idx
-                )
-                
-                blocks.append(study_block)
-                total_time += duration
-                
-                print(f"✅ Block {idx + 1}: {unit} - {techniques_list} ({duration}min)")
-                print(f"   Description: {description[:100]}...")
-                
-                # Prepare context update (async) - use primary technique
-                context_payload = {
-                    "source": "session_planner",
-                    "user_id": user_id,
-                    "current_topic": f"{unit} — {primary_technique}",
-                    "learning_event": {
-                        "concept": unit,
-                        "phase": primary_technique,
-                        "confidence": None,
-                        "depth": None,
-                        "source_summary": f"Planned {' + '.join(techniques_list)} session: {description[:200]}...",
-                        "repetition_count": 0,
-                        "review_scheduled": False
-                    }
-                }
-                
-                context_tasks.append(update_context_async(context_payload))
-                
-            except Exception as e:
-                print(f"❌ Error processing block {idx}: {e}")
-                continue
-        
-        # Execute context updates with timeout protection
+            if isinstance(item, BaseModel):
+                item = item.model_dump()
+            unit = item.get("unit", f"Unit {idx + 1}")
+            techniques_list = item.get("techniques", ["feynman"])
+            primary_technique = techniques_list[0] if techniques_list else "feynman"
+            description = item.get("description", "Study the assigned material")
+            duration_block = item.get("duration", 12)
+            block_id = f"block_{uuid.uuid4().hex[:8]}"
+
+            study_block = StudyBlock(
+                id=block_id,
+                unit=unit,
+                technique=primary_technique,
+                techniques=techniques_list,
+                phase=primary_technique,
+                tool=primary_technique,
+                lovable_component="text-block",
+                duration=duration_block,
+                description=description,
+                position=idx,
+            )
+
+            blocks.append(study_block)
+            total_time += duration_block
+
+            print(f"✅ Block {idx + 1}: {unit} - {techniques_list} ({duration_block}min)")
+            print(f"   Description: {description[:100]}...")
+
+            # Prepare context update (async)
+            context_payload = {
+                "source": "session_planner",
+                "user_id": user_id,
+                "current_topic": f"{unit} — {primary_technique}",
+                "learning_event": {
+                    "concept": unit,
+                    "phase": primary_technique,
+                    "confidence": None,
+                    "depth": None,
+                    "source_summary": f"Planned {' + '.join(techniques_list)} session: {description[:200]}...",
+                    "repetition_count": 0,
+                    "review_scheduled": False,
+                },
+            }
+            context_tasks.append(update_context_async(context_payload))
+
+        # Execute context updates with timeout protection (best-effort; failures don't break the endpoint)
         print(f"📤 Sending {len(context_tasks)} context updates...")
         try:
             context_results = await asyncio.wait_for(
                 asyncio.gather(*context_tasks, return_exceptions=True),
-                timeout=10.0
+                timeout=10.0,
             )
-            successful_updates = sum(1 for result in context_results if result is True)
+            successful_updates = sum(1 for r in context_results if r is True)
             print(f"✅ {successful_updates}/{len(context_tasks)} context updates successful")
         except asyncio.TimeoutError:
             print("⏰ Context updates timed out")
-            successful_updates = 0
-        
-        # Send final synthesis trigger if any updates succeeded
-        if successful_updates > 0:
-            try:
-                final_payload = {
-                    "source": "session_planner",
-                    "user_id": user_id,
-                    "current_topic": "Complete Study Plan",
-                    "learning_event": {
-                        "concept": data.objective or "Generated Study Plan",
-                        "phase": "planning",
-                        "confidence": None,
-                        "depth": None,
-                        "source_summary": f"Comprehensive study plan with {len(blocks)} blocks covering: {', '.join(units[:3])}{'...' if len(units) > 3 else ''}",
-                        "repetition_count": 0,
-                        "review_scheduled": False
-                    },
-                    "trigger_synthesis": True
-                }
-                await asyncio.wait_for(update_context_async(final_payload), timeout=5.0)
-                print("🧠 Synthesis trigger sent")
-            except Exception as e:
-                print(f"⚠️ Synthesis trigger failed: {e}")
-        
+
         print(f"🎉 Study plan generated successfully!")
         print(f"📊 Total: {len(blocks)} blocks, {total_time} minutes")
-        
-        # Return complete study plan
+
         return StudyPlanResponse(
             session_id=session_id,
             topic=data.objective or "Study Plan from Uploaded Content",
@@ -503,9 +408,9 @@ async def generate_plan(data: StudyPlanRequest, request: Request):
             pomodoro=pomodoro,
             units_to_cover=units,
             techniques=techniques,
-            blocks=blocks
+            blocks=blocks,
         )
-        
+
     except HTTPException:
         raise
     except Exception as e:
