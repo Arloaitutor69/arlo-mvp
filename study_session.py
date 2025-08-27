@@ -153,14 +153,14 @@ STUDY PLAN STRUCTURE:
 - Each block should fully explain 1-2 subtopics with comprehensive coverage
 - Cover all aspects of the requested topic comprehensively  
 - Use techniques strategically based on content type
-- Include specific details, examples, and key concepts
-- Build progressively toward complete mastery
 
 CONTENT QUALITY STANDARDS:
 - Each description should be 100-200 words
+- include a breif topic summary and 10-12 numbered sub topics with parenthetical teaching notes/explenations only when neccesary 
 - Include specific facts, formulas, and examples
 - Focus on most important details for the level specified
-- Ensure non-overlapping, distinct content across blocks"""
+- Ensure non-overlapping, distinct content across blocks
+"""
 
 # --- Assistant Examples --- #
 ASSISTANT_EXAMPLE_JSON_1 = """
