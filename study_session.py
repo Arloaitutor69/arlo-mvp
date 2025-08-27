@@ -49,73 +49,11 @@ class StudyPlanResponse(BaseModel):
     blocks: List[StudyBlock]
 
 # --- JSON Schema for structured outputs --- #
-STUDY_PLAN_SCHEMA = {
-    "name": "study_plan_response",
-    "schema": {
-        "type": "object",
-        "strict": True,
-        "properties": {
-            "units_to_cover": {
-                "type": "array",
-                "minItems": 2,
-                "maxItems": 8,
-                "items": {
-                    "type": "string",
-                    "minLength": 1
-                }
-            },
-            "pomodoro": {
-                "type": "string",
-                "enum": ["25/5", "30/5", "45/15", "50/10"]
-            },
-            "techniques": {
-                "type": "array",
-                "minItems": 2,
-                "maxItems": 4,
-                "items": {
-                    "type": "string",
-                    "enum": ["flashcards", "feynman", "quiz", "blurting"]
-                }
-            },
-            "blocks": {
-                "type": "array",
-                "minItems": 2,
-                "maxItems": 8,
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "unit": {
-                            "type": "string",
-                            "minLength": 1
-                        },
-                        "techniques": {
-                            "type": "array",
-                            "minItems": 1,
-                            "maxItems": 3,
-                            "items": {
-                                "type": "string",
-                                "enum": ["flashcards", "feynman", "quiz", "blurting"]
-                            }
-                        },
-                        "description": {
-                            "type": "string",
-                            "minLength": 100
-                        },
-                        "duration": {
-                            "type": "integer",
-                            "minimum": 10,
-                            "maximum": 30
-                        }
-                    },
-                    "required": ["unit", "techniques", "description", "duration"],
-                    "additionalProperties": False
-                }
-            }
-        },
-        "required": ["units_to_cover", "pomodoro", "techniques", "blocks"],
-        "additionalProperties": False
-    }
-}
+class StudyPlanOutput(BaseModel):
+    units_to_cover: List[str] = Field(min_length=2, max_length=8)
+    pomodoro: str = Field(pattern="^(25/5|30/5|45/15|50/10)$")
+    techniques: List[str] = Field(min_length=2, max_length=4)
+    blocks: List[Dict] = Field(min_length=2, max_length=8)
 
 def create_fallback_study_plan(objective: Optional[str], parsed_summary: Optional[str], duration: int) -> dict:
     """Create a fallback study plan when JSON parsing fails"""
@@ -197,9 +135,7 @@ def build_enhanced_prompt(objective: Optional[str], parsed_summary: Optional[str
     if not objective and not parsed_summary:
         raise ValueError("At least one of objective or parsed_summary must be provided.")
 
-    prompt = f"""You are an expert curriculum designer creating a study plan.
-
-{content_section}
+    prompt = f"""{content_section}
 
 PLAN SPECIFICATIONS:
 - Duration: {duration} minutes total
@@ -226,16 +162,87 @@ CONTENT REQUIREMENTS FOR EACH BLOCK:
 4. Each description should be 100-200 words
 5. the collection of study topics and descriptions should cover the entirety of the content the student wants to learn in that session
 
-EXAMPLE QUALITY DESCRIPTION:
-For an input topic  "Cellular Biology" break down into Cell Structure and Function", "Cellular Respiration","Photosynthesis", "Cell Communication and Signaling","Cell Cycle and Division"
-Example Photosynthesis Study Plan Description: "Understanding the Basics of Photosynthesis: 1. Master Equation – 6CO₂ + 6H₂O + light → C₆H₁₂O₆ + 6O₂. 2. Autotrophs (contrast with heterotrophs during lesson). 3. Chloroplasts. 4. Thylakoids – site of light-dependent reactions. 5. Stroma – site of light-independent reactions (connect to Calvin cycle in teaching flow). 6. Pigments – chlorophyll a & b, accessory pigments. 7. Gas Exchange (highlight water loss trade-off). 8. Carbon Fixation Pathways – C3, C4, CAM plants. 9. Photorespiration – RuBisCO fixing O₂ instead of CO₂ (stress why it reduces efficiency). 10. Light-Dependent Reactions. 11. Light-Independent Reactions. 12. Importance – provides O₂ and organic molecules for life (wrap up with global impact facts and relevance)."
-For an input topic of "AP US History 1900-present", break down into Progressive Era and Early 20th Century Reform", "The Great Depression and New Deal", "World War II and the Home Front", "Cold War Era Politics and Society", "21st Century America: Globalization and Contemporary Issues"
-Example description for Cold War Era Politics and Society: 1. Defining the Cold War – ideological struggle between democracy/capitalism and communism. 2. Superpowers – U.S. vs USSR rivalry. 3. Containment Policy (Truman Doctrine, Marshall Plan, NATO) 4. Nuclear Arms Race 5. Space Race – Sputnik, NASA, Moon landing. 6. Proxy Wars – Korea, Vietnam, Afghanistan (unpack impacts of each breifly). 7. Domestic Impact – Red Scare, McCarthyism, civil defense drills. 8. Berlin Crisis – Berlin Airlift, Berlin Wall. 9. Cuban Missile Crisis 10. Détente – easing tensions, SALT treaties. 11. Reagan Era – military buildup, 'Evil Empire' speech, Strategic Defense Initiative. 12. End of the Cold War (fall of Berlin Wall, collapse of Soviet Union in 1991)"
-
-
 Create a study plan with exactly {num_blocks} blocks of {block_duration} minutes each."""
     
     return prompt
+
+# --- GPT System Prompt --- #
+GPT_SYSTEM_PROMPT = """You are an expert curriculum designer creating comprehensive study plans. Create study plans with exactly the requested number of blocks. Each block must be educational, actionable, and contain substantial learning content with specific examples, definitions, and key facts.
+
+CRITICAL REQUIREMENTS:
+1. Return ONLY JSON data conforming to the schema, never the schema itself.
+2. Output ONLY valid JSON format with proper escaping.
+3. Use double quotes, escape internal quotes as \".
+4. Use \\n for line breaks within content.
+5. No trailing commas.
+
+STUDY PLAN STRUCTURE:
+- Each block should fully explain 1-2 subtopics with comprehensive coverage
+- Cover all aspects of the requested topic comprehensively  
+- Use techniques strategically based on content type
+- Include specific details, examples, and key concepts
+- Build progressively toward complete mastery
+
+CONTENT QUALITY STANDARDS:
+- Each description should be 100-200 words
+- Include specific facts, formulas, and examples
+- Focus on most important details for the level specified
+- Ensure non-overlapping, distinct content across blocks"""
+
+# --- Assistant Examples --- #
+ASSISTANT_EXAMPLE_JSON_1 = """
+{
+  "units_to_cover": ["Cell Structure and Function", "Cellular Respiration", "Photosynthesis", "Cell Communication"],
+  "pomodoro": "25/5",
+  "techniques": ["flashcards", "feynman", "quiz", "blurting"],
+  "blocks": [
+    {
+      "unit": "Cell Structure and Function",
+      "techniques": ["flashcards", "feynman"],
+      "description": "Master fundamental cell components and their roles. 1. Cell membrane - selectively permeable phospholipid bilayer controlling molecular transport. 2. Nucleus - contains DNA, controls cellular activities via transcription. 3. Mitochondria - powerhouse producing ATP through cellular respiration. 4. Ribosomes - protein synthesis sites, free-floating or ER-bound. 5. Endoplasmic reticulum - smooth (lipid synthesis) vs rough (protein modification). 6. Golgi apparatus - protein packaging and modification. 7. Lysosomes - digestive organelles breaking down waste. 8. Cytoskeleton - structural support via microfilaments, microtubules. 9. Prokaryotic vs eukaryotic differences. 10. Cell theory principles.",
+      "duration": 15
+    },
+    {
+      "unit": "Cellular Respiration",
+      "techniques": ["quiz", "blurting"],
+      "description": "Understanding ATP production through glucose breakdown. 1. Overall equation: C₆H₁₂O₆ + 6O₂ → 6CO₂ + 6H₂O + 36-38 ATP. 2. Glycolysis - glucose to pyruvate in cytoplasm, net 2 ATP. 3. Krebs cycle - acetyl-CoA oxidation in mitochondrial matrix, produces NADH, FADH₂. 4. Electron transport chain - chemiosmosis creating proton gradient for ATP synthesis. 5. Aerobic vs anaerobic respiration differences. 6. Fermentation pathways (lactic acid, alcoholic). 7. ATP structure and energy release mechanism. 8. Oxygen's role as final electron acceptor. 9. Location specificity of each stage.",
+      "duration": 15
+    }
+  ]
+}
+"""
+
+ASSISTANT_EXAMPLE_JSON_2 = """
+{
+  "units_to_cover": ["Progressive Era Reforms", "Great Depression and New Deal", "World War II Impact"],
+  "pomodoro": "30/5", 
+  "techniques": ["feynman", "flashcards", "quiz"],
+  "blocks": [
+    {
+      "unit": "Progressive Era Reforms",
+      "techniques": ["feynman", "flashcards"],
+      "description": "Comprehensive coverage of early 20th century reform movements. 1. Muckrakers - investigative journalists exposing corruption (Ida Tarbell, Upton Sinclair). 2. Trust-busting - Theodore Roosevelt's antitrust actions, Sherman Act enforcement. 3. Pure Food and Drug Act 1906 - response to 'The Jungle'. 4. 16th Amendment - federal income tax authorization. 5. 17th Amendment - direct election of senators. 6. 19th Amendment - women's suffrage victory 1920. 7. Prohibition movement and 18th Amendment. 8. Settlement houses - Jane Addams, Hull House social work. 9. Conservation efforts - national parks, forestry services. 10. Labor reforms - child labor laws, workplace safety.",
+      "duration": 20
+    }
+  ]
+}
+"""
+
+ASSISTANT_EXAMPLE_JSON_3 = """
+{
+  "units_to_cover": ["Supply and Demand", "Market Equilibrium", "Elasticity", "Consumer Behavior"],
+  "pomodoro": "25/5",
+  "techniques": ["quiz", "feynman", "flashcards"],
+  "blocks": [
+    {
+      "unit": "Supply and Demand",
+      "techniques": ["quiz", "feynman"],
+      "description": "Foundation of market economics and price determination. 1. Law of Demand - inverse relationship between price and quantity demanded, downward sloping curve. 2. Law of Supply - positive relationship between price and quantity supplied, upward sloping curve. 3. Demand shifters - income changes, preferences, substitute/complement prices, expectations, population. 4. Supply shifters - input costs, technology, number of sellers, expectations, government policy. 5. Movement along curves vs curve shifts. 6. Normal vs inferior goods income effects. 7. Substitute and complement relationships. 8. Market demand vs individual demand aggregation. 9. Producer surplus and consumer surplus concepts.",
+      "duration": 12
+    }
+  ]
+}
+"""
 
 async def update_context_async(payload: dict) -> bool:
     """Asynchronously update context API with better error handling"""
@@ -247,6 +254,17 @@ async def update_context_async(payload: dict) -> bool:
         print(f"⚠️ Context update failed: {e}")
         return False
 
+# --- OpenAI call wrapper --- #
+def _call_model_and_get_parsed(input_messages, max_tokens=4000):
+    return client.responses.parse(
+        model="gpt-5-nano",
+        input=input_messages,
+        text_format=StudyPlanOutput,
+        reasoning={"effort": "low"},
+        instructions="Create comprehensive study plans with exactly the requested number of blocks. Focus on educational value and comprehensive coverage.",
+        max_output_tokens=max_tokens,
+    )
+
 def generate_gpt_plan(prompt: str, objective: Optional[str] = None, parsed_summary: Optional[str] = None, duration: int = 60) -> dict:
     """Generate study plan with GPT-5-nano structured outputs"""
     
@@ -255,44 +273,63 @@ def generate_gpt_plan(prompt: str, objective: Optional[str] = None, parsed_summa
     try:
         print(f"🤖 Calling GPT-5-nano...")
         
-        # Use GPT-5-nano structured outputs
-        response = client.chat.completions.create(
-            model="gpt-5-nano",
-            messages=[
-                {"role": "system", "content": "You are an expert curriculum designer. Create comprehensive study plans with exactly the requested number of blocks. Each block must be educational, actionable, and contain substantial learning content with specific examples, definitions, and key facts."},
-                {"role": "user", "content": prompt}
-            ],
-            response_format={
-                "type": "json_schema",
-                "json_schema": STUDY_PLAN_SCHEMA
-            },
-            reasoning_effort="low",
-            max_output_tokens="4000"
-        )
+        # Messages with assistant examples
+        input_messages = [
+            {"role": "system", "content": GPT_SYSTEM_PROMPT},
+            {"role": "assistant", "content": ASSISTANT_EXAMPLE_JSON_1},
+            {"role": "assistant", "content": ASSISTANT_EXAMPLE_JSON_2},
+            {"role": "assistant", "content": ASSISTANT_EXAMPLE_JSON_3},
+            {"role": "user", "content": prompt}
+        ]
 
-        raw_output = response.choices[0].message.content.strip()
+        # First attempt
+        response = _call_model_and_get_parsed(input_messages)
+
+        if getattr(response, "output_parsed", None) is None:
+            if hasattr(response, "refusal") and response.refusal:
+                print(f"Model refusal: {response.refusal}")
+                return create_fallback_study_plan(objective, parsed_summary, duration)
+            
+            # Retry with correction prompt
+            retry_msg = {
+                "role": "user",
+                "content": "Fix JSON only: If the previous response had any formatting or schema issues, return only the corrected single JSON object. Nothing else."
+            }
+            response = _call_model_and_get_parsed(input_messages + [retry_msg])
+            if getattr(response, "output_parsed", None) is None:
+                print("❌ Model did not return valid parsed output after retry")
+                return create_fallback_study_plan(objective, parsed_summary, duration)
+
+        parsed_output = response.output_parsed
         
-        print(f"📝 Raw GPT response length: {len(raw_output)} chars")
-        print(f"📝 First 300 chars: {raw_output[:300]}...")
+        # Convert to dict format
+        result = {
+            "units_to_cover": parsed_output.units_to_cover,
+            "pomodoro": parsed_output.pomodoro,
+            "techniques": parsed_output.techniques,
+            "blocks": parsed_output.blocks
+        }
         
-        # Parse the guaranteed valid JSON response
-        try:
-            parsed_output = json.loads(raw_output)
-        except json.JSONDecodeError as e:
-            print(f"JSON parsing failed: {e}")
-            # Use fallback response
-            parsed_output = create_fallback_study_plan(objective, parsed_summary, duration)
-        
-        blocks = parsed_output.get("blocks", [])
+        # Validate blocks
+        blocks = result.get("blocks", [])
         if not blocks:
             print("❌ No blocks generated, using fallback")
-            parsed_output = create_fallback_study_plan(objective, parsed_summary, duration)
-            blocks = parsed_output.get("blocks", [])
+            return create_fallback_study_plan(objective, parsed_summary, duration)
+        
+        # Validate block structure
+        for i, block in enumerate(blocks):
+            if not isinstance(block, dict) or not all(key in block for key in ["unit", "techniques", "description", "duration"]):
+                print(f"❌ Block {i} invalid structure, using fallback")
+                return create_fallback_study_plan(objective, parsed_summary, duration)
+            
+            # Ensure techniques is a list
+            if not isinstance(block.get("techniques"), list):
+                block["techniques"] = ["feynman"]
         
         print(f"✅ GPT generated valid response with {len(blocks)} blocks")
-        print(f"📊 Units: {len(parsed_output.get('units_to_cover', []))}")
-        print(f"🔧 Techniques: {len(parsed_output.get('techniques', []))}")
-        return parsed_output
+        print(f"📊 Units: {len(result.get('units_to_cover', []))}")
+        print(f"🔧 Techniques: {len(result.get('techniques', []))}")
+        return result
         
     except Exception as e:
         print(f"🔥 GPT generation failed: {e}")
