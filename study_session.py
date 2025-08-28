@@ -174,7 +174,7 @@ Create a study plan with exactly {num_blocks} blocks of {block_duration} minutes
     prompt += f"""
 
 DESCRIPTION FORMAT ENFORCEMENT (MATCH EXAMPLES):
-- For EACH block's "description", write an ordered, numbered list of **10 to 12** subtopics.
+- For EACH block's "description", write an ordered, numbered list of **5-6** subtopics.
 - Format each item as: "<Short subtopic title>: <very concise teacher note (~5–12 words), may include 1 parenthetical fact/date/case>".
 - Keep the list tight and factual; avoid paragraphs or narrative prose.
 - Cover the MOST IMPORTANT concepts for the unit end-to-end; items should be **non-overlapping** and **collectively exhaustive** for the subtopic.
