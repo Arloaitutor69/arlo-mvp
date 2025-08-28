@@ -78,36 +78,47 @@ def extract_user_id(request: Request) -> str:
 def _pick_even_divisor(duration: int, candidates: List[int]) -> Tuple[int, int]:
     """
     Choose n in candidates such that duration % n == 0 and block = duration//n
-    stays close to 10 minutes (preferred) and within [8, 12].
+    stays close to 10 minutes (preferred) and within [6, 15].
     Returns (n, block_minutes). Raises if none fits.
     """
     viable = []
     for n in candidates:
         if duration % n == 0:
             block = duration // n
-            if 8 <= block <= 12:
+            if 6 <= block <= 15:
                 viable.append((abs(block - 10), -n, n, block))  # prefer closer to 10, then larger n
     if not viable:
-        raise ValueError(f"No even division found for duration={duration} with allowed block range 8–12.")
+        raise ValueError(f"No even division found for duration={duration} with allowed block range 6–15.")
     _, _, n, block = sorted(viable)[0]
     return n, block
 
 def calculate_optimal_blocks(duration: int) -> Tuple[int, int]:
-    if duration < 56:  # too short for 7 blocks of at least 8 minutes each
-        # try with 7 blocks anyway, but if it fails, fall back to 8
-        try:
-            return _pick_even_divisor(duration, [7])
-        except ValueError:
-            if duration >= 64:  # can fit 8 blocks of 8 minutes
-                return _pick_even_divisor(duration, [8])
-            else:
-                raise ValueError("Duration too short to split into 7-8 blocks of at least 8 minutes each.")
+    """Calculate optimal number of blocks (7-8 preferred) with flexible duration ranges."""
+    
+    # First try to get exactly 7 or 8 blocks
     try:
-        # prefer 7-8 blocks
         return _pick_even_divisor(duration, [7, 8])
     except ValueError:
-        # fallback to other options if needed
-        raise ValueError(f"Cannot create 7-8 blocks with duration {duration}")
+        pass
+    
+    # If that doesn't work, try other divisors that give us close to 7-8 blocks
+    # For 60 minutes: 60/6=10min blocks (6 blocks), 60/10=6min blocks (10 blocks)
+    # We'll accept 6-10 blocks as reasonable alternatives
+    try:
+        return _pick_even_divisor(duration, [6, 9, 10])
+    except ValueError:
+        pass
+    
+    # Final fallback - try any reasonable division
+    try:
+        return _pick_even_divisor(duration, [5, 4, 12, 15])
+    except ValueError:
+        # If nothing works, just create 7 blocks with uneven division
+        if duration >= 42:  # minimum 6 minutes per block
+            block_duration = duration // 7
+            return 7, block_duration
+        else:
+            raise ValueError(f"Duration {duration} too short to create meaningful study blocks")
 
 def create_content_hash(objective: str, parsed_summary: str, duration: int) -> str:
     """Create hash for caching purposes"""
@@ -150,9 +161,6 @@ REQUIREMENTS:
 - Focus on what will help the student learn THIS specific content most effectively
 - Each block must cover distinct, non redundant and non-overlapping content that builds progressively toward complete mastery of the subject
 
-Total Requirements: 
-- the content of eachblock should be manageable to learn in 8-10 minutes, and the sum content of all blocks should teach entirety of subject student wants to learn. 
-
 CONTENT REQUIREMENTS FOR EACH BLOCK:
 1. Each description must be a complete self contained lesson including:
 2. Key definitions and examples, Important formulas, equations, or principles, Specific facts, data points, or details to remember
@@ -166,7 +174,7 @@ Create a study plan with exactly {num_blocks} blocks of {block_duration} minutes
     prompt += f"""
 
 DESCRIPTION FORMAT ENFORCEMENT (MATCH EXAMPLES):
-- For EACH block's "description", write an ordered, numbered list of **5-6** subtopics.
+- For EACH block's "description", write an ordered, numbered list of **10 to 12** subtopics.
 - Format each item as: "<Short subtopic title>: <very concise teacher note (~5–12 words), may include 1 parenthetical fact/date/case>".
 - Keep the list tight and factual; avoid paragraphs or narrative prose.
 - Cover the MOST IMPORTANT concepts for the unit end-to-end; items should be **non-overlapping** and **collectively exhaustive** for the subtopic.
