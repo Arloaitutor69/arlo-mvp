@@ -200,6 +200,140 @@ def format_duration(seconds: int) -> str:
     else:
         return f"{minutes:02d}:{secs:02d}"
 
+def seconds_to_time_format(seconds: int) -> str:
+    """Convert seconds to M:SS or MM:SS format for timestamps."""
+    minutes = seconds // 60
+    secs = seconds % 60
+    return f"{minutes}:{secs:02d}"
+
+def time_format_to_seconds(time_str: str) -> int:
+    """Convert M:SS or MM:SS format to seconds."""
+    try:
+        parts = time_str.split(':')
+        if len(parts) == 2:
+            minutes, seconds = int(parts[0]), int(parts[1])
+            return minutes * 60 + seconds
+        elif len(parts) == 3:
+            hours, minutes, seconds = int(parts[0]), int(parts[1]), int(parts[2])
+            return hours * 3600 + minutes * 60 + seconds
+    except:
+        return 0
+    return 0
+
+def parse_description_timestamps(description: str, search_query: str) -> List[VideoSegment]:
+    """
+    Parse video description for manual timestamps that match the search query.
+    Returns relevant segments based on keyword matching.
+    """
+    segments = []
+    if not description or not search_query:
+        return segments
+    
+    # Common timestamp patterns
+    timestamp_patterns = [
+        r'(\d{1,2}:\d{2})\s*[-–—]\s*([^\n\r]+)',  # 1:30 - Topic description
+        r'(\d{1,2}:\d{2})\s+([^\n\r]+)',          # 1:30 Topic description
+        r'(\d{1,2}:\d{2}:\d{2})\s*[-–—]\s*([^\n\r]+)',  # 1:30:00 - Topic description
+        r'(\d{1,2}:\d{2}:\d{2})\s+([^\n\r]+)',          # 1:30:00 Topic description
+    ]
+    
+    search_terms = [term.lower().strip() for term in search_query.split()]
+    
+    for pattern in timestamp_patterns:
+        matches = re.finditer(pattern, description, re.IGNORECASE | re.MULTILINE)
+        
+        for match in matches:
+            timestamp = match.group(1)
+            topic_text = match.group(2).strip()
+            
+            # Skip if topic text is too short or looks like noise
+            if len(topic_text) < 5 or topic_text.lower() in ['intro', 'introduction', 'outro', 'end']:
+                continue
+            
+            # Calculate relevance score based on keyword matching
+            relevance_score = 0.0
+            topic_lower = topic_text.lower()
+            
+            # Exact query match gets highest score
+            if search_query.lower() in topic_lower:
+                relevance_score = 0.95
+            else:
+                # Check individual terms
+                for term in search_terms:
+                    if len(term) > 2 and term in topic_lower:  # Skip very short terms
+                        relevance_score += 0.3
+                        
+                # Bonus for educational keywords
+                educational_keywords = ['explains', 'tutorial', 'how to', 'lesson', 'example', 'definition']
+                for keyword in educational_keywords:
+                    if keyword in topic_lower:
+                        relevance_score += 0.1
+            
+            # Only include segments with reasonable relevance
+            if relevance_score >= 0.3:
+                start_seconds = time_format_to_seconds(timestamp)
+                
+                # Estimate end time (1-2 minutes from start, or until next timestamp)
+                end_seconds = start_seconds + 90  # Default 1.5 minutes
+                
+                # Try to find next timestamp to set better end time
+                next_timestamps = re.findall(r'\d{1,2}:\d{2}(?::\d{2})?', description[match.end():])
+                if next_timestamps:
+                    next_start = time_format_to_seconds(next_timestamps[0])
+                    if next_start > start_seconds:
+                        end_seconds = min(start_seconds + 120, next_start)  # Max 2 minutes or until next
+                
+                segments.append(VideoSegment(
+                    start_time=seconds_to_time_format(start_seconds),
+                    end_time=seconds_to_time_format(end_seconds),
+                    topic=topic_text[:100],  # Limit topic length
+                    relevance_score=round(relevance_score, 2)
+                ))
+    
+    # Sort by relevance score and return top segments
+    segments.sort(key=lambda x: x.relevance_score, reverse=True)
+    return segments[:3]  # Return top 3 most relevant segments
+
+def create_smart_segments(youtube_query: str, duration_seconds: int, description: str = "") -> List[VideoSegment]:
+    """
+    Create intelligent video segments using description timestamps or fallback to whole video.
+    """
+    # First, try to parse description for relevant timestamps
+    if description and youtube_query:
+        parsed_segments = parse_description_timestamps(description, youtube_query)
+        if parsed_segments:
+            logger.info(f"Found {len(parsed_segments)} relevant timestamp segments in description")
+            return parsed_segments
+    
+    # Fallback: For short videos (under 5 minutes), show entire video as one segment
+    if duration_seconds <= 300:  # 5 minutes
+        topic = youtube_query if youtube_query else "Complete video content"
+        return [VideoSegment(
+            start_time="0:00",
+            end_time=format_duration(duration_seconds),
+            topic=f"{topic} (Full video)",
+            relevance_score=0.8
+        )]
+    
+    # For longer videos without timestamps, create two balanced segments
+    mid_point = duration_seconds // 2
+    topic = youtube_query if youtube_query else "Video content"
+    
+    return [
+        VideoSegment(
+            start_time="0:30",
+            end_time=seconds_to_time_format(mid_point),
+            topic=f"{topic} - Part 1",
+            relevance_score=0.7
+        ),
+        VideoSegment(
+            start_time=seconds_to_time_format(mid_point + 15),
+            end_time=seconds_to_time_format(duration_seconds - 15),
+            topic=f"{topic} - Part 2",
+            relevance_score=0.7
+        )
+    ]
+
 def is_educational_channel(channel_title: str) -> tuple[bool, float]:
     """Check if channel is a trusted educational channel and return boost score."""
     channel_lower = channel_title.lower()
@@ -252,6 +386,10 @@ def calculate_quality_score(video_details: Dict[str, Any], channel_info: Dict[st
     if len(description) > 200:  # Detailed description
         quality_score += 0.05
     
+    # Bonus for descriptions with timestamps (indicates structured content)
+    if re.search(r'\d{1,2}:\d{2}', description):
+        quality_score += 0.1
+    
     # Channel authority (subscriber count if available)
     if channel_info and "subscriber_count" in channel_info:
         subscriber_count = channel_info["subscriber_count"]
@@ -292,37 +430,6 @@ def calculate_relevance_score(video_details: Dict[str, Any], search_query: str) 
         relevance_score += 0.1
     
     return min(1.0, relevance_score)
-
-def create_default_segments(youtube_topic: str, duration_seconds: int) -> List[VideoSegment]:
-    """Create reasonable default segments based on video duration."""
-    segments = []
-    topic = youtube_topic if youtube_topic else "Main content"
-    
-    if duration_seconds <= 180:  # 3 minutes or less
-        segments.append(VideoSegment(
-            start_time="0:15",
-            end_time=format_duration(min(duration_seconds - 10, 170)),
-            topic=topic,
-            relevance_score=0.8
-        ))
-    elif duration_seconds <= 300:  # 5 minutes or less
-        mid_point = duration_seconds // 2
-        segments.extend([
-            VideoSegment(
-                start_time="0:30",
-                end_time=format_duration(mid_point),
-                topic=f"{topic} - Introduction",
-                relevance_score=0.8
-            ),
-            VideoSegment(
-                start_time=format_duration(mid_point + 15),
-                end_time=format_duration(duration_seconds - 15),
-                topic=f"{topic} - Key Points",
-                relevance_score=0.7
-            )
-        ])
-    
-    return segments
 
 def get_channel_info(channel_ids: List[str]) -> Dict[str, Dict[str, Any]]:
     """Fetch channel information for quality assessment."""
@@ -429,7 +536,7 @@ def get_video_details(video_ids: List[str]) -> Dict[str, Dict[str, Any]]:
         return {}
 
 def get_best_youtube_video(youtube_query: str, subject: Optional[str] = None) -> Optional[YouTubeVideo]:
-    """Get the best YouTube video for the given query with quality and relevance balancing."""
+    """Get the best YouTube video for the given query with smart segment analysis."""
     try:
         logger.info(f"YouTube search query: '{youtube_query}'")
         
@@ -501,9 +608,9 @@ def get_best_youtube_video(youtube_query: str, subject: Optional[str] = None) ->
         
         logger.info(f"Selected video: {best_details['title']} (final score: {final_score:.2f}, relevance: {relevance_score:.2f}, quality: {quality_score:.2f})")
         
-        # Create segments
+        # Create smart segments using description analysis
         duration_seconds = parse_duration_to_seconds(best_details["duration"])
-        segments = create_default_segments(youtube_query, duration_seconds)
+        segments = create_smart_segments(youtube_query, duration_seconds, best_details.get("description", ""))
         
         # Format response
         formatted_duration = format_duration(duration_seconds)
@@ -738,7 +845,8 @@ async def health_check():
                 "max_video_length": "5_minutes",
                 "preferred_length": "2-3_minutes",
                 "educational_channels": list(EDUCATIONAL_CHANNELS.keys()),
-                "quality_filtering": "enabled"
+                "quality_filtering": "enabled",
+                "smart_segments": "description_timestamps_and_fallback"
             }
         }
     except Exception as e:
