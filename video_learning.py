@@ -9,7 +9,7 @@ from openai import OpenAI
 router = APIRouter()
 
 # --- Keys --- #
-YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY", "AIzaSyAd8kcbap76McZS6e5ZlBTXPz-tZU9nAQs")
+YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY")
 YOUTUBE_SEARCH_URL = "https://www.googleapis.com/youtube/v3/search"
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
