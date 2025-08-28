@@ -56,6 +56,9 @@ def extract_key_topics(teaching_material: str, subject: Optional[str], level: st
     """
     Uses GPT-5-nano to extract 3-5 key topics from teaching material.
     """
+    if not teaching_material or not teaching_material.strip():
+        return [subject] if subject else ["General tutorial"]
+    
     context_parts = [f"Teaching Material: {teaching_material}"]
     if subject:
         context_parts.append(f"Subject: {subject}")
@@ -93,24 +96,47 @@ Return ONLY a numbered list of key topics, one per line. Example:
                 if topic:
                     topics.append(topic)
         
+        # Ensure we always have at least one topic
+        if not topics:
+            if subject:
+                topics = [subject]
+            else:
+                # Extract first meaningful words from teaching material
+                words = teaching_material.split()[:5]
+                topics = [" ".join(words)]
+        
         return topics[:5]  # Limit to 5 topics max
         
     except Exception as e:
         logger.error(f"Error extracting topics: {e}")
-        # Fallback: use subject or first 50 chars of material
-        return [subject] if subject else [teaching_material[:50]]
+        # Enhanced fallback logic
+        fallback_topics = []
+        if subject:
+            fallback_topics.append(subject)
+        
+        # Try to extract meaningful terms from teaching material
+        if teaching_material:
+            words = teaching_material.split()
+            meaningful_words = [word for word in words if len(word) > 3 and word.isalpha()]
+            if meaningful_words:
+                fallback_topics.extend(meaningful_words[:3])
+        
+        return fallback_topics if fallback_topics else ["tutorial"]
 
 def generate_search_query(topics: List[str], subject: Optional[str], level: str) -> str:
     """
     Creates an optimized YouTube search query from key topics.
     """
-    # Combine top topics into search query
-    main_topics = " ".join(topics[:2])  # Use top 2 topics
+    if not topics:
+        topics = [subject] if subject else ["tutorial"]
     
     query_parts = []
     if subject:
         query_parts.append(subject)
-    query_parts.extend(topics[:2])
+    
+    # Use top 2 topics, ensure they exist
+    available_topics = [t for t in topics[:2] if t and t.strip()]
+    query_parts.extend(available_topics)
     
     # Add level-specific terms
     if level == "beginner":
@@ -120,6 +146,10 @@ def generate_search_query(topics: List[str], subject: Optional[str], level: str)
     else:
         query_parts.append("tutorial")
     
+    # Ensure we have at least something to search for
+    if not query_parts:
+        query_parts = ["educational tutorial"]
+    
     query = " ".join(query_parts)
     return query[:100]  # YouTube has query length limits
 
@@ -128,13 +158,19 @@ def analyze_video_segments(video_title: str, video_description: str, duration: s
     """
     Uses GPT-5-nano to predict relevant time segments in the video.
     """
+    if not topics:
+        topics = ["main content"]
+    
+    # Limit description length to prevent token issues
+    description = video_description[:500] if video_description else "No description available"
+    
     prompt = f"""
 You are analyzing a YouTube video to find segments relevant to specific teaching topics.
 
 Video Title: {video_title}
-Video Description: {video_description[:500]}
+Video Description: {description}
 Video Duration: {duration}
-Teaching Topics: {', '.join(topics)}
+Teaching Topics: {', '.join(topics[:3])}
 
 Based on the video title and description, predict the most likely time segments where each topic might be covered.
 Consider typical video structures (intro, main content sections, conclusion).
@@ -164,7 +200,7 @@ Limit to 3 most relevant segments. Use realistic time estimates.
         for line in segments_text.split('\n'):
             line = line.strip()
             if line.startswith('Topic:'):
-                if current_segment:
+                if current_segment and len(current_segment) >= 4:
                     segments.append(VideoSegment(**current_segment))
                 current_segment = {'topic': line.replace('Topic:', '').strip()}
             elif line.startswith('Start:'):
@@ -177,24 +213,45 @@ Limit to 3 most relevant segments. Use realistic time estimates.
                     current_segment['relevance_score'] = min(1.0, max(0.0, score))
                 except:
                     current_segment['relevance_score'] = 0.7
-            elif line == '---' and current_segment:
+            elif line == '---' and current_segment and len(current_segment) >= 4:
                 segments.append(VideoSegment(**current_segment))
                 current_segment = {}
         
-        # Add final segment if exists
-        if current_segment and len(current_segment) == 4:
+        # Add final segment if exists and complete
+        if current_segment and len(current_segment) >= 4:
             segments.append(VideoSegment(**current_segment))
         
-        return segments[:3]  # Limit to 3 segments
+        # Return segments or fallback
+        if segments:
+            return segments[:3]
+        else:
+            # Create fallback segments
+            return [VideoSegment(
+                start_time="00:30",
+                end_time="05:00", 
+                topic=topics[0] if topics else "Main content",
+                relevance_score=0.7
+            )]
         
     except Exception as e:
         logger.error(f"Error analyzing segments: {e}")
-        # Fallback segments
-        return [VideoSegment(
-            start_time="00:30",
-            end_time="05:00", 
-            topic=topics[0] if topics else "Main content",
-            relevance_score=0.7
+        # Enhanced fallback segments based on topics
+        fallback_segments = []
+        for i, topic in enumerate(topics[:2]):
+            start_min = 1 + i * 3
+            end_min = start_min + 4
+            fallback_segments.append(VideoSegment(
+                start_time=f"{start_min:02d}:00",
+                end_time=f"{end_min:02d}:00",
+                topic=topic,
+                relevance_score=0.6
+            ))
+        
+        return fallback_segments if fallback_segments else [VideoSegment(
+            start_time="01:00",
+            end_time="05:00",
+            topic="Main content",
+            relevance_score=0.5
         )]
 
 def get_video_details(video_ids: List[str]) -> Dict[str, Dict[str, Any]]:
@@ -270,12 +327,18 @@ def calculate_relevance_score(video_details: Dict[str, Any], topics: List[str],
     """
     Calculate overall relevance score for the video based on multiple factors.
     """
+    if not topics:
+        topics = ["tutorial"]  # Fallback to prevent division by zero
+    
     score = 0.0
     
     # Title relevance
     title = video_details.get("title", "").lower()
-    topic_matches = sum(1 for topic in topics if topic.lower() in title)
-    score += (topic_matches / len(topics)) * 0.4
+    topic_matches = sum(1 for topic in topics if topic and topic.lower() in title)
+    
+    # Prevent division by zero
+    if len(topics) > 0:
+        score += (topic_matches / len(topics)) * 0.4
     
     # View count factor (normalized)
     view_count = video_details.get("view_count", 0)
@@ -295,6 +358,9 @@ def calculate_relevance_score(video_details: Dict[str, Any], topics: List[str],
     channel = video_details.get("channel_title", "").lower()
     if any(term in channel for term in ["university", "academy", "education", "khan", "crash course"]):
         score += 0.2
+    
+    # Base score to ensure minimum relevance
+    score = max(score, 0.1)
     
     return min(1.0, score)
 
