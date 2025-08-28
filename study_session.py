@@ -337,7 +337,7 @@ def _call_model_and_get_parsed(input_messages: List[Dict[str, Any]], max_tokens:
             "Each block must focus on ONE substantial, complete topic that justifies the allocated time. "
             "Break subjects into major component areas, not overly narrow sub-details."
         ),
-        max_tokens=max_tokens,
+        max_output_tokens=max_tokens
     )
 
 def generate_gpt_plan(
