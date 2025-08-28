@@ -114,7 +114,7 @@ Assess the student's explanation and provide:
 1. A mastery score out of 100 (be precise and fair)
 2. What they did well (specific strengths)
 3. Gaps in understanding (specific details that were incorrect or needed elaboration)
-    a) you must identify the concept that was missed or vague and provide a clear simple and detailed explanation of this concept 
+    a) you must identify the concept that was missed or vague and provide a clear simple concise explanation of this concept 
 4. remain encouraging and never comment on spelling, phrasing etc, only raw content. 
 
 CRITICAL REQUIREMENTS:
@@ -148,8 +148,8 @@ ASSESSMENT_ASSISTANT_EXAMPLE_JSON_1 = """{
     "Noted that ships were a key factor in enabling exploration"
   ],
   "gaps_in_understanding": [
-    "The response left out why the 15th century marked a turning point — events like the Fall of Constantinople in 1453, the Ottoman Empire's control of land routes, and the spread of Renaissance curiosity and navigation tools all pushed Europeans to explore by sea.",
-    "Motivations for exploration were described too simply, focusing only on wealth, when in reality they also included spreading Christianity, competing with rival nations such as Spain and Portugal, and gaining direct access to Asian trade goods.",
+    "The response left out why the 15th century marked a turning point — events like the Ottoman Empire's control of land routes, and the spread of Renaissance curiosity and navigation",
+    "Motivations for exploration were described too simply, focusing only on wealth, when in reality they also included spreading Christianity and competing with rival nations such as Spain and Portugal.",
     "Saying 'people got rich' was vague, since the real economic forces were the Columbian Exchange (transfer of crops, animals, and diseases), mercantilism (nations building wealth through colonies and trade), and monarchs sponsoring voyages to increase their power.",
     "The impact on indigenous societies was overlooked — exploration brought devastating diseases, forced labor, and cultural imperialism where European languages, religions, and systems replaced native traditions."
   ]
@@ -163,8 +163,8 @@ ASSESSMENT_ASSISTANT_EXAMPLE_JSON_2 = """{
     "Demonstrated understanding of the relationship between structure and function"
   ],
   "gaps_in_understanding": [
-    "The answer mentioned selective permeability but didn't expand on the role of transport proteins — channel proteins allow ions or water to slip through, carrier proteins change shape to move specific molecules, and active transport proteins use energy (ATP) to pump substances against concentration gradients.",
-    "The structure of the phospholipid bilayer was missing, even though it's the foundation of selective permeability — hydrophilic heads face outward while hydrophobic tails tuck inward, creating a barrier that works like a bouncer: small nonpolar molecules pass through easily, while larger or charged ones need protein assistance."
+    "The answer mentioned selective permeability but didn't expand on the role of transport proteins in allowing ions or water to slip through, or carrier proteins which move specific molecules",
+    "The structure of the phospholipid bilayer was missing - hydrophilic heads face outward while hydrophobic tails tuck inward, creating a barrier that works like a bouncer."
   ]
 }"""
 
