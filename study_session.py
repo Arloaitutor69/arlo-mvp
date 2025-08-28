@@ -150,6 +150,9 @@ REQUIREMENTS:
 - Focus on what will help the student learn THIS specific content most effectively
 - Each block must cover distinct, non redundant and non-overlapping content that builds progressively toward complete mastery of the subject
 
+Total Requirements: 
+- the content of eachblock should be manageable to learn in 8-10 minutes, and the sum content of all blocks should teach entirety of subject student wants to learn. 
+
 CONTENT REQUIREMENTS FOR EACH BLOCK:
 1. Each description must be a complete self contained lesson including:
 2. Key definitions and examples, Important formulas, equations, or principles, Specific facts, data points, or details to remember
@@ -163,7 +166,7 @@ Create a study plan with exactly {num_blocks} blocks of {block_duration} minutes
     prompt += f"""
 
 DESCRIPTION FORMAT ENFORCEMENT (MATCH EXAMPLES):
-- For EACH block's "description", write an ordered, numbered list of **10 to 12** subtopics.
+- For EACH block's "description", write an ordered, numbered list of **5-6** subtopics.
 - Format each item as: "<Short subtopic title>: <very concise teacher note (~5–12 words), may include 1 parenthetical fact/date/case>".
 - Keep the list tight and factual; avoid paragraphs or narrative prose.
 - Cover the MOST IMPORTANT concepts for the unit end-to-end; items should be **non-overlapping** and **collectively exhaustive** for the subtopic.
