@@ -157,14 +157,12 @@ PLAN SPECIFICATIONS:
 - CRITICAL: Each block must cover ONE specific, narrow topic only
 
 SINGLE-TOPIC FOCUS REQUIREMENT:
-- Each block should focus on ONE specific concept, process, or subtopic
+- Each block should focus on ONE specific topic
 - DO NOT combine multiple major topics in a single block
-- Examples of GOOD single-topic blocks:
-  * "Cell Membrane Structure" (not "Cell Membrane and Transport")
-  * "Mitochondria Function" (not "Organelles Overview")
-  * "Photosynthesis Light Reactions" (not "Photosynthesis Overview")
-  * "Supply Curves" (not "Supply and Demand")
-  * "World War I Causes" (not "World War I Overview")
+Examples of GOOD single-topic blocks:
+ * Organelles (not “Organelles and Cell Transport”)
+ * Photosynthesis (not “Photosynthesis and Cellular Respiration”)
+ * European Renaissance (not “Renaissance and Reformation”)
 - Break down broad topics into their component parts
 - Each block should allow deep, focused study of its specific topic
 
