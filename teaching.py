@@ -27,13 +27,13 @@ class TeachingResponse(BaseModel):
 
 # --- GPT System Prompt --- #
 GPT_SYSTEM_PROMPT = """You are an expert tutor who excels in teaching difficult content in a way that is engaging and the most simple easy to understand way possible.
-Create exactly 8-14 teaching blocks that thoroughly cover ALL aspects of the requested topic. Your explanations should sound like you’re talking directly to the student, never like a textbook. 
+Create exactly 5-6 teaching blocks that thoroughly cover ALL aspects of the requested topic. Your explanations should sound like you're talking directly to the student, never like a textbook. 
 
 CRITICAL STYLE REQUIREMENTS:
 - MOST IMPORTANT: mimick exactly the assistant examples, particularly the casual easy to understand nature of explenations with lots of examples and clarifications. 
 - Always use **simple words** and explain technical terms in plain English the first time they appear.
 - Always include **relatable analogies, examples, or metaphors**
-- Always keep a **conversational tone**: ask rhetorical questions, say “think of it like…” or “imagine…”.
+- Always keep a **conversational tone**: ask rhetorical questions, say "think of it like…" or "imagine…".
 - Never drift into formal research paper or lecture style.
 - Never introduce advanced words without breaking them down.
 - Never output bullet lists without adding a quick analogy or everyday example to ground them.
@@ -59,7 +59,7 @@ CONTENT QUALITY STANDARDS:
 - Define all technical terms at first mention and assume student has almost zero prior knowledge
 
 --- Most Important ---
-1. Always output exactly 8-14 separate teaching blocks.
+1. Always output exactly 5-6 separate teaching blocks.
 2. Mimic teaching style of examples as closely as possible, use same casual language, structure, and explanation style.
 """
 
@@ -173,7 +173,7 @@ def generate_teaching_content(req: TeachingRequest):
 Create a comprehensive lesson based on this study plan: {req.description}
 
 Ensure every topic in the study plan is properly explained, and avoid veering from the study plan.
-Output exactly 8-14 teaching blocks in valid JSON format with proper formatting including bullet points and bold text.
+Output exactly 5-6 teaching blocks in valid JSON format with proper formatting including bullet points and bold text.
 """
 
         # Messages
@@ -203,17 +203,17 @@ Output exactly 8-14 teaching blocks in valid JSON format with proper formatting 
 
         lesson_blocks = response.output_parsed.lesson
 
-        # Ensure 8–14 blocks
-        if not (8 <= len(lesson_blocks) <= 14):
+        # Ensure 5–6 blocks
+        if not (5 <= len(lesson_blocks) <= 6):
             retry_msg = {
                 "role": "user",
-                "content": "Fix JSON only: Must have 8-14 blocks. Return corrected JSON only."
+                "content": "Fix JSON only: Must have 5-6 blocks. Return corrected JSON only."
             }
             response_retry = _call_model_and_get_parsed(input_messages + [retry_msg])
             if getattr(response_retry, "output_parsed", None) is None:
                 raise HTTPException(status_code=500, detail=f"Lesson block count invalid ({len(lesson_blocks)}). Retry failed.")
             lesson_blocks = response_retry.output_parsed.lesson
-            if not (8 <= len(lesson_blocks) <= 14):
+            if not (5 <= len(lesson_blocks) <= 6):
                 raise HTTPException(status_code=500, detail=f"Lesson block count invalid after retry ({len(lesson_blocks)}).")
 
         # Validate + sanitize
