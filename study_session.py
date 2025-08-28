@@ -75,57 +75,75 @@ def extract_user_id(request: Request) -> str:
     else:
         raise HTTPException(status_code=400, detail="Missing user_id in request")
 
-def _pick_even_divisor(duration: int, candidates: List[int]) -> Tuple[int, int]:
-    """
-    Choose n in candidates such that duration % n == 0 and block = duration//n
-    stays close to 8 minutes (preferred for focused single topics) and within [5, 12].
-    Returns (n, block_minutes). Raises if none fits.
-    """
-    viable = []
-    for n in candidates:
-        if duration % n == 0:
-            block = duration // n
-            if 5 <= block <= 12:
-                viable.append((abs(block - 8), -n, n, block))  # prefer closer to 8, then larger n
-    if not viable:
-        raise ValueError(f"No even division found for duration={duration} with allowed block range 5–12.")
-    _, _, n, block = sorted(viable)[0]
-    return n, block
-
 def calculate_optimal_blocks(duration: int) -> Tuple[int, int]:
-    """Calculate optimal number of blocks (7-9 preferred) with focused single-topic durations."""
+    """
+    Calculate optimal number of blocks based on duration targets:
+    - 60 minutes → 7-8 blocks (7.5-8.5 min each)
+    - 90 minutes → 9-10 blocks (9-10 min each) 
+    - 120 minutes → 12 blocks (10 min each)
     
-    # First try to get exactly 7, 8, or 9 blocks (preferred range)
-    try:
-        return _pick_even_divisor(duration, [7, 8, 9])
-    except ValueError:
-        pass
+    Returns (num_blocks, block_duration_minutes)
+    """
     
-    # If that doesn't work, try other divisors that give us close to 7-9 blocks
-    # For 60 minutes: 60/6=10min blocks (6 blocks), 60/10=6min blocks (10 blocks)
-    # We'll accept 6-10 blocks as reasonable alternatives
-    try:
-        return _pick_even_divisor(duration, [6, 10])
-    except ValueError:
-        pass
+    # Define target ranges for different durations
+    if duration <= 45:
+        # Short sessions: 6-7 blocks, 6-7.5 min each
+        target_blocks = [6, 7]
+        min_block_duration, max_block_duration = 6, 8
+    elif duration <= 65:
+        # ~60 min sessions: 7-8 blocks, 7.5-8.5 min each
+        target_blocks = [7, 8]
+        min_block_duration, max_block_duration = 7, 9
+    elif duration <= 95:
+        # ~90 min sessions: 9-10 blocks, 9-10 min each
+        target_blocks = [9, 10]
+        min_block_duration, max_block_duration = 8, 11
+    elif duration <= 125:
+        # ~120 min sessions: 12 blocks, ~10 min each
+        target_blocks = [12, 11]
+        min_block_duration, max_block_duration = 9, 12
+    else:
+        # Very long sessions: scale appropriately
+        target_blocks = [max(12, duration // 10), max(14, duration // 9)]
+        min_block_duration, max_block_duration = 9, 12
     
-    # Final fallback - try any reasonable division that allows focused study
-    try:
-        return _pick_even_divisor(duration, [5, 12, 4, 15])
-    except ValueError:
-        # If nothing works, create blocks optimized for single topics
-        if duration >= 35:  # minimum 5 minutes per block for 7 blocks
-            # Prefer 7-9 blocks even with uneven division
-            if duration >= 63:  # 9 * 7 minutes
-                num_blocks = 9
-            elif duration >= 56:  # 8 * 7 minutes  
-                num_blocks = 8
-            else:
-                num_blocks = 7
+    # Try target blocks first
+    for num_blocks in target_blocks:
+        if duration % num_blocks == 0:
             block_duration = duration // num_blocks
-            return num_blocks, block_duration
-        else:
-            raise ValueError(f"Duration {duration} too short to create meaningful focused study blocks")
+            if min_block_duration <= block_duration <= max_block_duration:
+                print(f"📏 Perfect division: {num_blocks} blocks of {block_duration} minutes each")
+                return num_blocks, block_duration
+    
+    # If perfect division doesn't work, find best approximate division
+    best_option = None
+    best_score = float('inf')
+    
+    # Try a wider range around target
+    all_candidates = list(range(max(4, min(target_blocks) - 2), max(target_blocks) + 3))
+    
+    for num_blocks in all_candidates:
+        block_duration = duration // num_blocks
+        remainder = duration % num_blocks
+        
+        # Score based on how close we are to ideal block duration and minimal remainder
+        if min_block_duration <= block_duration <= max_block_duration:
+            # Prefer solutions with no remainder, then minimize remainder
+            score = remainder * 10 + abs(num_blocks - target_blocks[0])
+            if score < best_score:
+                best_score = score
+                best_option = (num_blocks, block_duration)
+    
+    if best_option:
+        num_blocks, block_duration = best_option
+        print(f"📏 Optimal division: {num_blocks} blocks of {block_duration} minutes each")
+        return num_blocks, block_duration
+    
+    # Fallback: use closest target
+    num_blocks = target_blocks[0]
+    block_duration = duration // num_blocks
+    print(f"📏 Fallback division: {num_blocks} blocks of {block_duration} minutes each")
+    return num_blocks, block_duration
 
 def create_content_hash(objective: str, parsed_summary: str, duration: int) -> str:
     """Create hash for caching purposes"""
@@ -133,7 +151,7 @@ def create_content_hash(objective: str, parsed_summary: str, duration: int) -> s
     return hashlib.md5(content.encode()).hexdigest()
 
 def build_enhanced_prompt(objective: Optional[str], parsed_summary: Optional[str], duration: int) -> str:
-    """Build comprehensive GPT prompt optimized for single-topic focused blocks."""
+    """Build comprehensive GPT prompt optimized for appropriately-granular focused blocks."""
     num_blocks, block_duration = calculate_optimal_blocks(duration)
 
     content_section = ""
@@ -147,68 +165,88 @@ def build_enhanced_prompt(objective: Optional[str], parsed_summary: Optional[str
     if not objective and not parsed_summary:
         raise ValueError("At least one of objective or parsed_summary must be provided.")
 
-    # --- ENHANCED PROMPT FOR FOCUSED SINGLE-TOPIC BLOCKS ---
+    # --- ENHANCED PROMPT FOR APPROPRIATELY-GRANULAR FOCUSED BLOCKS ---
     prompt = f"""{content_section}
 
 PLAN SPECIFICATIONS:
 - Duration: {duration} minutes total
 - Create exactly {num_blocks} focused learning blocks  
 - Each block should be {block_duration} minutes long
-- CRITICAL: Each block must cover ONE specific, narrow topic only
+- CRITICAL: Each block must cover ONE substantial, complete topic
 
-SINGLE-TOPIC FOCUS REQUIREMENT:
-- Each block should focus on ONE specific topic
-- DO NOT combine multiple major topics in a single block
-Examples of GOOD single-topic blocks:
- * Organelles (not “Organelles and Cell Transport”)
- * Photosynthesis (not “Photosynthesis and Cellular Respiration”)
- * European Renaissance (not “Renaissance and Reformation”)
-- Break down broad topics into their component parts
-- Each block should allow deep, focused study of its specific topic
+TOPIC GRANULARITY REQUIREMENTS:
+Each block should cover a COMPLETE, SUBSTANTIAL topic that is:
+✅ GOOD EXAMPLES (substantial but focused):
+   • "Causes of the Renaissance" (not just "Economic factors")
+   • "Key Renaissance Figures" (not just "Leonardo da Vinci")
+   • "Photosynthesis Process" (not just "Light reactions")
+   • "World War I Battles" (not just "Battle of Verdun")
+   • "Cell Division Process" (not just "Prophase")
+   • "Supply and Demand" (not just "Demand curves")
+
+❌ AVOID (too narrow/specific):
+   • Individual people (unless they're the entire subject)
+   • Single events within larger processes
+   • Individual steps of multi-step processes
+   • Single examples of broader concepts
+
+❌ AVOID (too broad/general):
+   • "Overview" or "Introduction" 
+   • Combining multiple major concepts
+   • Generic topic names without focus
+
+TOPIC SCOPE GUIDELINES:
+- Each topic should take a full {block_duration} minutes of focused study
+- Topics should be substantial enough to have multiple key aspects to explore
+- Break down broad subjects into their major component themes/areas
+- Ensure each block represents a complete learning unit that builds understanding
+- Topics should be cohesive - all aspects should relate to the same central concept
 
 AVAILABLE TECHNIQUES (choose 1-2 per block based on what's best for each specific topic):
 • flashcards: Spaced repetition for memorization of facts, terms, dates
-• feynman: Explain concepts in simple terms, teach-back method
+• feynman: Explain concepts in simple terms, teach-back method  
 • quiz: Active recall testing, self-assessment
 • blurting: Free recall without prompts, brain dumps
 
 REQUIREMENTS:
-- Each block needs a clear, specific unit/topic name (avoid generic terms)
-- Choose 1-2 BEST techniques for each specific narrow topic
-- Focus on what will help the student master THIS specific subtopic most effectively
-- Each block must cover distinct, non-overlapping content
-- Blocks should build logically toward complete understanding
-- Ensure comprehensive coverage by breaking subject into {num_blocks} focused components
+- Each block needs a clear, substantial topic name that indicates complete learning unit
+- Choose 1-2 BEST techniques for each topic based on its nature
+- Focus on what will help student master this complete topic most effectively
+- Each block must cover distinct, substantial content areas
+- Blocks should build logically toward complete subject mastery
+- Ensure comprehensive coverage by breaking subject into {num_blocks} substantial components
 
 CONTENT REQUIREMENTS FOR EACH BLOCK:
-1. Each description must focus entirely on the single topic specified in the unit name
-2. Include: Key definitions specific to this topic, Important formulas/equations for this concept, Specific facts and details relevant to this subtopic only
-3. Focus on the most important aspects of THIS specific topic
-4. Descriptions should be detailed enough for focused {block_duration}-minute study sessions
-5. The collection should cover the subject comprehensively through focused subtopics
+1. Each description must focus entirely on the substantial topic specified in unit name
+2. Include: Key definitions, concepts, and principles for this topic area
+3. Important facts, examples, and applications relevant to this complete topic
+4. Specific details that support comprehensive understanding of this topic
+5. Focus on the most important aspects needed to master this complete topic area
+6. Descriptions should support focused {block_duration}-minute study sessions
+7. The collection should cover the subject comprehensively through substantial topic areas
 
 TOPIC BREAKDOWN STRATEGY:
-- For sciences: Break by specific processes, structures, or mechanisms
-- For history: Break by specific events, periods, or causes/effects  
-- For literature: Break by themes, characters, literary devices, or chapters
-- For math: Break by specific types of problems or concepts
-- For languages: Break by grammar rules, verb tenses, or vocabulary themes
-
-Create a study plan with exactly {num_blocks} blocks of {block_duration} minutes each, where each block is laser-focused on mastering one specific subtopic.
+- For sciences: Break by major processes, systems, or theoretical frameworks
+- For history: Break by major themes, causes/effects, periods, or significant developments  
+- For literature: Break by major themes, character development, literary techniques, or major sections
+- For math: Break by major concept areas, problem types, or theoretical foundations
+- For languages: Break by major grammar concepts, communication skills, or thematic vocabulary
 
 DESCRIPTION FORMAT ENFORCEMENT:
-- For EACH block's "description", write an ordered, numbered list of **4-6** subtopics that ALL relate to the single main topic
-- Format each item as: "<Specific aspect>: <concise explanation with key facts (~8-15 words)>"
-- Keep items tightly focused on the block's single topic - no tangential subjects
-- Cover the MOST IMPORTANT aspects of this specific topic comprehensively
-- Include relevant equations, definitions, examples, or key facts for THIS topic only
-- The ENTIRE description should be the numbered list only, staying within 80-150 words total per block
-- Ensure every numbered item directly supports understanding of the main topic only"""
+- For EACH block's "description", write an ordered, numbered list of **4-6** key aspects
+- Format: "<Major aspect>: <comprehensive explanation with key details (~12-20 words)>"
+- Keep items focused on the block's substantial topic - comprehensive coverage of that topic
+- Cover the MOST IMPORTANT aspects needed to master this complete topic area
+- Include relevant equations, definitions, examples, key facts for THIS topic comprehensively
+- The ENTIRE description should be numbered list only, 100-180 words total per block
+- Ensure every item supports complete understanding of the substantial topic
+
+Create a study plan with exactly {num_blocks} blocks of {block_duration} minutes each, where each block focuses on mastering one substantial, complete topic area that requires the full time allocation."""
 
     return prompt
 
 # --- GPT System Prompt --- #
-GPT_SYSTEM_PROMPT = """You are an expert curriculum designer creating focused study plans. Create study plans with exactly the requested number of blocks, where each block focuses on ONE specific, narrow topic only. Never combine multiple major concepts into a single block.
+GPT_SYSTEM_PROMPT = """You are an expert curriculum designer creating focused study plans. Create study plans with exactly the requested number of blocks, where each block focuses on ONE substantial, complete topic that warrants the full time allocation.
 
 CRITICAL REQUIREMENTS:
 1. Return ONLY JSON data conforming to the schema, never the schema itself.
@@ -216,27 +254,28 @@ CRITICAL REQUIREMENTS:
 3. Use double quotes, escape internal quotes as \".
 4. Use \\n for line breaks within content.
 5. No trailing commas.
-6. Each block must have a specific, focused topic name (not generic terms like "Overview" or "Introduction").
-7. Break down broad subjects into specific, narrow subtopics for deeper learning.
+6. Each block must cover a substantial, complete topic (not overly narrow sub-components).
+7. Topics should be significant enough to justify the allocated study time.
+8. Break subjects into major component areas, themes, or processes - not individual details.
 """
 
-# --- Assistant Examples (Updated for Single-Topic Focus) --- #
+# --- Assistant Examples (Updated for Appropriate Topic Granularity) --- #
 ASSISTANT_EXAMPLE_JSON_1 = """
 {
-  "units_to_cover": ["Cell Membrane Structure", "Nucleus Organization", "Mitochondria Function", "Ribosome Types", "Endoplasmic Reticulum", "Golgi Apparatus", "Lysosome Activity", "Cytoskeleton Components"],
+  "units_to_cover": ["Cell Structure and Organization", "Cellular Transport Mechanisms", "Energy Production in Cells", "Cell Division Process", "Protein Synthesis", "Cell Communication", "Cellular Waste Management"],
   "pomodoro": "25/5",
   "techniques": ["flashcards", "feynman", "quiz", "blurting"],
   "blocks": [
     {
-      "unit": "Cell Membrane Structure",
+      "unit": "Cell Structure and Organization",
       "techniques": ["flashcards", "feynman"],
-      "description": "1) Phospholipid bilayer: Hydrophilic heads face outward, hydrophobic tails inward. 2) Membrane proteins: Integral span membrane, peripheral attach surface. 3) Cholesterol: Maintains fluidity, prevents crystallization at low temperatures. 4) Glycoproteins: Carbohydrate chains for cell recognition and signaling. 5) Fluid mosaic model: Dynamic structure with moving components.",
+      "description": "1) Cell membrane: Phospholipid bilayer structure, selective permeability, and embedded proteins for transport. 2) Nucleus: Nuclear envelope, nucleolus function, chromatin organization, and genetic material storage. 3) Organelles: Mitochondria for energy, ER for synthesis, Golgi for processing and packaging. 4) Cytoskeleton: Microfilaments, microtubules, and intermediate filaments providing structural support. 5) Cellular compartmentalization: How organelles create specialized environments for specific functions.",
       "duration": 8
     },
     {
-      "unit": "Nucleus Organization", 
-      "techniques": ["quiz"],
-      "description": "1) Nuclear envelope: Double membrane with nuclear pores for transport. 2) Nucleolus: Dense region where ribosomal RNA is synthesized. 3) Chromatin: DNA-protein complex, condenses into chromosomes during division. 4) Nuclear matrix: Protein framework supporting nuclear organization. 5) Nuclear pores: Selective transport of molecules between nucleus and cytoplasm.",
+      "unit": "Cellular Transport Mechanisms", 
+      "techniques": ["quiz", "feynman"],
+      "description": "1) Passive transport: Diffusion, osmosis, and facilitated diffusion moving substances down gradients. 2) Active transport: Energy-requiring movement against gradients using ATP and carrier proteins. 3) Bulk transport: Endocytosis bringing materials in, exocytosis moving materials out of cells. 4) Membrane channels: Ion channels, aquaporins, and gated channels controlling molecular passage. 5) Transport regulation: How cells control what enters and exits to maintain homeostasis.",
       "duration": 8
     }
   ]
@@ -245,14 +284,14 @@ ASSISTANT_EXAMPLE_JSON_1 = """
 
 ASSISTANT_EXAMPLE_JSON_2 = """
 {
-  "units_to_cover": ["Progressive Era Muckrakers", "Trust-Busting Legislation", "Pure Food and Drug Act", "Constitutional Amendments 16-19", "Labor Reform Movement", "Urban Settlement Houses", "Conservation Movement"],
+  "units_to_cover": ["Causes of the Renaissance", "Renaissance Art and Culture", "Key Renaissance Figures", "Political Changes", "Economic Transformations", "Scientific Revolution", "Renaissance Legacy"],
   "pomodoro": "30/5", 
   "techniques": ["feynman", "flashcards", "quiz"],
   "blocks": [
     {
-      "unit": "Progressive Era Muckrakers",
-      "techniques": ["feynman"],
-      "description": "1) Ida Tarbell: Exposed Standard Oil monopolistic practices in detailed series. 2) Upton Sinclair: The Jungle revealed unsanitary meatpacking industry conditions. 3) Jacob Riis: How the Other Half Lives documented urban poverty. 4) Lincoln Steffens: The Shame of the Cities exposed municipal corruption. 5) McClure's Magazine: Leading publication platform for investigative journalism.",
+      "unit": "Causes of the Renaissance",
+      "techniques": ["feynman", "quiz"],
+      "description": "1) Economic factors: Growth of trade, banking, and wealthy merchant class providing patronage. 2) Social changes: Rise of urban centers, decline of feudalism, increased social mobility. 3) Cultural influences: Rediscovery of classical texts, Byzantine scholars fleeing to Italy. 4) Political conditions: Italian city-states competing for prestige, relative political stability. 5) Geographic advantages: Italy's location facilitating trade between Europe and Byzantine/Islamic worlds. 6) Intellectual climate: Humanism emphasizing individual potential and classical learning revival.",
       "duration": 9
     }
   ]
@@ -261,14 +300,14 @@ ASSISTANT_EXAMPLE_JSON_2 = """
 
 ASSISTANT_EXAMPLE_JSON_3 = """
 {
-  "units_to_cover": ["Demand Curves", "Supply Curves", "Market Equilibrium Point", "Price Elasticity", "Income Elasticity", "Consumer Surplus", "Producer Surplus"],
+  "units_to_cover": ["Supply and Demand Fundamentals", "Market Equilibrium", "Elasticity Concepts", "Consumer Behavior Theory", "Producer Decision Making", "Market Efficiency", "Government Intervention Effects"],
   "pomodoro": "25/5",
   "techniques": ["quiz", "feynman", "flashcards"],
   "blocks": [
     {
-      "unit": "Demand Curves",
+      "unit": "Supply and Demand Fundamentals",
       "techniques": ["quiz", "feynman"],
-      "description": "1) Law of demand: Inverse relationship between price and quantity demanded. 2) Demand shifters: Income, tastes, expectations, related goods prices. 3) Movement vs shift: Along curve vs new curve position. 4) Normal goods: Demand increases with income (positive income elasticity). 5) Inferior goods: Demand decreases as income rises (negative elasticity). 6) Individual vs market: Horizontal summation of all consumers.",
+      "description": "1) Law of demand: Inverse price-quantity relationship, downward sloping demand curves, consumer behavior patterns. 2) Demand determinants: Income effects, substitute and complement goods, consumer preferences and expectations. 3) Law of supply: Direct price-quantity relationship, upward sloping supply curves, producer motivations. 4) Supply determinants: Production costs, technology, number of sellers, government policies affecting production. 5) Market dynamics: How supply and demand interact to determine prices and quantities. 6) Shifts vs movements: Distinguishing between moving along curves versus shifting entire curves.",
       "duration": 9
     }
   ]
@@ -295,10 +334,10 @@ def _call_model_and_get_parsed(input_messages: List[Dict[str, Any]], max_tokens:
         reasoning={"effort": "low"},
         instructions=(
             "Create focused study plans with exactly the requested number of blocks. "
-            "Each block must focus on ONE specific, narrow topic only. "
-            "Break down broad subjects into focused subtopics for deeper learning."
+            "Each block must focus on ONE substantial, complete topic that justifies the allocated time. "
+            "Break subjects into major component areas, not overly narrow sub-details."
         ),
-        max_output_tokens=max_tokens,
+        max_tokens=max_tokens,
     )
 
 def generate_gpt_plan(
@@ -326,7 +365,7 @@ def generate_gpt_plan(
             raise RuntimeError(f"Model refusal: {response.refusal}")
         retry_msg = {
             "role": "user",
-            "content": "Fix JSON only: If the previous response had any formatting or schema issues, return only the corrected single JSON object. Focus on single-topic blocks only."
+            "content": "Fix JSON only: Return corrected JSON with substantial, complete topics (not overly narrow). Each topic should justify the full allocated time."
         }
         response = _call_model_and_get_parsed(input_messages + [retry_msg])
         if getattr(response, "output_parsed", None) is None:
@@ -356,7 +395,7 @@ def generate_gpt_plan(
         if not isinstance(block.get("techniques"), list):
             raise RuntimeError(f"Block {i} 'techniques' must be a list")
 
-    print(f"✅ GPT generated valid response with {len(blocks)} focused blocks")
+    print(f"✅ GPT generated valid response with {len(blocks)} substantial topic blocks")
     print(f"📊 Units: {len(result.get('units_to_cover', []))}")
     print(f"🔧 Techniques: {len(result.get('techniques', []))}")
     return result
@@ -364,7 +403,7 @@ def generate_gpt_plan(
 # --- Main Endpoint ---
 @router.post("/study-session", response_model=StudyPlanResponse)
 async def generate_plan(data: StudyPlanRequest, request: Request):
-    """Generate comprehensive study plan with focused single-topic blocks."""
+    """Generate comprehensive study plan with appropriately-granular focused blocks."""
     print(f"🚀 Starting focused study plan generation...")
     print(f"📋 Request: duration={data.duration}, objective={bool(data.objective)}, summary={bool(data.parsed_summary)}")
 
@@ -372,7 +411,7 @@ async def generate_plan(data: StudyPlanRequest, request: Request):
         user_id = extract_user_id(request)
         print(f"👤 User ID: {user_id}")
 
-        print("📝 Building enhanced single-topic focused prompt...")
+        print("📝 Building enhanced appropriately-granular focused prompt...")
         prompt = build_enhanced_prompt(data.objective, data.parsed_summary, data.duration)
 
         print("🤖 Calling GPT...")
@@ -384,7 +423,7 @@ async def generate_plan(data: StudyPlanRequest, request: Request):
         blocks_json = parsed.get("blocks", [])
         pomodoro = parsed.get("pomodoro", "25/5")
 
-        print(f"📦 Processing {len(blocks_json)} focused blocks...")
+        print(f"📦 Processing {len(blocks_json)} substantial topic blocks...")
 
         blocks: List[StudyBlock] = []
         context_tasks = []
@@ -447,7 +486,7 @@ async def generate_plan(data: StudyPlanRequest, request: Request):
             print("⏰ Context updates timed out")
 
         print(f"🎉 Focused study plan generated successfully!")
-        print(f"📊 Total: {len(blocks)} focused blocks, {total_time} minutes")
+        print(f"📊 Total: {len(blocks)} substantial topic blocks, {total_time} minutes")
 
         return StudyPlanResponse(
             session_id=session_id,
