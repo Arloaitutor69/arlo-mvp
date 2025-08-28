@@ -78,36 +78,36 @@ def extract_user_id(request: Request) -> str:
 def _pick_even_divisor(duration: int, candidates: List[int]) -> Tuple[int, int]:
     """
     Choose n in candidates such that duration % n == 0 and block = duration//n
-    stays close to 15 minutes (preferred) and within [12, 20].
+    stays close to 10 minutes (preferred) and within [8, 12].
     Returns (n, block_minutes). Raises if none fits.
     """
     viable = []
     for n in candidates:
         if duration % n == 0:
             block = duration // n
-            if 12 <= block <= 20:
-                viable.append((abs(block - 15), -n, n, block))  # prefer closer to 15, then larger n
+            if 8 <= block <= 12:
+                viable.append((abs(block - 10), -n, n, block))  # prefer closer to 10, then larger n
     if not viable:
-        raise ValueError(f"No even division found for duration={duration} with allowed block range 12–20.")
+        raise ValueError(f"No even division found for duration={duration} with allowed block range 8–12.")
     _, _, n, block = sorted(viable)[0]
     return n, block
 
 def calculate_optimal_blocks(duration: int) -> Tuple[int, int]:
-    if duration < 24:  # too short to meet 12 min block constraint twice
-        # single block fallback is not allowed by our schema usage; enforce two blocks minimum
-        raise ValueError("Duration too short to split into ≥2 blocks of at least 12 minutes each.")
-    try:
-        # prefer even counts ending at 8
-        return _pick_even_divisor(duration, [8, 6, 4, 2])
-    except ValueError:
-        # then try 5 (often good for 60, 75, 100, etc., but block must be 12–20)
+    if duration < 56:  # too short for 7 blocks of at least 8 minutes each
+        # try with 7 blocks anyway, but if it fails, fall back to 8
         try:
-            n, b = _pick_even_divisor(duration, [5])
-            return n, b
+            return _pick_even_divisor(duration, [7])
         except ValueError:
-            # finally try odd options 7 or 3
-            n, b = _pick_even_divisor(duration, [7, 3])
-            return n, b
+            if duration >= 64:  # can fit 8 blocks of 8 minutes
+                return _pick_even_divisor(duration, [8])
+            else:
+                raise ValueError("Duration too short to split into 7-8 blocks of at least 8 minutes each.")
+    try:
+        # prefer 7-8 blocks
+        return _pick_even_divisor(duration, [7, 8])
+    except ValueError:
+        # fallback to other options if needed
+        raise ValueError(f"Cannot create 7-8 blocks with duration {duration}")
 
 def create_content_hash(objective: str, parsed_summary: str, duration: int) -> str:
     """Create hash for caching purposes"""
@@ -137,7 +137,7 @@ PLAN SPECIFICATIONS:
 - Create exactly {num_blocks} learning blocks  
 - Each block should be {block_duration} minutes long
 
-AVAILABLE TECHNIQUES (choose 1-4 per block based on what's best for each unit):
+AVAILABLE TECHNIQUES (choose 1-2 per block based on what's best for each unit):
 • flashcards: Spaced repetition for memorization
 • feynman: Explain concepts in simple terms
 • quiz: Active recall testing
@@ -145,7 +145,7 @@ AVAILABLE TECHNIQUES (choose 1-4 per block based on what's best for each unit):
 
 REQUIREMENTS:
 - Each block needs a clear unit/topic name
-- Choose 1-4 BEST techniques for each specific unit/topic - more is better to reinforce with active recall 
+- Choose 1-2 BEST techniques for each specific unit/topic - focus on quality over quantity 
 - You can use any combination or sequence of techniques within a block
 - Focus on what will help the student learn THIS specific content most effectively
 - Each block must cover distinct, non redundant and non-overlapping content that builds progressively toward complete mastery of the subject
@@ -187,7 +187,7 @@ CRITICAL REQUIREMENTS:
 # --- Assistant Examples --- #
 ASSISTANT_EXAMPLE_JSON_1 = """
 {
-  "units_to_cover": ["Cell Structure and Function", "Cellular Respiration", "Photosynthesis", "Cell Communication"],
+  "units_to_cover": ["Cell Structure and Function", "Cellular Respiration", "Photosynthesis", "Cell Communication", "Cell Division", "Genetics Basics", "Protein Synthesis"],
   "pomodoro": "25/5",
   "techniques": ["flashcards", "feynman", "quiz", "blurting"],
   "blocks": [
@@ -195,13 +195,13 @@ ASSISTANT_EXAMPLE_JSON_1 = """
       "unit": "Cell Structure and Function",
       "techniques": ["flashcards", "feynman"],
       "description": "1) Cell membrane: Selective bilayer; transport; signaling. 2) Nucleus: DNA control; transcription; nucleolus. 3) Mitochondria: ATP production; aerobic metabolism. 4) Ribosomes: Protein synthesis; free vs bound. 5) Smooth ER: Lipids; detox. 6) Rough ER: Protein modification. 7) Golgi: Packaging; vesicles. 8) Lysosomes: Digestive enzymes; waste removal. 9) Cytoskeleton: Microtubules/microfilaments; structure. 10) Prokaryotes vs eukaryotes: Organization; size; nuclei. 11) Cell theory: All cells from cells; fundamental unit. 12) Membrane proteins: Channels; receptors.",
-      "duration": 15
+      "duration": 9
     },
     {
       "unit": "Cellular Respiration",
-      "techniques": ["quiz", "blurting"],
+      "techniques": ["quiz"],
       "description": "1) Equation: C6H12O6+O2→CO2+H2O+ATP. 2) Glycolysis: Cytoplasm; 2 ATP net. 3) Link reaction: Pyruvate→Acetyl-CoA. 4) Krebs: Matrix; NADH/FADH2 yield. 5) ETC: Proton gradient; ATP synthase. 6) Oxygen: Final electron acceptor. 7) Anaerobic: Lactic/alcoholic fermentation. 8) ATP structure: Phosphate bonds; energy. 9) Regulation: Allosteric enzymes. 10) Location: Stages by organelle. 11) Energy balance: 30–32 ATP. 12) Intermediates: Citrate, oxaloacetate.",
-      "duration": 15
+      "duration": 9
     }
   ]
 }
@@ -209,15 +209,15 @@ ASSISTANT_EXAMPLE_JSON_1 = """
 
 ASSISTANT_EXAMPLE_JSON_2 = """
 {
-  "units_to_cover": ["Progressive Era Reforms", "Great Depression and New Deal", "World War II Impact"],
+  "units_to_cover": ["Progressive Era Reforms", "Great Depression and New Deal", "World War II Impact", "Cold War Origins", "Civil Rights Movement", "Modern America", "Contemporary Issues"],
   "pomodoro": "30/5", 
   "techniques": ["feynman", "flashcards", "quiz"],
   "blocks": [
     {
       "unit": "Progressive Era Reforms",
-      "techniques": ["feynman", "flashcards"],
+      "techniques": ["feynman"],
       "description": "1) Muckrakers: Tarbell, Sinclair expose abuses. 2) Trust-busting: Sherman/Clayton enforcement. 3) Food/Drug Safety: 1906 acts modernize standards. 4) 16th–19th Amendments: Tax, senators, suffrage. 5) Labor: Child labor laws; safety rules. 6) Cities: Settlement houses; Hull House. 7) Conservation: Parks; forestry service. 8) Direct democracy: Initiative, referendum, recall. 9) Corporate regulation: ICC/Federal Trade. 10) State reforms: Wisconsin Idea. 11) Education: Compulsory schooling expands. 12) Courts: Lochner era limits.",
-      "duration": 20
+      "duration": 8
     }
   ]
 }
@@ -225,7 +225,7 @@ ASSISTANT_EXAMPLE_JSON_2 = """
 
 ASSISTANT_EXAMPLE_JSON_3 = """
 {
-  "units_to_cover": ["Supply and Demand", "Market Equilibrium", "Elasticity", "Consumer Behavior"],
+  "units_to_cover": ["Supply and Demand", "Market Equilibrium", "Elasticity", "Consumer Behavior", "Producer Theory", "Market Structures", "Government Intervention"],
   "pomodoro": "25/5",
   "techniques": ["quiz", "feynman", "flashcards"],
   "blocks": [
@@ -233,7 +233,7 @@ ASSISTANT_EXAMPLE_JSON_3 = """
       "unit": "Supply and Demand",
       "techniques": ["quiz", "feynman"],
       "description": "1) Law of demand: Inverse P-Qd. 2) Law of supply: Positive P-Qs. 3) Shifters: Income, tastes, expectations, related goods. 4) Supply shifters: Inputs, tech, sellers, policy. 5) Movement vs shift: Along vs new curve. 6) Normal vs inferior: Income responses. 7) Substitutes/complements: Cross-price effects. 8) Market demand: Horizontal sum of individuals. 9) Surplus/shortage: Price signals. 10) Consumer surplus: Value minus price. 11) Producer surplus: Price minus cost. 12) Welfare: Deadweight loss.",
-      "duration": 15
+      "duration": 9
     }
   ]
 }
@@ -360,7 +360,7 @@ async def generate_plan(data: StudyPlanRequest, request: Request):
             techniques_list = item.get("techniques", ["feynman"])
             primary_technique = techniques_list[0] if techniques_list else "feynman"
             description = item.get("description", "1) Topic: Key point. 2) Topic: Key point.")  # safe minimal list
-            duration_block = item.get("duration", 12)
+            duration_block = item.get("duration", 8)
             block_id = f"block_{uuid.uuid4().hex[:8]}"
 
             study_block = StudyBlock(
