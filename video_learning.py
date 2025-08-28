@@ -83,7 +83,7 @@ Return ONLY a numbered list of key topics, one per line. Example:
             model="gpt-5-nano",
             input=[{"role": "user", "content": prompt}],
             max_output_tokens=150,
-            reasoning={"effort": "low"}
+            reasoning={"effort": "minimal"}
         )
         
         topics_text = response.output_text.strip()
