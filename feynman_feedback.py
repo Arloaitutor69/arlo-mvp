@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
-from typing import Optional, List, Literal
+from typing import Optional, List, Literal, Tuple
 import os
 import json
 import requests
@@ -92,11 +92,12 @@ def extract_user_id(request: Request, data) -> str:
 FEYNMAN_EXERCISE_SYSTEM_PROMPT = """You are an expert AI tutor creating Feynman-style teaching exercises for conceptual mastery to consolidate teaching material. 
 
 Create exactly 3 conceptual teaching questions that:
-- create questions that test material and can be answered based on what student learned in teaching content 
+- create questions that test the material and can be answered based on what student learned in teaching content 
 - stick to the style of question in examples - ie how and why questions 
 - do not explicity reference teaching content in question phrasing, enable student to think and make own connections 
 - Test deep understanding, not just memorization
-- Help students explain concepts in their own words and recall material learned earleir 
+- Help students explain concepts in their own words and recall material learned earlier 
+- if the question has multiple part, ensure that each part is lettered ie how did a) something cause and b) something effect. 
 
 CRITICAL REQUIREMENTS:
 1. Return ONLY JSON data conforming to the schema, never the schema itself.
@@ -112,13 +113,9 @@ FEYNMAN_ASSESSMENT_SYSTEM_PROMPT = """You are an expert AI tutor assessing a stu
 Assess the student's explanation and provide:
 1. A mastery score out of 100 (be precise and fair)
 2. What they did well (specific strengths)
-3. Gaps in understanding (specific areas needing improvement)
-
-Focus on:
-- Conceptual accuracy and depth
-- Use of appropriate terminology
-- Recognition of complexity and nuance
-- Ability to connect ideas
+3. Gaps in understanding (specific details that were incorrect or needed elaboration)
+    a) you must identify the concept that was missed or vague and provide a clear simple and detailed explanation of this concept 
+4. remain encouraging and never comment on spelling, phrasing etc, only raw content. 
 
 CRITICAL REQUIREMENTS:
 1. Return ONLY JSON data conforming to the schema, never the schema itself.
@@ -130,17 +127,17 @@ CRITICAL REQUIREMENTS:
 # --- JSON examples --- #
 EXERCISE_ASSISTANT_EXAMPLE_JSON_1 = """{
   "questions": [
-    "Why did European exploration expand so rapidly in the late 15th century, and what made this timing significant compared to earlier periods?",
-    "How did the principles of mercantilism influence the goals and outcomes of European exploration and colonization?",
+    "a) Why did European exploration expand so rapidly in the late 15th century, b) and what made this timing significant compared to earlier periods?",
+    "How did the principles of mercantilism influence a) the goals and b) outcomes of European exploration and colonization?",
     "How did the Columbian Exchange fundamentally transform both European and non-European societies — economically, culturally, and biologically?"
   ]
 }"""
 
 EXERCISE_ASSISTANT_EXAMPLE_JSON_2 = """{
   "questions": [
-    "What is the main function of the cell membrane and how does selective permeability work?",
-    "How do mitochondria produce ATP and why is this process essential for cellular life?",
-    "What role does the nucleus play in controlling cellular activities and how does it protect genetic information?"
+    "a) What is the main function of the cell membrane and b) how does selective permeability work?",
+    "a) How do mitochondria produce ATP and b) why is this process essential for cellular life?",
+    "a) What role does the nucleus play in controlling cellular activities and b) how does it protect genetic information?"
   ]
 }"""
 
@@ -151,10 +148,10 @@ ASSESSMENT_ASSISTANT_EXAMPLE_JSON_1 = """{
     "Noted that ships were a key factor in enabling exploration"
   ],
   "gaps_in_understanding": [
-    "No mention of historical context — why the 15th century was a turning point (e.g., Fall of Constantinople, Renaissance thought, Ottoman control of land routes)",
-    "Oversimplified motivations — didn't explain religious motives, competition among European powers, or desire for direct access to Asian trade",
-    "Vague use of terms like 'people got rich' without referring to the Columbian Exchange, mercantilism, or monarchial sponsorship",
-    "No recognition of the impact on indigenous societies or the idea of cultural imperialism"
+    "The response left out why the 15th century marked a turning point — events like the Fall of Constantinople in 1453, the Ottoman Empire’s control of land routes, and the spread of Renaissance curiosity and navigation tools all pushed Europeans to explore by sea.",
+    "Motivations for exploration were described too simply, focusing only on wealth, when in reality they also included spreading Christianity, competing with rival nations such as Spain and Portugal, and gaining direct access to Asian trade goods.",
+    "Saying 'people got rich' was vague, since the real economic forces were the Columbian Exchange (transfer of crops, animals, and diseases), mercantilism (nations building wealth through colonies and trade), and monarchs sponsoring voyages to increase their power.",
+    "The impact on indigenous societies was overlooked — exploration brought devastating diseases, forced labor, and cultural imperialism where European languages, religions, and systems replaced native traditions."
   ]
 }"""
 
@@ -166,8 +163,8 @@ ASSESSMENT_ASSISTANT_EXAMPLE_JSON_2 = """{
     "Demonstrated understanding of the relationship between structure and function"
   ],
   "gaps_in_understanding": [
-    "Could have mentioned specific transport proteins and their roles in more detail",
-    "Did not explain the phospholipid bilayer structure that enables selective permeability"
+    "The answer mentioned selective permeability but didn’t expand on the role of transport proteins — channel proteins allow ions or water to slip through, carrier proteins change shape to move specific molecules, and active transport proteins use energy (ATP) to pump substances against concentration gradients.",
+    "The structure of the phospholipid bilayer was missing, even though it’s the foundation of selective permeability — hydrophilic heads face outward while hydrophobic tails tuck inward, creating a barrier that works like a bouncer: small nonpolar molecules pass through easily, while larger or charged ones need protein assistance."
   ]
 }"""
 
@@ -175,14 +172,14 @@ ASSESSMENT_ASSISTANT_EXAMPLE_JSON_2 = """{
 def _count_words(text: str) -> int:
     return len(re.findall(r"\w+", text))
 
-def _question_valid(question: str) -> (bool, Optional[str]):
+def _question_valid(question: str) -> Tuple[bool, Optional[str]]:
     if not isinstance(question, str) or not question.strip():
         return False, "missing or invalid question"
     if len(question) < 20:
         return False, f"question too short ({len(question)} chars)"
     return True, None
 
-def _assessment_valid(assessment: dict) -> (bool, Optional[str]):
+def _assessment_valid(assessment: dict) -> Tuple[bool, Optional[str]]:
     if not isinstance(assessment.get("mastery_score"), int):
         return False, "missing or invalid mastery_score"
     if not (0 <= assessment["mastery_score"] <= 100):
@@ -199,7 +196,7 @@ def _sanitize_content(raw: str) -> str:
     s = s.replace('"', '\\"')
     return s
 
-def _validate_and_sanitize_questions(questions: List[str]) -> (bool, Optional[str], List[str]):
+def _validate_and_sanitize_questions(questions: List[str]) -> Tuple[bool, Optional[str], List[str]]:
     sanitized = []
     for i, q in enumerate(questions):
         ok, reason = _question_valid(q)
@@ -209,7 +206,7 @@ def _validate_and_sanitize_questions(questions: List[str]) -> (bool, Optional[st
         sanitized.append(sanitized_question)
     return True, None, sanitized
 
-def _validate_and_sanitize_assessment(assessment: dict) -> (bool, Optional[str], dict):
+def _validate_and_sanitize_assessment(assessment: dict) -> Tuple[bool, Optional[str], dict]:
     ok, reason = _assessment_valid(assessment)
     if not ok:
         return False, reason, assessment
@@ -402,5 +399,4 @@ Assess this student explanation and provide a detailed evaluation."""
     except HTTPException:
         raise
     except Exception as e:
-        logger.exception("❌ Assessment failed: %s", str(e))
-        raise HTTPException(status_code=500, detail="Assessment service temporarily unavailable")
+        logger.exception("❌
