@@ -1,148 +1,111 @@
+# youtube.py
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import Optional
-import os
 import requests
-import openai
-import json
-import logging
+import os
+from openai import OpenAI
 
 router = APIRouter()
 
-# Load API keys from environment
-YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY")
-openai.api_key = os.getenv("OPENAI_API_KEY")
+# --- Keys --- #
+YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY", "AIzaSyAd8kcbap76McZS6e5ZlBTXPz-tZU9nAQs")
+YOUTUBE_SEARCH_URL = "https://www.googleapis.com/youtube/v3/search"
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
-# === Request and Response Models ===
+client = OpenAI(api_key=OPENAI_API_KEY)
 
-class VideoLearningRequest(BaseModel):
-    topic: str
+# --- Input schema --- #
+class YouTubeRequest(BaseModel):
+    description: str
+    subject: Optional[str] = None
+    level: Optional[str] = None
 
-class VideoLearningResponse(BaseModel):
-    video_id: str
+
+# --- Output schema --- #
+class YouTubeVideo(BaseModel):
     title: str
-    start: int
-    end: int
-    segment_title: Optional[str] = None
+    video_id: str
+    url: str
+    thumbnail: str
+    query_used: str
 
-# === Helper Functions ===
 
-def search_youtube_video(topic: str) -> dict:
-    """Search YouTube for the most relevant video on a given topic."""
-    url = "https://www.googleapis.com/youtube/v3/search"
-    params = {
-        "part": "snippet",
-        "q": topic,
-        "type": "video",
-        "maxResults": 3,
-        "key": YOUTUBE_API_KEY
-    }
-    try:
-        response = requests.get(url, params=params, timeout=10)
-        data = response.json()
-        if "items" not in data or not data["items"]:
-            raise HTTPException(status_code=404, detail="No YouTube videos found.")
-        return data["items"][0]
-    except requests.RequestException as e:
-        logging.error(f"YouTube search failed: {e}")
-        raise HTTPException(status_code=500, detail="YouTube search error.")
+def _generate_search_query(req: YouTubeRequest) -> str:
+    """
+    Uses gpt-5-nano to generate a focused YouTube search query.
+    """
+    context = []
+    if req.subject:
+        context.append(f"Subject: {req.subject}")
+    if req.level:
+        context.append(f"Level: {req.level}")
+    context.append(f"Description: {req.description}")
+    context_text = "\n".join(context)
 
-def get_video_description(video_id: str) -> str:
-    """Fetch the video description using YouTube's video endpoint."""
-    url = "https://www.googleapis.com/youtube/v3/videos"
-    params = {
-        "part": "snippet,contentDetails",
-        "id": video_id,
-        "key": YOUTUBE_API_KEY
-    }
-    try:
-        response = requests.get(url, params=params, timeout=10)
-        data = response.json()
-        return data["items"][0]["snippet"]["description"]
-    except Exception as e:
-        logging.error(f"Failed to fetch video description: {e}")
-        raise HTTPException(status_code=500, detail="Unable to retrieve video description.")
+    prompt = f"""
+You are helping find the best YouTube video for teaching. 
+From this context, create ONE very short but specific YouTube search query (5-12 words max).
+The query should sound like something a student would type to find the clearest educational video.
 
-def build_gpt_prompt(description: str, topic: str) -> str:
-    """Construct the prompt used for segment extraction."""
-    return f"""
-You're helping a student find the best part of a YouTube video to learn about: "{topic}".
+Context:
+{context_text}
 
-Below is the video description. It may include timestamps, chapter titles, or just a general summary:
-
-\"\"\"{description}\"\"\"
-
-🎯 Your job:
-- If there are **chapters** with timestamps, choose the one most relevant to the topic.
-- If no chapters exist, or if none clearly match the topic, return the **whole video** from start to end.
-
-Estimate the start and end times in **seconds**, based on the timestamps or a reasonable guess.
-
-🧾 Respond in this JSON format:
-
-{{
-  "segment_title": "Light Reactions",       
-  "start": 0,
-  "end": 600
-}}
-
-If you're unable to estimate the duration, return 0 for the end value.
+Output ONLY the query text, nothing else.
 """
 
-def extract_segment_or_full(description: str, topic: str) -> Optional[dict]:
-    """Use GPT-3.5 to analyze YouTube description and extract the best segment."""
-    prompt = build_gpt_prompt(description, topic)
+    response = client.responses.create(
+        model="gpt-5-nano",
+        input=[{"role": "user", "content": prompt}],
+        max_output_tokens=50,
+        reasoning={"effort": "low"}
+    )
+
+    query = response.output_text.strip()
+    return query
+
+
+@router.post("/youtube", response_model=YouTubeVideo)
+def get_best_youtube_video(req: YouTubeRequest):
     try:
-        response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.2
+        # Step 1: Generate optimized query
+        search_query = _generate_search_query(req)
+
+        # Step 2: Call YouTube API
+        params = {
+            "part": "snippet",
+            "q": search_query,
+            "key": YOUTUBE_API_KEY,
+            "maxResults": 3,   # fetch a few, we can pick the best
+            "type": "video",
+            "safeSearch": "strict",
+            "relevanceLanguage": "en"
+        }
+
+        response = requests.get(YOUTUBE_SEARCH_URL, params=params)
+
+        if response.status_code != 200:
+            raise HTTPException(status_code=500, detail=f"YouTube API error: {response.text}")
+
+        data = response.json()
+        items = data.get("items", [])
+        if not items:
+            raise HTTPException(status_code=404, detail="No relevant YouTube video found.")
+
+        # Step 3: Pick the first result for now
+        video = items[0]
+        video_id = video["id"]["videoId"]
+        snippet = video["snippet"]
+
+        return YouTubeVideo(
+            title=snippet["title"],
+            video_id=video_id,
+            url=f"https://www.youtube.com/watch?v={video_id}",
+            thumbnail=snippet["thumbnails"]["high"]["url"],
+            query_used=search_query
         )
-        content = response.choices[0].message.content.strip()
-        return json.loads(content)
+
+    except HTTPException:
+        raise
     except Exception as e:
-        logging.error(f"GPT extraction failed: {e}")
-        logging.debug(f"GPT raw output: {content if 'content' in locals() else 'N/A'}")
-        return None
-
-# === Main Endpoint ===
-
-@router.post("/api/video-learning", response_model=VideoLearningResponse)
-async def video_learning(data: VideoLearningRequest):
-    """
-    Given a study topic, returns a YouTube video and timestamp segment (or full video)
-    relevant to that topic.
-    """
-    topic = data.topic.strip()
-    if not topic:
-        raise HTTPException(status_code=400, detail="Topic is required.")
-
-    # Step 1: Search YouTube
-    video = search_youtube_video(topic)
-    video_id = video["id"]["videoId"]
-    title = video["snippet"]["title"]
-
-    # Step 2: Get Description
-    description = get_video_description(video_id)
-
-    # Step 3: Let GPT choose segment
-    segment = extract_segment_or_full(description, topic)
-
-    # Step 4: Return result
-    if segment:
-        return {
-            "video_id": video_id,
-            "title": title,
-            "start": segment.get("start", 0),
-            "end": segment.get("end", 0),
-            "segment_title": segment.get("segment_title", None)
-        }
-    else:
-        # Fallback to full video with no timestamps
-        return {
-            "video_id": video_id,
-            "title": title,
-            "start": 0,
-            "end": 0,
-            "segment_title": None
-        }
+        raise HTTPException(status_code=500, detail=f"Error fetching YouTube video: {str(e)}")
