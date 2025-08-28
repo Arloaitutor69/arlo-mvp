@@ -8,6 +8,7 @@ import logging
 import re
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
+import math
 
 # Setup logging
 logger = logging.getLogger(__name__)
@@ -18,6 +19,7 @@ router = APIRouter()
 YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY")
 YOUTUBE_SEARCH_URL = "https://www.googleapis.com/youtube/v3/search"
 YOUTUBE_VIDEOS_URL = "https://www.googleapis.com/youtube/v3/videos"
+YOUTUBE_CHANNELS_URL = "https://www.googleapis.com/youtube/v3/channels"
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 if not YOUTUBE_API_KEY:
@@ -27,14 +29,19 @@ if not OPENAI_API_KEY:
 
 client = OpenAI(api_key=OPENAI_API_KEY)
 
+# --- Trusted Educational Channels --- #
+EDUCATIONAL_CHANNELS = {
+    "Khan Academy": {"boost": 0.3, "keywords": ["khan academy", "khanacademy"]},
+    "Crash Course": {"boost": 0.25, "keywords": ["crash course", "crashcourse"]},
+    "Organic Chemistry Tutor": {"boost": 0.25, "keywords": ["organic chemistry tutor", "organicchemistrytutor"]},
+}
+
 # --- Input Schema --- #
 class CombinedRequest(BaseModel):
-    teaching_description: str  # Main teaching content description
-    youtube_topic: str  # Specific YouTube search topic
+    teaching_description: str  # Main teaching content description - will be parsed for YouTube search
     subject: Optional[str] = None
     level: Optional[str] = "intermediate"
     test_type: Optional[str] = None
-    max_duration_minutes: Optional[int] = 30
 
 # --- Output Schemas --- #
 class TeachingBlock(BaseModel):
@@ -59,6 +66,8 @@ class YouTubeVideo(BaseModel):
     query_used: str
     relevant_segments: List[VideoSegment]
     overall_relevance_score: float
+    quality_score: float
+    final_score: float
 
 class CombinedResponse(BaseModel):
     lesson: List[TeachingBlock]
@@ -153,47 +162,19 @@ ASSISTANT_EXAMPLE_JSON_4 = """
 """
 
 # --- YouTube Helper Functions --- #
-def extract_keywords_simple(youtube_topic: str, subject: Optional[str]) -> List[str]:
-    """Extract keywords from YouTube topic and subject."""
-    keywords = []
+def extract_youtube_search_from_teaching_content(teaching_description: str) -> Optional[str]:
+    """Extract YouTube search query from teaching content after 'Watch Youtube video about'."""
+    pattern = r"Watch Youtube video about\s+(.+?)(?:\n|$|\.)"
+    match = re.search(pattern, teaching_description, re.IGNORECASE)
+    if match:
+        youtube_query = match.group(1).strip()
+        # Clean up common sentence endings
+        youtube_query = re.sub(r'[.!?]+$', '', youtube_query)
+        logger.info(f"Extracted YouTube search: '{youtube_query}'")
+        return youtube_query
     
-    if subject:
-        keywords.append(subject)
-    
-    if youtube_topic:
-        stop_words = {'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'is', 'are', 'was', 'were', 'be', 'been', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could', 'should', 'this', 'that', 'these', 'those'}
-        
-        words = re.findall(r'\b[a-zA-Z]{3,}\b', youtube_topic.lower())
-        meaningful_words = [word for word in words if word not in stop_words]
-        
-        word_freq = {}
-        for word in meaningful_words:
-            word_freq[word] = word_freq.get(word, 0) + 1
-        
-        sorted_words = sorted(word_freq.items(), key=lambda x: x[1], reverse=True)
-        keywords.extend([word for word, freq in sorted_words[:5]])
-    
-    return keywords[:5] if keywords else ["tutorial", "lesson"]
-
-def generate_search_query(youtube_topic: str, subject: Optional[str], level: str) -> str:
-    """Generate a single optimized search query since topic is pre-specified."""
-    query_parts = []
-    
-    if subject:
-        query_parts.append(subject)
-    
-    # Add the specific YouTube topic
-    query_parts.append(youtube_topic)
-    
-    # Add level-specific terms
-    if level == "beginner":
-        query_parts.append("basics tutorial")
-    elif level == "advanced":
-        query_parts.append("advanced")
-    else:
-        query_parts.append("explained")
-    
-    return " ".join(query_parts)[:80]
+    logger.info("No 'Watch Youtube video about' found in teaching content")
+    return None
 
 def parse_duration_to_seconds(duration: str) -> int:
     """Convert YouTube duration format (PT1H2M3S) to seconds."""
@@ -219,126 +200,178 @@ def format_duration(seconds: int) -> str:
     else:
         return f"{minutes:02d}:{secs:02d}"
 
+def is_educational_channel(channel_title: str) -> tuple[bool, float]:
+    """Check if channel is a trusted educational channel and return boost score."""
+    channel_lower = channel_title.lower()
+    
+    for edu_channel, config in EDUCATIONAL_CHANNELS.items():
+        for keyword in config["keywords"]:
+            if keyword in channel_lower:
+                return True, config["boost"]
+    
+    return False, 0.0
+
+def calculate_quality_score(video_details: Dict[str, Any], channel_info: Dict[str, Any] = None) -> float:
+    """Calculate video quality score based on multiple factors."""
+    quality_score = 0.0
+    
+    # View count (logarithmic scaling)
+    view_count = video_details.get("view_count", 0)
+    if view_count > 0:
+        log_views = math.log10(max(view_count, 1))
+        # Scale: 1K views = 0.1, 10K = 0.2, 100K = 0.3, 1M = 0.4, 10M = 0.5
+        view_score = min(0.5, log_views / 10)
+        quality_score += view_score
+    
+    # Educational channel boost
+    is_edu, edu_boost = is_educational_channel(video_details.get("channel_title", ""))
+    if is_edu:
+        quality_score += edu_boost
+    
+    # Engagement rate (if available)
+    like_count = video_details.get("like_count", 0)
+    if view_count > 0 and like_count > 0:
+        engagement_rate = like_count / view_count
+        # Boost for high engagement (typically 1-5% is good)
+        if engagement_rate > 0.02:  # 2%+
+            quality_score += 0.15
+        elif engagement_rate > 0.01:  # 1%+
+            quality_score += 0.1
+    
+    # Duration appropriateness (prefer 2-3 minutes, max 5 minutes)
+    duration_seconds = parse_duration_to_seconds(video_details.get("duration", "PT0S"))
+    if 120 <= duration_seconds <= 180:  # 2-3 minutes (ideal)
+        quality_score += 0.2
+    elif 60 <= duration_seconds <= 300:  # 1-5 minutes (acceptable)
+        quality_score += 0.1
+    elif duration_seconds > 300:  # Over 5 minutes (penalize)
+        quality_score -= 0.1
+    
+    # Content quality indicators
+    description = video_details.get("description", "")
+    if len(description) > 200:  # Detailed description
+        quality_score += 0.05
+    
+    # Channel authority (subscriber count if available)
+    if channel_info and "subscriber_count" in channel_info:
+        subscriber_count = channel_info["subscriber_count"]
+        if subscriber_count > 1000000:  # 1M+ subscribers
+            quality_score += 0.15
+        elif subscriber_count > 100000:  # 100K+ subscribers
+            quality_score += 0.1
+        elif subscriber_count > 10000:  # 10K+ subscribers
+            quality_score += 0.05
+    
+    return min(1.0, quality_score)  # Cap at 1.0
+
+def calculate_relevance_score(video_details: Dict[str, Any], search_query: str) -> float:
+    """Calculate video relevance score based on keyword matching."""
+    if not search_query:
+        return 0.3
+    
+    title = video_details.get("title", "").lower()
+    description = video_details.get("description", "").lower()
+    search_terms = search_query.lower().split()
+    
+    relevance_score = 0.0
+    
+    # Title matching (higher weight)
+    for term in search_terms:
+        if term in title:
+            relevance_score += 0.15
+    
+    # Description matching (lower weight)
+    for term in search_terms:
+        if term in description:
+            relevance_score += 0.05
+    
+    # Exact phrase matching (bonus)
+    if search_query.lower() in title:
+        relevance_score += 0.2
+    elif search_query.lower() in description:
+        relevance_score += 0.1
+    
+    return min(1.0, relevance_score)
+
 def create_default_segments(youtube_topic: str, duration_seconds: int) -> List[VideoSegment]:
     """Create reasonable default segments based on video duration."""
     segments = []
     topic = youtube_topic if youtube_topic else "Main content"
     
-    if duration_seconds <= 300:  # 5 minutes or less
+    if duration_seconds <= 180:  # 3 minutes or less
         segments.append(VideoSegment(
-            start_time="0:30",
-            end_time=format_duration(min(duration_seconds - 10, 240)),
+            start_time="0:15",
+            end_time=format_duration(min(duration_seconds - 10, 170)),
             topic=topic,
-            relevance_score=0.7
+            relevance_score=0.8
         ))
-    elif duration_seconds <= 900:  # 15 minutes or less
+    elif duration_seconds <= 300:  # 5 minutes or less
         mid_point = duration_seconds // 2
         segments.extend([
             VideoSegment(
-                start_time="1:00",
+                start_time="0:30",
                 end_time=format_duration(mid_point),
-                topic=f"{topic} - Part 1",
-                relevance_score=0.7
-            ),
-            VideoSegment(
-                start_time=format_duration(mid_point + 30),
-                end_time=format_duration(duration_seconds - 30),
-                topic=f"{topic} - Part 2",
-                relevance_score=0.6
-            )
-        ])
-    else:  # Longer videos
-        third = duration_seconds // 3
-        segments.extend([
-            VideoSegment(
-                start_time="2:00",
-                end_time=format_duration(third),
                 topic=f"{topic} - Introduction",
+                relevance_score=0.8
+            ),
+            VideoSegment(
+                start_time=format_duration(mid_point + 15),
+                end_time=format_duration(duration_seconds - 15),
+                topic=f"{topic} - Key Points",
                 relevance_score=0.7
-            ),
-            VideoSegment(
-                start_time=format_duration(third + 60),
-                end_time=format_duration(third * 2),
-                topic=f"{topic} - Core Concepts",
-                relevance_score=0.6
-            ),
-            VideoSegment(
-                start_time=format_duration(third * 2 + 60),
-                end_time=format_duration(duration_seconds - 60),
-                topic=f"{topic} - Advanced Topics",
-                relevance_score=0.5
             )
         ])
     
     return segments
 
-def simple_keyword_score(video_title: str, video_description: str, keywords: List[str]) -> float:
-    """Simple keyword matching scoring method."""
-    if not keywords:
-        return 0.3
-    
-    title_lower = video_title.lower()
-    desc_lower = (video_description or "").lower()
-    
-    matches = 0
-    for keyword in keywords:
-        if keyword.lower() in title_lower:
-            matches += 2
-        elif keyword.lower() in desc_lower:
-            matches += 1
-    
-    max_possible = len(keywords) * 2
-    score = min(1.0, matches / max_possible) if max_possible > 0 else 0.3
-    return max(0.2, score)
+def get_channel_info(channel_ids: List[str]) -> Dict[str, Dict[str, Any]]:
+    """Fetch channel information for quality assessment."""
+    try:
+        if not channel_ids:
+            return {}
+        
+        params = {
+            "part": "statistics",
+            "id": ",".join(channel_ids),
+            "key": YOUTUBE_API_KEY
+        }
+        
+        response = requests.get(YOUTUBE_CHANNELS_URL, params=params, timeout=10)
+        response.raise_for_status()
+        
+        data = response.json()
+        channel_info = {}
+        
+        for item in data.get("items", []):
+            channel_id = item["id"]
+            stats = item.get("statistics", {})
+            
+            channel_info[channel_id] = {
+                "subscriber_count": int(stats.get("subscriberCount", 0)),
+                "video_count": int(stats.get("videoCount", 0)),
+                "view_count": int(stats.get("viewCount", 0))
+            }
+        
+        return channel_info
+        
+    except Exception as e:
+        logger.warning(f"Error fetching channel info: {e}")
+        return {}
 
-def calculate_relevance_score(video_details: Dict[str, Any], keywords: List[str]) -> float:
-    """Calculate video relevance score."""
-    score = 0.0
-    
-    # Keyword matching
-    keyword_score = simple_keyword_score(
-        video_details.get("title", ""),
-        video_details.get("description", ""),
-        keywords
-    )
-    score += keyword_score * 0.6
-    
-    # View count factor
-    view_count = video_details.get("view_count", 0)
-    if view_count > 1000:
-        score += 0.2
-    elif view_count > 100:
-        score += 0.1
-    
-    # Duration appropriateness
-    duration_seconds = parse_duration_to_seconds(video_details.get("duration", "PT0S"))
-    if 60 <= duration_seconds <= 3600:
-        score += 0.2
-    elif duration_seconds > 0:
-        score += 0.1
-    
-    return max(0.2, score)
-
-def search_youtube(query: str, max_duration_minutes: Optional[int]) -> List[Dict]:
-    """Search YouTube with a single optimized query."""
+def search_youtube(query: str) -> List[Dict]:
+    """Search YouTube with quality filters."""
     try:
         search_params = {
             "part": "snippet",
             "q": query,
             "key": YOUTUBE_API_KEY,
-            "maxResults": 10,
+            "maxResults": 15,  # Get more to filter better
             "type": "video",
             "relevanceLanguage": "en",
             "order": "relevance",
-            "safeSearch": "moderate"
+            "safeSearch": "moderate",
+            "videoDuration": "short"  # Max 4 minutes
         }
-        
-        # Add duration filter if specified
-        if max_duration_minutes:
-            if max_duration_minutes <= 4:
-                search_params["videoDuration"] = "short"
-            elif max_duration_minutes <= 20:
-                search_params["videoDuration"] = "medium"
         
         response = requests.get(YOUTUBE_SEARCH_URL, params=search_params, timeout=10)
         response.raise_for_status()
@@ -380,10 +413,12 @@ def get_video_details(video_ids: List[str]) -> Dict[str, Dict[str, Any]]:
             video_details[video_id] = {
                 "title": snippet["title"],
                 "channel_title": snippet["channelTitle"],
+                "channel_id": snippet["channelId"],
                 "published_at": snippet["publishedAt"],
                 "thumbnail": snippet["thumbnails"]["high"]["url"],
                 "duration": content_details.get("duration", "PT0M0S"),
                 "view_count": int(statistics.get("viewCount", 0)),
+                "like_count": int(statistics.get("likeCount", 0)),
                 "description": snippet.get("description", "")
             }
             
@@ -393,15 +428,13 @@ def get_video_details(video_ids: List[str]) -> Dict[str, Dict[str, Any]]:
         logger.error(f"Error fetching video details: {e}")
         return {}
 
-def get_best_youtube_video(youtube_topic: str, subject: Optional[str], level: str, max_duration_minutes: Optional[int]) -> Optional[YouTubeVideo]:
-    """Get the best YouTube video for the given topic."""
+def get_best_youtube_video(youtube_query: str, subject: Optional[str] = None) -> Optional[YouTubeVideo]:
+    """Get the best YouTube video for the given query with quality and relevance balancing."""
     try:
-        # Generate search query
-        query = generate_search_query(youtube_topic, subject, level)
-        logger.info(f"YouTube search query: {query}")
+        logger.info(f"YouTube search query: '{youtube_query}'")
         
         # Search YouTube
-        search_results = search_youtube(query, max_duration_minutes)
+        search_results = search_youtube(youtube_query)
         
         if not search_results:
             logger.warning("No YouTube search results found")
@@ -417,23 +450,60 @@ def get_best_youtube_video(youtube_topic: str, subject: Optional[str], level: st
             logger.warning("Could not retrieve video details")
             return None
         
-        # Score and select best video
-        keywords = extract_keywords_simple(youtube_topic, subject)
+        # Get channel information
+        channel_ids = list(set(details.get("channel_id") for details in video_details.values()))
+        channel_info = get_channel_info(channel_ids)
+        
+        # Filter by duration (max 5 minutes = 300 seconds)
+        filtered_videos = {}
+        for video_id, details in video_details.items():
+            duration_seconds = parse_duration_to_seconds(details["duration"])
+            if duration_seconds <= 300:  # 5 minutes max
+                filtered_videos[video_id] = details
+        
+        if not filtered_videos:
+            logger.warning("No videos found under 5 minutes")
+            return None
+        
+        # Quality threshold filter (minimum 1K views unless educational channel)
+        quality_filtered_videos = {}
+        for video_id, details in filtered_videos.items():
+            view_count = details.get("view_count", 0)
+            is_edu, _ = is_educational_channel(details.get("channel_title", ""))
+            
+            if is_edu or view_count >= 1000:  # Educational channels bypass view threshold
+                quality_filtered_videos[video_id] = details
+        
+        if not quality_filtered_videos:
+            logger.warning("No videos passed quality threshold")
+            # Fallback to original filtered set
+            quality_filtered_videos = filtered_videos
+        
+        # Score videos with composite approach
         scored_videos = []
         
-        for video_id, details in video_details.items():
-            relevance_score = calculate_relevance_score(details, keywords)
-            scored_videos.append((video_id, details, relevance_score))
+        for video_id, details in quality_filtered_videos.items():
+            relevance_score = calculate_relevance_score(details, youtube_query)
+            
+            channel_data = channel_info.get(details.get("channel_id"), {})
+            quality_score = calculate_quality_score(details, channel_data)
+            
+            # Composite final score: 40% relevance + 40% quality + 20% freshness
+            freshness_score = 0.1  # Default freshness (could implement date-based scoring)
+            
+            final_score = (relevance_score * 0.4) + (quality_score * 0.4) + (freshness_score * 0.2)
+            
+            scored_videos.append((video_id, details, relevance_score, quality_score, final_score))
         
-        # Sort by relevance score and select best
-        scored_videos.sort(key=lambda x: x[2], reverse=True)
-        best_video_id, best_details, best_score = scored_videos[0]
+        # Sort by final score and select best
+        scored_videos.sort(key=lambda x: x[4], reverse=True)
+        best_video_id, best_details, relevance_score, quality_score, final_score = scored_videos[0]
         
-        logger.info(f"Selected video: {best_details['title']} (score: {best_score})")
+        logger.info(f"Selected video: {best_details['title']} (final score: {final_score:.2f}, relevance: {relevance_score:.2f}, quality: {quality_score:.2f})")
         
         # Create segments
         duration_seconds = parse_duration_to_seconds(best_details["duration"])
-        segments = create_default_segments(youtube_topic, duration_seconds)
+        segments = create_default_segments(youtube_query, duration_seconds)
         
         # Format response
         formatted_duration = format_duration(duration_seconds)
@@ -447,9 +517,11 @@ def get_best_youtube_video(youtube_topic: str, subject: Optional[str], level: st
             channel_title=best_details["channel_title"],
             view_count=best_details["view_count"],
             published_at=best_details["published_at"],
-            query_used=query,
+            query_used=youtube_query,
             relevant_segments=segments,
-            overall_relevance_score=round(best_score, 2)
+            overall_relevance_score=round(relevance_score, 2),
+            quality_score=round(quality_score, 2),
+            final_score=round(final_score, 2)
         )
         
     except Exception as e:
@@ -589,33 +661,41 @@ Output exactly 8-14 teaching blocks in valid JSON format with proper formatting 
 async def get_combined_content(req: CombinedRequest):
     """
     Generate both teaching content and YouTube video recommendation in parallel.
-    Optimized for cases where YouTube topic is pre-specified.
+    YouTube search is extracted from teaching content after 'Watch Youtube video about'.
     """
     try:
-        logger.info(f"Processing combined request - Subject: {req.subject}, YouTube topic: {req.youtube_topic}")
+        logger.info(f"Processing combined request - Subject: {req.subject}")
+        
+        # Extract YouTube search query from teaching content
+        youtube_query = extract_youtube_search_from_teaching_content(req.teaching_description)
         
         # Use ThreadPoolExecutor to run both operations in parallel
         with ThreadPoolExecutor(max_workers=2) as executor:
-            # Submit both tasks
+            # Submit teaching task
             teaching_future = executor.submit(generate_teaching_content, req)
-            youtube_future = executor.submit(
-                get_best_youtube_video, 
-                req.youtube_topic, 
-                req.subject, 
-                req.level, 
-                req.max_duration_minutes
-            )
             
-            # Wait for both to complete
+            # Submit YouTube task only if query found
+            youtube_future = None
+            if youtube_query:
+                youtube_future = executor.submit(get_best_youtube_video, youtube_query, req.subject)
+            
+            # Wait for teaching to complete
             teaching_blocks = teaching_future.result()
-            youtube_video = youtube_future.result()
+            
+            # Wait for YouTube if it was submitted
+            youtube_video = None
+            if youtube_future:
+                youtube_video = youtube_future.result()
         
         # Determine status
-        if youtube_video:
+        if youtube_query and youtube_video:
             status = "success"
-        else:
+        elif youtube_query and not youtube_video:
             status = "partial_success"  # Teaching worked but YouTube failed
             logger.warning("YouTube video search failed, returning teaching content only")
+        else:
+            status = "success_no_youtube"  # No YouTube query found in teaching content
+            logger.info("No YouTube query found in teaching content")
         
         return CombinedResponse(
             lesson=teaching_blocks,
@@ -640,7 +720,8 @@ async def health_check():
             "q": "test tutorial",
             "key": YOUTUBE_API_KEY,
             "maxResults": 1,
-            "type": "video"
+            "type": "video",
+            "videoDuration": "short"
         }
         response = requests.get(YOUTUBE_SEARCH_URL, params=test_params, timeout=5)
         youtube_status = "ok" if response.status_code == 200 else "error"
@@ -652,8 +733,12 @@ async def health_check():
             "features": {
                 "parallel_processing": "enabled",
                 "teaching_generation": "available",
-                "youtube_search": "optimized_for_specified_topics",
-                "combined_response": "available"
+                "youtube_search": "quality_and_relevance_balanced",
+                "combined_response": "available",
+                "max_video_length": "5_minutes",
+                "preferred_length": "2-3_minutes",
+                "educational_channels": list(EDUCATIONAL_CHANNELS.keys()),
+                "quality_filtering": "enabled"
             }
         }
     except Exception as e:
