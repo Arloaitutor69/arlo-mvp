@@ -475,6 +475,7 @@ def search_youtube(query: str) -> List[Dict]:
             "maxResults": 15,  # Get more to filter better
             "type": "video",
             "relevanceLanguage": "en",
+            "regionCode": "US",  # Ensure US region for English content
             "order": "relevance",
             "safeSearch": "moderate",
             "videoDuration": "short"  # Max 4 minutes
