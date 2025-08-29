@@ -55,6 +55,7 @@ class ExerciseItem(BaseModel):
 class BlurtingExerciseResponse(BaseModel):
     exercise_1: ExerciseItem
     exercise_2: ExerciseItem
+    exercise_3: ExerciseItem
 
 class BlurtingFeedbackRequest(BaseModel):
     exercise_question: str
@@ -94,9 +95,18 @@ BLURTING_EXERCISES_SCHEMA = {
                 },
                 "required": ["prompt", "focus"],
                 "additionalProperties": False
+            },
+            "exercise_3": {
+                "type": "object",
+                "properties": {
+                    "prompt": {"type": "string", "minLength": 10},
+                    "focus": {"type": "string", "minLength": 10}
+                },
+                "required": ["prompt", "focus"],
+                "additionalProperties": False
             }
         },
-        "required": ["exercise_1", "exercise_2"],
+        "required": ["exercise_1", "exercise_2", "exercise_3"],
         "additionalProperties": False
     }
 }
@@ -197,10 +207,14 @@ exercise_1:
 exercise_2:
   prompt: "Describe the step-by-step process of DNA replication from initiation to completion."
   focus: "Sequential process recall and chronological understanding"
+exercise_3:
+  prompt: "Explain the differences between leading and lagging strand synthesis, including why Okazaki fragments form."
+  focus: "Conceptual understanding of directional synthesis differences"
 
-Create 2 distinct exercises targeting different memory retrieval patterns:
+Create 3 distinct exercises targeting different memory retrieval patterns:
 EXERCISE 1: Focus on detailed recall (facts, definitions, specific examples)
 EXERCISE 2: Focus on process/sequence recall (steps, cause-effect, chronology)  
+EXERCISE 3: Focus on conceptual understanding (relationships, comparisons, explanations)
 
 Make prompts specific and actionable."""
 
@@ -265,7 +279,7 @@ async def generate_blurting_exercises(request: Request, data: BlurtingExerciseRe
 {data.teaching_block[:1200]}
 {weak_areas_text}
 
-Create 2 distinct blurting exercises targeting different memory retrieval patterns."""
+Create 3 distinct blurting exercises targeting different memory retrieval patterns."""
 
         # Prepare messages
         messages = [
@@ -297,6 +311,10 @@ Create 2 distinct blurting exercises targeting different memory retrieval patter
             exercise_2=ExerciseItem(
                 prompt=parsed_data["exercise_2"]["prompt"],
                 focus=parsed_data["exercise_2"]["focus"]
+            ),
+            exercise_3=ExerciseItem(
+                prompt=parsed_data["exercise_3"]["prompt"],
+                focus=parsed_data["exercise_3"]["focus"]
             )
         )
         
