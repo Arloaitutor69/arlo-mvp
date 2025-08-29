@@ -53,7 +53,9 @@ class ExerciseItem(BaseModel):
     focus: str
 
 class BlurtingExerciseResponse(BaseModel):
-    exercises: List[ExerciseItem]
+    exercise_1: ExerciseItem
+    exercise_2: ExerciseItem
+    exercise_3: ExerciseItem
 
 class BlurtingFeedbackRequest(BaseModel):
     exercise_question: str
@@ -76,22 +78,35 @@ BLURTING_EXERCISES_SCHEMA = {
         "type": "object",
         "strict": True,
         "properties": {
-            "exercises": {
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "prompt": {"type": "string", "minLength": 10},
-                        "focus": {"type": "string", "minLength": 10}
-                    },
-                    "required": ["prompt", "focus"],
-                    "additionalProperties": False
+            "exercise_1": {
+                "type": "object",
+                "properties": {
+                    "prompt": {"type": "string", "minLength": 10},
+                    "focus": {"type": "string", "minLength": 10}
                 },
-                "minItems": 3,
-                "maxItems": 3
+                "required": ["prompt", "focus"],
+                "additionalProperties": False
+            },
+            "exercise_2": {
+                "type": "object",
+                "properties": {
+                    "prompt": {"type": "string", "minLength": 10},
+                    "focus": {"type": "string", "minLength": 10}
+                },
+                "required": ["prompt", "focus"],
+                "additionalProperties": False
+            },
+            "exercise_3": {
+                "type": "object",
+                "properties": {
+                    "prompt": {"type": "string", "minLength": 10},
+                    "focus": {"type": "string", "minLength": 10}
+                },
+                "required": ["prompt", "focus"],
+                "additionalProperties": False
             }
         },
-        "required": ["exercises"],
+        "required": ["exercise_1", "exercise_2", "exercise_3"],
         "additionalProperties": False
     }
 }
@@ -186,29 +201,22 @@ EXAMPLE INPUT:
 Teaching Block: "DNA replication is the process by which a cell copies its DNA before cell division. It occurs during the S-phase of the cell cycle, inside the nucleus in eukaryotic cells. The process is semi-conservative, meaning each daughter strand retains one original strand. Replication begins at multiple origins of replication. Helicase unwinds the DNA, while topoisomerase relieves torsional strain. Primase lays down RNA primers to initiate synthesis. DNA Polymerase III extends new strands in the 5' to 3' direction. DNA is synthesized continuously on the leading strand and in short segments (Okazaki fragments) on the lagging strand. DNA Polymerase I replaces RNA primers with DNA, and DNA Ligase seals the fragments."
 
 EXAMPLE OUTPUT STRUCTURE:
-{
-  "exercises": [
-    {
-      "prompt": "List all the enzymes involved in DNA replication and describe what each one does.",
-      "focus": "Factual recall of specific proteins and their functions"
-    },
-    {
-      "prompt": "Describe the step-by-step process of DNA replication from initiation to completion.",
-      "focus": "Sequential process recall and chronological understanding"
-    },
-    {
-      "prompt": "Explain the differences between leading and lagging strand synthesis, including why Okazaki fragments form.",
-      "focus": "Conceptual understanding of directional synthesis differences"
-    }
-  ]
-}
+exercise_1:
+  prompt: "List all the enzymes involved in DNA replication and describe what each one does."
+  focus: "Factual recall of specific proteins and their functions"
+exercise_2:
+  prompt: "Describe the step-by-step process of DNA replication from initiation to completion."
+  focus: "Sequential process recall and chronological understanding"
+exercise_3:
+  prompt: "Explain the differences between leading and lagging strand synthesis, including why Okazaki fragments form."
+  focus: "Conceptual understanding of directional synthesis differences"
 
 Create 3 distinct exercises targeting different memory retrieval patterns:
 EXERCISE 1: Focus on detailed recall (facts, definitions, specific examples)
 EXERCISE 2: Focus on process/sequence recall (steps, cause-effect, chronology)  
 EXERCISE 3: Focus on conceptual understanding (relationships, comparisons, explanations)
 
-Make prompts specific and actionable. Return as an array of exercises."""
+Make prompts specific and actionable."""
 
 FEEDBACK_SYSTEM_PROMPT = """You are an expert educational assessor evaluating a student's blurting exercise response.
 
@@ -294,14 +302,20 @@ Create 3 distinct blurting exercises targeting different memory retrieval patter
         raw_content = response.choices[0].message.content
         parsed_data = json.loads(raw_content)
 
-        # Convert to Pydantic model with array format
+        # Convert to Pydantic models
         return BlurtingExerciseResponse(
-            exercises=[
-                ExerciseItem(
-                    prompt=exercise["prompt"],
-                    focus=exercise["focus"]
-                ) for exercise in parsed_data["exercises"]
-            ]
+            exercise_1=ExerciseItem(
+                prompt=parsed_data["exercise_1"]["prompt"],
+                focus=parsed_data["exercise_1"]["focus"]
+            ),
+            exercise_2=ExerciseItem(
+                prompt=parsed_data["exercise_2"]["prompt"],
+                focus=parsed_data["exercise_2"]["focus"]
+            ),
+            exercise_3=ExerciseItem(
+                prompt=parsed_data["exercise_3"]["prompt"],
+                focus=parsed_data["exercise_3"]["focus"]
+            )
         )
         
     except Exception as e:
