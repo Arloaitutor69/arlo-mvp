@@ -91,7 +91,7 @@ def extract_user_id(request: Request, data) -> str:
 # --- System Prompts --- #
 FEYNMAN_EXERCISE_SYSTEM_PROMPT = """You are an expert AI tutor creating Feynman-style teaching exercises for conceptual mastery to consolidate teaching material. 
 
-Create exactly 2 conceptual teaching questions that:
+Create exactly 3 conceptual teaching questions that:
 - create questions that test the material and can be answered based on what student learned in teaching content 
 - stick to the style of question in examples - ie how and why questions 
 - do not explicity reference teaching content in question phrasing, enable student to think and make own connections 
@@ -106,7 +106,7 @@ CRITICAL REQUIREMENTS:
 4. Use \\n for line breaks within content.
 5. No trailing commas.
 
-Return exactly 2 questions that encourage conceptual understanding."""
+Return exactly 3 questions that encourage conceptual understanding."""
 
 FEYNMAN_ASSESSMENT_SYSTEM_PROMPT = """You are an expert AI tutor assessing a student's conceptual explanation using the Feynman Technique.
 
@@ -128,14 +128,16 @@ CRITICAL REQUIREMENTS:
 EXERCISE_ASSISTANT_EXAMPLE_JSON_1 = """{
   "questions": [
     "a) Why did European exploration expand so rapidly in the late 15th century, b) and what made this timing significant compared to earlier periods?",
-    "How did the principles of mercantilism influence a) the goals and b) outcomes of European exploration and colonization?"
+    "How did the principles of mercantilism influence a) the goals and b) outcomes of European exploration and colonization?",
+    "How did the Columbian Exchange fundamentally transform both European and non-European societies — economically, culturally, and biologically?"
   ]
 }"""
 
 EXERCISE_ASSISTANT_EXAMPLE_JSON_2 = """{
   "questions": [
     "a) What is the main function of the cell membrane and b) how does selective permeability work?",
-    "a) How do mitochondria produce ATP and b) why is this process essential for cellular life?"
+    "a) How do mitochondria produce ATP and b) why is this process essential for cellular life?",
+    "a) What role does the nucleus play in controlling cellular activities and b) how does it protect genetic information?"
   ]
 }"""
 
@@ -227,7 +229,7 @@ def _call_model_and_get_parsed_exercise(input_messages, max_tokens=2000):
         input=input_messages,
         text_format=FeynmanExerciseResponse,
         reasoning={"effort": "low"},
-        instructions="Generate exactly 2 conceptual questions that test deep understanding using the Feynman technique.",
+        instructions="Generate exactly 3 conceptual questions that test deep understanding using the Feynman technique.",
         max_output_tokens=max_tokens,
     )
 
@@ -255,7 +257,7 @@ def generate_feynman_exercises(request: Request, payload: FeynmanExerciseRequest
         user_prompt = f"""TEACHING CONTENT:
 "{payload.teaching_content}"
 
-Create exactly 2 conceptual teaching questions relevant to this material."""
+Create exactly 3 conceptual teaching questions relevant to this material."""
 
         # Messages
         input_messages = [
@@ -281,17 +283,17 @@ Create exactly 2 conceptual teaching questions relevant to this material."""
 
         questions = response.output_parsed.questions
 
-        # Ensure exactly 2 questions
-        if len(questions) != 2:
+        # Ensure exactly 3 questions
+        if len(questions) != 3:
             retry_msg = {
                 "role": "user",
-                "content": "Fix JSON only: Must have exactly 2 questions. Return corrected JSON only."
+                "content": "Fix JSON only: Must have exactly 3 questions. Return corrected JSON only."
             }
             response_retry = _call_model_and_get_parsed_exercise(input_messages + [retry_msg])
             if getattr(response_retry, "output_parsed", None) is None:
                 raise HTTPException(status_code=500, detail=f"Question count invalid ({len(questions)}). Retry failed.")
             questions = response_retry.output_parsed.questions
-            if len(questions) != 2:
+            if len(questions) != 3:
                 raise HTTPException(status_code=500, detail=f"Question count invalid after retry ({len(questions)}).")
 
         # Validate + sanitize
