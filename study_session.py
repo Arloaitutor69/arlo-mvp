@@ -190,11 +190,6 @@ Each block should cover a COMPLETE, SUBSTANTIAL topic that is:
    • Individual steps of multi-step processes
    • Single examples of broader concepts
 
-❌ AVOID (too broad/general):
-   • "Overview" or "Introduction" 
-   • Combining multiple major concepts
-   • Generic topic names without focus
-
 TOPIC SCOPE GUIDELINES:
 - Each topic should take a full {block_duration} minutes of focused study
 - Topics should be substantial enough to have multiple key aspects to explore
@@ -225,13 +220,6 @@ CONTENT REQUIREMENTS FOR EACH BLOCK:
 6. Descriptions should support focused {block_duration}-minute study sessions
 7. The collection should cover the subject comprehensively through substantial topic areas
 
-TOPIC BREAKDOWN STRATEGY:
-- For sciences: Break by major processes, systems, or theoretical frameworks
-- For history: Break by major themes, causes/effects, periods, or significant developments  
-- For literature: Break by major themes, character development, literary techniques, or major sections
-- For math: Break by major concept areas, problem types, or theoretical foundations
-- For languages: Break by major grammar concepts, communication skills, or thematic vocabulary
-
 DESCRIPTION FORMAT ENFORCEMENT:
 - For EACH block's "description", write an ordered, numbered list of **4-6** key aspects
 - Format: "<Major aspect>: <comprehensive explanation with key details (~12-20 words)>"
@@ -260,22 +248,31 @@ CRITICAL REQUIREMENTS:
 """
 
 # --- Assistant Examples (Updated for Appropriate Topic Granularity) --- #
+# --- Assistant Examples (Balanced Units, Subtopics + Notes Only) --- #
 ASSISTANT_EXAMPLE_JSON_1 = """
 {
-  "units_to_cover": ["Cell Structure and Organization", "Cellular Transport Mechanisms", "Energy Production in Cells", "Cell Division Process", "Protein Synthesis", "Cell Communication", "Cellular Waste Management"],
+  "units_to_cover": [
+    "Cell Structure and Function",
+    "Cell Transport and Homeostasis",
+    "Cellular Energy Production",
+    "Cell Division and Genetic Continuity",
+    "Gene Expression and Protein Synthesis",
+    "Cell Communication and Signaling",
+    "Cellular Waste and Defense Mechanisms"
+  ],
   "pomodoro": "25/5",
   "techniques": ["flashcards", "feynman", "quiz", "blurting"],
   "blocks": [
     {
-      "unit": "Cell Structure and Organization",
+      "unit": "Cell Structure and Function",
       "techniques": ["flashcards", "feynman"],
-      "description": "1) Cell membrane: Phospholipid bilayer structure, selective permeability, and embedded proteins for transport. 2) Nucleus: Nuclear envelope, nucleolus function, chromatin organization, and genetic material storage. 3) Organelles: Mitochondria for energy, ER for synthesis, Golgi for processing and packaging. 4) Cytoskeleton: Microfilaments, microtubules, and intermediate filaments providing structural support. 5) Cellular compartmentalization: How organelles create specialized environments for specific functions.",
+      "description": "1) Cell membrane – structure, permeability. 2) Nucleus – DNA storage, nucleolus. 3) Organelles – mitochondria, ER, Golgi. 4) Cytoskeleton – filaments, structural roles. 5) Compartmentalization – specialized functions.",
       "duration": 8
     },
     {
-      "unit": "Cellular Transport Mechanisms", 
+      "unit": "Cell Transport and Homeostasis",
       "techniques": ["quiz", "feynman"],
-      "description": "1) Passive transport: Diffusion, osmosis, and facilitated diffusion moving substances down gradients. 2) Active transport: Energy-requiring movement against gradients using ATP and carrier proteins. 3) Bulk transport: Endocytosis bringing materials in, exocytosis moving materials out of cells. 4) Membrane channels: Ion channels, aquaporins, and gated channels controlling molecular passage. 5) Transport regulation: How cells control what enters and exits to maintain homeostasis.",
+      "description": "1) Passive transport – diffusion, osmosis. 2) Active transport – ATP, pumps. 3) Bulk transport – endocytosis, exocytosis. 4) Channels – ion channels, aquaporins. 5) Regulation – maintaining equilibrium.",
       "duration": 8
     }
   ]
@@ -284,14 +281,29 @@ ASSISTANT_EXAMPLE_JSON_1 = """
 
 ASSISTANT_EXAMPLE_JSON_2 = """
 {
-  "units_to_cover": ["Causes of the Renaissance", "Renaissance Art and Culture", "Key Renaissance Figures", "Political Changes", "Economic Transformations", "Scientific Revolution", "Renaissance Legacy"],
-  "pomodoro": "30/5", 
+  "units_to_cover": [
+    "Origins of the Renaissance",
+    "Renaissance Art and Humanism",
+    "Political and Economic Shifts in Renaissance Europe",
+    "Key Figures of the Renaissance",
+    "Scientific and Intellectual Developments",
+    "Origins of the Protestant Reformation",
+    "Spread of the Reformation and Religious Conflict",
+    "Legacy of the Renaissance and Reformation"
+  ],
+  "pomodoro": "30/5",
   "techniques": ["feynman", "flashcards", "quiz"],
   "blocks": [
     {
-      "unit": "Causes of the Renaissance",
+      "unit": "Origins of the Renaissance",
       "techniques": ["feynman", "quiz"],
-      "description": "1) Economic factors: Growth of trade, banking, and wealthy merchant class providing patronage. 2) Social changes: Rise of urban centers, decline of feudalism, increased social mobility. 3) Cultural influences: Rediscovery of classical texts, Byzantine scholars fleeing to Italy. 4) Political conditions: Italian city-states competing for prestige, relative political stability. 5) Geographic advantages: Italy's location facilitating trade between Europe and Byzantine/Islamic worlds. 6) Intellectual climate: Humanism emphasizing individual potential and classical learning revival.",
+      "description": "1) Economic foundations – trade, banking. 2) Social factors – urbanization, feudal decline. 3) Classical revival – humanism. 4) Political conditions – Italian city-states. 5) Cultural exchange – Byzantine/Islamic influences.",
+      "duration": 9
+    },
+    {
+      "unit": "Origins of the Protestant Reformation",
+      "techniques": ["feynman", "flashcards"],
+      "description": "1) Criticisms of Catholic Church – indulgences, corruption. 2) Martin Luther – 95 Theses, justification by faith. 3) Printing press – spread of ideas. 4) Early reformers – Wycliffe, Hus. 5) Church response – Counter-Reformation context.",
       "duration": 9
     }
   ]
@@ -300,14 +312,22 @@ ASSISTANT_EXAMPLE_JSON_2 = """
 
 ASSISTANT_EXAMPLE_JSON_3 = """
 {
-  "units_to_cover": ["Supply and Demand Fundamentals", "Market Equilibrium", "Elasticity Concepts", "Consumer Behavior Theory", "Producer Decision Making", "Market Efficiency", "Government Intervention Effects"],
+  "units_to_cover": [
+    "Supply and Demand",
+    "Market Equilibrium and Changes",
+    "Elasticity and Market Sensitivity",
+    "Consumer Choice Theory",
+    "Producer Decision-Making",
+    "Market Efficiency and Failures",
+    "Government Intervention in Markets"
+  ],
   "pomodoro": "25/5",
   "techniques": ["quiz", "feynman", "flashcards"],
   "blocks": [
     {
-      "unit": "Supply and Demand Fundamentals",
+      "unit": "Supply and Demand",
       "techniques": ["quiz", "feynman"],
-      "description": "1) Law of demand: Inverse price-quantity relationship, downward sloping demand curves, consumer behavior patterns. 2) Demand determinants: Income effects, substitute and complement goods, consumer preferences and expectations. 3) Law of supply: Direct price-quantity relationship, upward sloping supply curves, producer motivations. 4) Supply determinants: Production costs, technology, number of sellers, government policies affecting production. 5) Market dynamics: How supply and demand interact to determine prices and quantities. 6) Shifts vs movements: Distinguishing between moving along curves versus shifting entire curves.",
+      "description": "1) Law of demand – relationship with price. 2) Demand determinants – income, substitutes, complements. 3) Law of supply – relationship with price. 4) Supply determinants – costs, technology, policy. 5) Shifts vs movements – clear distinction.",
       "duration": 9
     }
   ]
