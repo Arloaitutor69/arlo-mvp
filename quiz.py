@@ -45,7 +45,7 @@ class QuizRequest(BaseModel):
     difficulty: Optional[DifficultyLevel] = DifficultyLevel.MEDIUM
     question_types: Optional[List[QuestionType]] = [QuestionType.MULTIPLE_CHOICE]
     user_id: Optional[str] = None
-    max_questions: int = Field(12, ge=8, le=15)
+    max_questions: int = Field(7, ge=5, le=7)  # Changed from 12, ge=8, le=15 to 7, ge=5, le=7
     
     @validator('content')
     def validate_content(cls, v):
@@ -106,7 +106,7 @@ context_cache = ContextCache()
 # -----------------------------
 
 def build_system_prompt() -> str:
-    return """You are an expert quiz generator that creates high-quality educational multiple-choice questions. Create exactly 7-15 quiz questions that test deep understanding, not just memorization.
+    return """You are an expert quiz generator that creates high-quality educational multiple-choice questions. Create exactly 5-7 quiz questions that test deep understanding, not just memorization.
 
 QUALITY REQUIREMENTS:
 1. Test understanding, comprehension, and application - not just recall
@@ -260,7 +260,7 @@ class QuestionGenerator:
 
             questions = response.output_parsed.questions
 
-            if not (7 <= len(questions) <= 15):
+            if not (5 <= len(questions) <= 7):  # Changed from (7 <= len(questions) <= 15)
                 retry_msg = {
                     "role": "user",
                     "content": f"Fix JSON only: Must have {max_questions} questions. Return corrected JSON only."
@@ -269,7 +269,7 @@ class QuestionGenerator:
                 if getattr(response_retry, "output_parsed", None) is None:
                     raise HTTPException(status_code=500, detail=f"Question count invalid ({len(questions)}). Retry failed.")
                 questions = response_retry.output_parsed.questions
-                if not (7 <= len(questions) <= 15):
+                if not (5 <= len(questions) <= 7):  # Changed from (7 <= len(questions) <= 15)
                     raise HTTPException(status_code=500, detail=f"Question count invalid after retry ({len(questions)}).")
 
             print(f"✅ Generated {len(questions)} multiple-choice questions (requested: {max_questions})")
