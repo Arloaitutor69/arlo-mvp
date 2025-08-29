@@ -97,14 +97,14 @@ def build_flashcard_prompt(content: str, context: Dict[str, Any]) -> str:
     
     return f"""You are a personalized flashcard-generating tutor. Create flashcards designed for active recall memorization 
 
-This is the teaching content your student was just taught. Identify the 12-20 key definitions, facts, details, and specific information that is best suited for active recall consolidation. Only mention information found in the teaching content except to fill major gaps if present. 
+This is the teaching content your student was just taught. Identify the 5-7 most important definitions, facts, details, and specific information that is best suited for active recall consolidation. Only mention information found in the teaching content except to fill major gaps if present. 
 {content}
 
 PERSONALIZATION CONTEXT:
 {personalization}
 
 GENERATION REQUIREMENTS:
-Create exactly 12-20 flashcards focusing on designed to aid in memory retention, focusing on: 
+Create exactly 5-7 flashcards focusing on designed to aid in memory retention, focusing on: 
 - FACTS that need memorization
 - DEFINITIONS of key terms and concepts  
 - IMPORTANT DETAILS that students commonly forget
@@ -229,7 +229,7 @@ def generate_flashcards_sync(
         system_prompt = build_flashcard_prompt(content, context)
         
         # User prompt
-        user_prompt = f"Create flashcards for this content: {content}\n\nOutput exactly 12-20 flashcards in valid JSON format."
+        user_prompt = f"Create flashcards for this content: {content}\n\nOutput exactly 5-7 flashcards in valid JSON format."
         
         # Messages
         input_messages = [
@@ -256,17 +256,17 @@ def generate_flashcards_sync(
 
         flashcards = response.output_parsed.flashcards
 
-        # Ensure 12–20 flashcards
-        if not (12 <= len(flashcards) <= 20):
+        # Ensure 5–7 flashcards
+        if not (5 <= len(flashcards) <= 7):
             retry_msg = {
                 "role": "user",
-                "content": "Fix JSON only: Must have 12-20 flashcards. Return corrected JSON only."
+                "content": "Fix JSON only: Must have 5-7 flashcards. Return corrected JSON only."
             }
             response_retry = _call_model_and_get_parsed(input_messages + [retry_msg])
             if getattr(response_retry, "output_parsed", None) is None:
                 raise HTTPException(status_code=500, detail=f"Flashcard count invalid ({len(flashcards)}). Retry failed.")
             flashcards = response_retry.output_parsed.flashcards
-            if not (12 <= len(flashcards) <= 20):
+            if not (5 <= len(flashcards) <= 7):
                 raise HTTPException(status_code=500, detail=f"Flashcard count invalid after retry ({len(flashcards)}).")
 
         # Validate + sanitize
@@ -316,7 +316,7 @@ async def generate_flashcards(request: Request, data: FlashcardRequest):
     context = await get_cached_context_async(user_id)
     
     # Set parameters from context
-    count = 12
+    count = 7  # Changed from 12 to 7
     difficulty = "medium"
     topic = context.get("current_topic", "general")
     
